@@ -23,8 +23,8 @@ The output MUST follow `.github/templates/requirements.template.md`.
 
 ### Required
 
-- The user’s initial idea (their first message) describing the work item.
-- - Target work folder name under `./docs/` (for example `./docs/001-some-work-item/`).
+- The user's initial idea (their first message) describing the work item.
+- Target work folder name under `./docs/` (for example `./docs/001-some-work-item/`).
 
 ### Optional
 
@@ -44,6 +44,8 @@ The output MUST follow `.github/templates/requirements.template.md`.
 - MUST: Ask only one question at a time.
 - MUST: For each question, provide numbered suggested answers and include `Other: <free text>`.
 - MUST: Keep a single evolving draft of `requirements.md` visible after each user answer.
+- MUST: Use this stage to resolve ambiguity early.
+  - Prefer asking clarifying questions in this prompt rather than deferring uncertainty into `technical-specification.md` or `delivery-plan.md`.
 - MUST NOT: Invent business details, requirements, measures, stakeholders, or constraints that the user has not provided.
 - MUST NOT: Leave placeholders in the final output.
 - SHOULD: Prefer reasonable defaults when safe (for example: `Status: draft`, `Date: today`, standard links table).
