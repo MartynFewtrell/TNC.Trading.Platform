@@ -88,8 +88,6 @@ Applies to: `src/**/*.cs, test/**/*.cs`
 
 ## References (optional)
 
-- `docs/ARCHITECTURE_GUIDELINES.md`
-
 ## Examples (optional)
 
 - Good example (folder layout):
