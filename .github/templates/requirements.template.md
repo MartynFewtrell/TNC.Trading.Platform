@@ -102,25 +102,25 @@ Use `OR1`, `OR2`, ... for operational requirements.
 | --- | ----------- | ------------------- | ----- |
 | OR1 | <requirement> | <testable statement(s)> | <optional> |
 
-## 12. Assumptions, Risks, and Dependencies
+## 11. Assumptions, Risks, and Dependencies
 
-### 12.1 Assumptions
+### 11.1 Assumptions
 
 - <assumption>
 
-### 12.2 Risks
+### 11.2 Risks
 
 - <risk>
   - **Mitigation**: <mitigation>
 
-### 12.3 Dependencies
+### 11.3 Dependencies
 
 - <dependency>
 
-## 13. Open Questions
+## 12. Open Questions
 
 - <question>
 
-## 14. Appendix (optional)
+## 13. Appendix (optional)
 
 - <links, diagrams, PRDs, prior decisions>
