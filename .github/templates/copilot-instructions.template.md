@@ -7,7 +7,7 @@ applyTo: '<glob or comma-separated globs, e.g. **/*.js, **/*.ts>'
 
 ## Overview
 
-<1–3 sentences describing the purpose, who this is for, and the desired outcomes. Keep it actionable and unambiguous.>
+<1-3 sentences describing the purpose, who this is for, and the desired outcomes. Keep it actionable and unambiguous.>
 
 ## Scope
 

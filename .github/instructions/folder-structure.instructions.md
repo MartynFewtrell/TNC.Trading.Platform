@@ -17,9 +17,9 @@ These instructions keep the repository layout consistent by ensuring new files a
 
 ### MUST
 
-- Preserve the existing top-level folder layout; do not introduce new top-level folders without an explicit architectural reason.
-- Keep top-level folders limited to the existing set (currently: `.github/`, `docs/`, `infra/`, `src/`, `test/`).
-- Put product code under `src/` and automated tests under `test/`.
+- Preserve the current top-level folder layout; do not introduce new top-level folders without an explicit architectural reason.
+- When adding or reorganizing code, prefer the following top-level folders for this repository: `.github/`, `docs/`, `infra/`, `src/`, and `test/`. If some of these folders do not yet exist, create them as needed rather than introducing alternative top-level roots.
+- Prefer placing product code under `src/` and automated tests under `test/` (or the closest existing equivalent), creating those folders when necessary.
 - When moving files, update all references to preserve build/test viability (solution/project references, namespaces/imports, tooling paths).
 
 - Create Copilot instruction files (`*.instructions.md`) under `./.github/instructions/`.

@@ -13,7 +13,7 @@
 
 ### 2.1 Problem statement
 
-<Restate the problem in 1-3 sentences.>
+<Restate the problem in 1–3 sentences.>
 
 ### 2.2 Assumptions
 
