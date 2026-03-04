@@ -71,7 +71,7 @@ Applies to: `src/**/*.cs, test/**/*.cs`
 - MUST NOT add business behavior, service dependencies, or persistence concerns to DTOs.
 - MUST NOT implement multiple operations in a single handler via flags/branching.
 - MUST NOT use validators to implement business decisions (validators validate input; they do not perform orchestration or state transitions).
-- MUST NOT introduce “god services” or over-generalized shared abstractions that hide real behavior (for example, `BaseHandler`, `GenericService`, `CommonRequest`).
+- MUST NOT introduce "god services" or over-generalized shared abstractions that hide real behavior (for example, `BaseHandler`, `GenericService`, `CommonRequest`).
 
 ## Output and Validation (optional)
 
