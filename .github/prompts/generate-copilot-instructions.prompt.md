@@ -51,7 +51,7 @@ ${RESEARCH_MODE="auto"} <!-- auto | always | never: controls whether to run a do
 
 ### Core behavior
 
-- MUST: Accept the user’s initial idea as input.
+- MUST: Accept the user's initial idea as input.
 - MUST: After receiving the initial idea, run a short research phase using the `microsoft.docs.mcp` server when it improves correctness for Microsoft/.NET/Azure/GitHub/Copilot-related topics.
 - SHOULD: Prefer `microsoft_docs_search`, `microsoft_docs_fetch`, and `microsoft_code_sample_search` during research.
 - MUST: Apply research selectively (only when it improves correctness).

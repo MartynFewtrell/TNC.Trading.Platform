@@ -22,7 +22,7 @@ You are a Prompt Engineer. Produce a new GitHub Copilot `*.prompt.md` file based
 
 ### Required
 
-- The user’s initial idea (their first message)
+- The user's initial idea (their first message)
 
 ### Optional
 
