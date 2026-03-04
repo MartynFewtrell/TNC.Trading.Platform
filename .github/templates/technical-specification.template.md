@@ -13,7 +13,7 @@
 
 ### 2.1 Problem statement
 
-<Restate the problem in 1–3 sentences.>
+<Restate the problem in 1-3 sentences.>
 
 ### 2.2 Assumptions
 
@@ -46,7 +46,7 @@
 
 ## 4. Requirements Traceability
 
-Map requirements to implementation details so it’s easy to verify coverage.
+Map requirements to implementation details so it's easy to verify coverage.
 
 | Requirement ID | Requirement | Implementation notes | Validation approach |
 | -------------- | ----------- | -------------------- | ------------------- |
