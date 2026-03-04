@@ -1,4 +1,4 @@
-# Delivery Plan
+# Delivery Plan Template
 
 > Use this template to plan *when* and *in what increments* the technical specification will be delivered. Each work item should reference relevant `FRx/NFx/SRx/...` and the sections in `technical-specification.md` that implement them.
 
