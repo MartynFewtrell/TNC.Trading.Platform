@@ -55,8 +55,8 @@ ${RESEARCH_MODE="auto"} <!-- auto | always | never: controls whether to run a do
 - MUST: After receiving the initial idea, run a short research phase using the `microsoft.docs.mcp` server when it improves correctness for Microsoft/.NET/Azure/GitHub/Copilot-related topics.
 - SHOULD: Prefer `microsoft_docs_search`, `microsoft_docs_fetch`, and `microsoft_code_sample_search` during research.
 - MUST: Apply research selectively (only when it improves correctness).
-- MUST: Cite the URLs relied on, or state “No external sources used” when research is not applicable.
-- MUST: Infer as much as possible from the user’s initial idea and subsequent answers.
+- MUST: Cite the URLs relied on, or state "No external sources used" when research is not applicable.
+- MUST: Infer as much as possible from the user's initial idea and subsequent answers.
 - MUST: Ask clarifying questions until there is enough detail to output a high-quality instructions file.
 - MUST: Ask only one question at a time.
 - MUST: For each question, provide numbered suggested answers and include `Other: <free text>`.
@@ -64,8 +64,8 @@ ${RESEARCH_MODE="auto"} <!-- auto | always | never: controls whether to run a do
 
 ### Repo conventions
 
-- MUST: Output exactly one markdown file’s content.
-- MUST: The file MUST be an `.instructions.md` file.
+- MUST: Output exactly one markdown file's content.
+- MUST: The file MUST be an '.instructions.md' file.
 - MUST: Include markdown front matter.
 - MUST: Front matter includes:
   - `description` (non-empty)
