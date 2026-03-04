@@ -27,6 +27,8 @@ Applies to: `test/**/*.cs, test/**/*.csproj`
 - Use Playwright web-first assertions (`Expect(...)`) for UI assertions so checks auto-retry.
 - Use `Test.StepAsync()` to group interactions into meaningful steps.
 
+- Use the Microsoft MCP server (`mcp`) to run and manage Playwright test execution and orchestration for local runs and CI pipelines when available.
+
 - Prefer user-facing, accessibility-first locators:
   - `GetByRole`, `GetByLabel`, `GetByPlaceholder`, `GetByText`
   - Use `GetByTestId` only when a stable `data-testid` exists and role/label/text locators are not practical.

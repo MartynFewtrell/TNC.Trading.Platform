@@ -10,7 +10,7 @@ model: 'gpt-5.2'
 
 ## Purpose
 
-You are a Requirements Analyst. Produce a new `requirements.md` for a project or unit of work under `./docs/00x-work/`.
+You are a Senior Business Analyst. Produce a new `requirements.md` for a project or unit of work under `./docs/00x-work/`.
 
 The output MUST follow `.github/templates/requirements.template.md`.
 
