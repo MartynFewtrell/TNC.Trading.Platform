@@ -74,9 +74,9 @@ ${RESEARCH_MODE="auto"} <!-- auto | always | never: controls whether to run a do
 - MUST: The body uses clear headings and bullet lists.
 - MUST: Prefer patterns consistent with existing `instructions/*.instructions.md` files.
 - MUST NOT: Include unrelated rules outside the declared scope.
-- MUST NOT: Use vague guidance (“do it properly”, “use best practices”) without measurable criteria.
+- MUST NOT: Use vague guidance ("do it properly", "use best practices") without measurable criteria.
 - SHOULD: Use MUST / SHOULD / MUST NOT phrasing for determinism.
-- Output MUST be: a single markdown document containing exactly one `*.instructions.md` file’s content.
+- Output MUST be: a single markdown document containing exactly one `*.instructions.md` file's content.
 
 ## Process
 
@@ -112,7 +112,7 @@ When the user invokes this prompt, treat their first message as the **initial id
 
 At each turn:
 
-1. Extract what’s already known from the user’s initial idea and prior answers.
+1. Extract what's already known from the user's initial idea and prior answers.
 2. Identify gaps relative to the template sections and front matter in `.github/templates/copilot-instructions.template.md`.
 3. Walk the template from top to bottom. For the first section that is missing or ambiguous, ask one question to resolve it.
 4. Ask **one** question that resolves the first unresolved section you encounter.
