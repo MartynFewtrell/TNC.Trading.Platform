@@ -53,7 +53,7 @@ Applies to: `**/*`
 - `https://learn.microsoft.com/dotnet/`
 - `https://aspire.dev/`
 
-- `./.github/instructions/architecture-guidlines.instructions.md`
+- `./.github/instructions/architecture-guidelines.instructions.md`
 - `./.github/instructions/aspire-best-practices.instructions.md`
 - `./.github/instructions/aspire-testing.instructions.md`
 - `./.github/instructions/authentication.instructions.md`
