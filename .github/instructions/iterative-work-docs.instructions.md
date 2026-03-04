@@ -22,7 +22,7 @@ These rules apply when adding or updating documentation for a unit of work. They
 - You MUST produce a technical specification from the requirements and store it as `technical-specification.md` in the same `./docs/00x-work/` folder.
 - You MUST create a delivery plan based on both the requirements and technical specification and store it as `delivery-plan.md` in the same `./docs/00x-work/` folder.
 - You MUST keep the `00x` number monotonically increasing (do not reuse a prior number for a different work item).
-- You MUST keep each work item’s documentation self-contained within its `./docs/00x-work/` folder.
+- You MUST keep each work item's documentation self-contained within its `./docs/00x-work/` folder.
 
 ### SHOULD
 
@@ -41,4 +41,4 @@ These rules apply when adding or updating documentation for a unit of work. They
 
 ## Notes (optional)
 
-- This file enforces the repo’s iterative delivery documentation workflow.
+- This file enforces the repoâ€™s iterative delivery documentation workflow.
