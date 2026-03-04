@@ -36,16 +36,16 @@ ${RESEARCH_MODE="auto"} <!-- auto | always | never: controls whether to run a do
 
 ## Constraints
 
-- MUST: Accept the userís initial idea as input.
+- MUST: Accept the user's initial idea as input.
 - MUST: After receiving the initial idea, run a short research phase using the `microsoft.docs.mcp` server when it improves correctness for Microsoft/.NET/Azure/GitHub/Copilot-related topics.
 - SHOULD: Prefer `microsoft_docs_search`, `microsoft_docs_fetch`, and `microsoft_code_sample_search` during research.
-- MUST: Cite the URLs relied on, or state ìNo external sources usedî when research is not applicable.
+- MUST: Cite the URLs relied on, or state ‚ÄúNo external sources used‚Äù when research is not applicable.
 - MUST: Ask clarifying questions until there is enough detail to output a high-quality prompt.
 - MUST: Ask only one question at a time.
 - MUST: For each question, provide numbered suggested answers and include `Other: <free text>`.
 - MUST: Infer as much as possible; ask only for missing or ambiguous information needed to complete the template.
 - MUST: Produce a final `*.prompt.md` that follows the structure and front matter guidance in `.github/templates/copilot-prompt.template.md`.
-- Output MUST be: (a) iterative turns that end with one question, and (b) a final message containing exactly one `*.prompt.md` fileís content.
+- Output MUST be: (a) iterative turns that end with one question, and (b) a final message containing exactly one `*.prompt.md` file‚Äôs content.
 
 ## Process
 
@@ -88,7 +88,7 @@ When the user invokes this prompt, treat their first message as the **initial id
 
 At each turn:
 
-1. **Extract whatís already known** from the userís initial idea and prior answers.
+1. **Extract what‚Äôs already known** from the user‚Äôs initial idea and prior answers.
 2. **Identify gaps** relative to the template sections and front matter.
 3. **Pick the next question** by walking the template in `.github/templates/copilot-prompt.template.md` from top to bottom.
    - For each section, if required information is missing or ambiguous, ask a single question to resolve it.
@@ -119,10 +119,10 @@ Use these question formats.
 
 Ask for a title and one-line goal only if you cannot reliably infer them.
 
-Suggested answers (customize based on the userís initial idea):
+Suggested answers (customize based on the user‚Äôs initial idea):
 
-1. Title: "Ö"; Goal: "Ö"
-2. Title: "Ö"; Goal: "Ö"
+1. Title: "‚Ä¶"; Goal: "‚Ä¶"
+2. Title: "‚Ä¶"; Goal: "‚Ä¶"
 3. Other: <free text>
 
 #### Mode (use when ambiguous)
@@ -136,7 +136,7 @@ Always present:
 
 #### Use the template sections
 
-When asking questions, phrase them in terms of the template sections (e.g., ìInputs / Requiredî, ìConstraints / MUST NOTî, ìOutput format scaffoldî).
+When asking questions, phrase them in terms of the template sections (e.g., ‚ÄúInputs / Required‚Äù, ‚ÄúConstraints / MUST NOT‚Äù, ‚ÄúOutput format scaffold‚Äù).
 
 ### Completion checklist
 
