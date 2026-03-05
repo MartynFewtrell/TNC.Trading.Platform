@@ -4,9 +4,9 @@
 
 ## 1. Summary
 
-- **Source**: See `requirements.md` for canonical work metadata (work item, owner, dates, links) and identifiers (`FRx/NFx/SRx/...`).
+- **Source**: See `requirements.md` for canonical work metadata (work item, owner, dates, links) and identifiers (`FRx/NFx/SRx/...`). See `../business-requirements.md` for project-level business context.
 - **Status**: <draft|review|approved>
-- **Input**: `requirements.md`
+- **Input**: `requirements.md` (and `../business-requirements.md` for project context)
 - **Output**: `delivery-plan.md`
 
 ## 2. Problem and Context

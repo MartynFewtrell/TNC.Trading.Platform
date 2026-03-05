@@ -30,6 +30,7 @@ The output MUST follow `.github/templates/delivery-plan.template.md`.
 
 ### Optional
 
+- Project-level business requirements (paste `./docs/business-requirements.md` contents, or provide the repo path to it).
 - Preferred delivery model (single PR vs multiple PRs vs feature-flagged rollout).
 - Known dependencies (teams/systems), risk constraints, or target release windows.
 - Any environment/CI constraints (time limits, required checks).
@@ -77,29 +78,31 @@ The output MUST follow `.github/templates/delivery-plan.template.md`.
 When the user invokes this prompt, treat their first message as the initial idea. Do not request them to restate it.
 
 1. Read `requirements.md` and extract scope, non-goals, identifiers (`FRx/NFx/SRx/...`), and constraints.
-2. Read `technical-specification.md` and extract:
+2. If `./docs/business-requirements.md` is provided (or exists in the repo), read it to confirm the work item aligns with the project-level business context and priorities.
+3. Read `technical-specification.md` and extract:
    - proposed solution approach
    - implementation steps and files/modules
    - config, error handling, security, testing strategy
-3. Read `/.github/copilot-instructions.md` and relevant `/.github/instructions/*.instructions.md` to infer repo defaults for:
+4. Read `/.github/copilot-instructions.md` and relevant `/.github/instructions/*.instructions.md` to infer repo defaults for:
    - tech stack choices (C#/.NET, Aspire usage, Azure target)
    - auth approach (Keycloak locally, Entra ID in Azure)
    - testing approach (unit/integration/E2E/functional)
-4. Create an initial draft by copying `.github/templates/delivery-plan.template.md`.
-5. Populate the draft using:
+5. Create an initial draft by copying `.github/templates/delivery-plan.template.md`.
+6. Populate the draft using:
    - the requirements document
+   - the business requirements document (when available)
    - the technical specification
    - inferred repo standards
    - safe defaults (for example: `Status: draft`)
    - an incremental work breakdown where each work item delivers a usable, testable improvement
    - default cross-cutting validation commands to `dotnet build` and `dotnet test` (run at repo root) unless the input docs explicitly require different commands
-6. Identify the first missing or ambiguous field by walking the delivery plan template from top to bottom.
-7. Ask exactly one clarifying question to resolve that missing/ambiguous field.
-8. After each user answer:
+7. Identify the first missing or ambiguous field by walking the delivery plan template from top to bottom.
+8. Ask exactly one clarifying question to resolve that missing/ambiguous field.
+9. After each user answer:
    - update the draft
    - infer and fill any additional fields unlocked by the answer
    - ask exactly one next question
-9. Stop asking questions only when every required section is complete and no placeholders remain.
+10. Stop asking questions only when every required section is complete and no placeholders remain.
 
 ### Question flow policy
 

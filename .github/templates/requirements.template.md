@@ -6,6 +6,7 @@
 
 - **Work item**: <short name>
 - **Work folder**: `./docs/00x-work/`
+- **Business requirements**: `../business-requirements.md`
 - **Owner**: <name/team>
 - **Date**: <yyyy-mm-dd>
 - **Status**: <draft|review|approved>
@@ -17,6 +18,7 @@
 
 | Document | Path |
 | --- | --- |
+| Business requirements | `../business-requirements.md` |
 | Requirements | `requirements.md` |
 | Technical specification | `technical-specification.md` |
 | Delivery plan | `delivery-plan.md` |

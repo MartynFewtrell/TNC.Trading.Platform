@@ -28,6 +28,7 @@ You MUST follow the plan in sequence, and you MUST keep the plan itself up to da
 ### Optional
 
 - Paths (or contents) of `requirements.md` and `technical-specification.md` in the same work folder.
+- Project-level business requirements (path or contents of `./docs/business-requirements.md`).
 - Any constraints for this execution run (timebox, CI parity, no migrations, no breaking changes, etc.).
 
 ## Constraints
@@ -70,6 +71,7 @@ You MUST follow the plan in sequence, and you MUST keep the plan itself up to da
    - planned work items table
    - Work Item N details checklists (`- [ ] ...`)
 3. If provided, read `requirements.md` and `technical-specification.md` to improve implementation accuracy and traceability.
+4. If provided (or present in the repo), read `./docs/business-requirements.md` to confirm the work item remains aligned to project-level business context and priorities.
 4. Establish a baseline:
    - Run build + tests (per Cross-cutting validation)
    - If failing, fix baseline issues related to the work item scope or stop and report blockers.

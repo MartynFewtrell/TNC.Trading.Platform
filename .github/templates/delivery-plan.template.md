@@ -4,9 +4,10 @@
 
 ## Summary
 
-- **Source**: See `requirements.md` for canonical work metadata (work item, owner, dates, links) and scope.
+- **Source**: See `requirements.md` for canonical work metadata (work item, owner, dates, links) and scope. See `../business-requirements.md` for project-level business context.
 - **Status**: <draft|review|approved|in-progress|done>
 - **Inputs**:
+  - `../business-requirements.md`
   - `requirements.md`
   - `technical-specification.md`
 
@@ -74,6 +75,7 @@ Copy the **Work Item 1 details** section for each additional work item.
 
 ## Acceptance checklist
 
+- [ ] Work item aligns with `../business-requirements.md`.
 - [ ] All referenced `FRx` requirements are implemented and validated.
 - [ ] All referenced `NFx` requirements have measurements or checks.
 - [ ] All referenced `SRx` security requirements are implemented and validated.
