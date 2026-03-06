@@ -74,7 +74,7 @@ Use `BR1`, `BR2`, ... for business requirements. These should be written at the 
 
 | ID | Requirement (capability/outcome) | Rationale | Priority | Acceptance criteria | Notes/Constraints |
 | --- | --- | --- | --- | --- | --- |
-| BR1 | <requirement> | <why> | <Must|Should|Could|Wont> | <testable statement(s)> | <optional> |
+| BR1 | <requirement> | <why> | <Must|Should|Could|Won't> | <testable statement(s)> | <optional> |
 
 ## 7. Constraints and Policies
 

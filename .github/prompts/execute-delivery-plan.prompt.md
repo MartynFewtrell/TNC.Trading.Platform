@@ -72,20 +72,20 @@ You MUST follow the plan in sequence, and you MUST keep the plan itself up to da
    - Work Item N details checklists (`- [ ] ...`)
 3. If provided, read `requirements.md` and `technical-specification.md` to improve implementation accuracy and traceability.
 4. If provided (or present in the repo), read `./docs/business-requirements.md` to confirm the work item remains aligned to project-level business context and priorities.
-4. Establish a baseline:
+5. Establish a baseline:
    - Run build + tests (per Cross-cutting validation)
    - If failing, fix baseline issues related to the work item scope or stop and report blockers.
-5. For each work item in order:
+6. For each work item in order:
    1) Run build + tests (pre-work item gate)
    2) Execute tasks/steps in checklist order, implementing working code
    3) After completing each checklist entry, update its checkbox to `[x]` in `delivery-plan.md`
    4) Run build + tests (post-work item gate)
-6. If any build/test fails:
+7. If any build/test fails:
    - Stop progressing checkboxes
    - Fix the failure (or revert the breaking change)
    - Re-run build/tests until green
    - Then continue
-7. When all work items are complete:
+8. When all work items are complete:
    - Run full build + tests one final time
    - Ensure all relevant checkboxes are `[x]`
 
