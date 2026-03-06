@@ -28,6 +28,7 @@ The output MUST follow `.github/templates/requirements.template.md`.
 
 ### Optional
 
+- Existing project-level business requirements (paste `./docs/business-requirements.md` contents, or provide the repo path to it).
 - Owner/team name.
 - Any known constraints (timeline, tech, integrations, compliance).
 - Any existing artifacts (issue link, PRD link, diagrams).
@@ -41,6 +42,7 @@ The output MUST follow `.github/templates/requirements.template.md`.
   - `requirements.md` belongs under a dedicated `./docs/00x-work/` folder for the unit of work.
   - The `00x` prefix is zero-padded and monotonically increasing.
   - The work item docs set is `requirements.md`, `technical-specification.md`, `delivery-plan.md` in the same folder.
+- MUST: If `./docs/business-requirements.md` is provided (or exists in the repo), ensure the work package requirements align with it and include a link to it (typically `../business-requirements.md`).
 - MUST: Ask only one question at a time.
 - MUST: For each question, provide numbered suggested answers and include `Other: <free text>`.
 - MUST: Keep a single evolving draft of `requirements.md` visible after each user answer.
@@ -58,14 +60,18 @@ The output MUST follow `.github/templates/requirements.template.md`.
 When the user invokes this prompt, treat their first message as the initial idea. Do not request them to restate it.
 
 1. Create an initial draft `requirements.md` by copying `.github/templates/requirements.template.md`.
-2. Fill what you can from the initial idea and safe defaults.
-3. Identify the first missing/ambiguous field by walking the requirements template from top to bottom.
-4. Ask exactly one clarifying question to resolve that missing/ambiguous field.
-5. After each user answer:
+2. If `./docs/business-requirements.md` is provided (or exists in the repo), read it and use it to:
+   - confirm the work package scope and rationale
+   - seed in-scope/out-of-scope items
+   - avoid conflicting requirements
+3. Fill what you can from the initial idea and safe defaults.
+4. Identify the first missing/ambiguous field by walking the requirements template from top to bottom.
+5. Ask exactly one clarifying question to resolve that missing/ambiguous field.
+6. After each user answer:
    - update the draft
    - infer any additional fields unlocked by the answer
    - ask exactly one next question
-6. Stop asking questions only when every required section is complete and no placeholders remain.
+7. Stop asking questions only when every required section is complete and no placeholders remain.
 
 ### Question flow policy
 

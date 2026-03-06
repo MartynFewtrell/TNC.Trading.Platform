@@ -29,6 +29,7 @@ The output MUST follow `.github/templates/technical-specification.template.md`.
 
 ### Optional
 
+- Project-level business requirements (paste `./docs/business-requirements.md` contents, or provide the repo path to it).
 - Existing architecture diagrams, ADRs, or links.
 - Known constraints (timeline, compliance, performance targets, availability targets).
 - Any existing code locations to integrate with (projects, services, APIs).
@@ -62,23 +63,25 @@ The output MUST follow `.github/templates/technical-specification.template.md`.
 When the user invokes this prompt, treat their first message as the initial idea. Do not request them to restate it.
 
 1. Read `requirements.md` and extract identifiers (`FRx`/`NFx`/`SRx`/etc.), scope, and constraints.
-2. Read `/.github/copilot-instructions.md` and relevant `/.github/instructions/*.instructions.md` to infer:
+2. If `./docs/business-requirements.md` is provided (or exists in the repo), read it to ensure the proposed solution aligns with the project-level business context and high-level `BRx` requirements.
+3. Read `/.github/copilot-instructions.md` and relevant `/.github/instructions/*.instructions.md` to infer:
    - tech stack defaults (language/framework, hosting, local orchestration)
    - authentication approach (local vs Azure)
    - testing strategy expectations
    - any repo-specific constraints
-3. Create an initial draft by copying `.github/templates/technical-specification.template.md`.
-4. Populate the draft using:
+4. Create an initial draft by copying `.github/templates/technical-specification.template.md`.
+5. Populate the draft using:
    - the requirements document
+   - the business requirements document (when available)
    - inferred repo standards
    - safe defaults (for example: `Status: draft`)
-5. Identify the first missing or ambiguous field by walking the technical specification template from top to bottom.
-6. Ask exactly one clarifying question to resolve that missing/ambiguous field.
-7. After each user answer:
+6. Identify the first missing or ambiguous field by walking the technical specification template from top to bottom.
+7. Ask exactly one clarifying question to resolve that missing/ambiguous field.
+8. After each user answer:
    - update the draft
    - infer and fill any additional fields unlocked by the answer
    - ask exactly one next question
-8. Stop asking questions only when every required section is complete and no placeholders remain.
+9. Stop asking questions only when every required section is complete and no placeholders remain.
 
 ### Question flow policy
 
