@@ -19,7 +19,11 @@ These rules apply when adding or updating documentation for a unit of work. They
 
 - You MUST maintain a project-level business requirements document at `./docs/business-requirements.md`.
   - This document defines the business context, desired outcomes, and high-level requirements for the overall initiative.
-  - It is the foundation upon which work packages are defined.
+  - It is the foundation upon which systems analysis and work packages are defined.
+
+- You MUST maintain a project-level systems analysis document at `./docs/systems-analysis.md` before commencing any work packages.
+  - This document refines the business requirements into system boundary/context, use cases, business rules, analysis-level requirements, and quality attributes.
+  - It must remain implementation-agnostic and must not replace per-work-package requirements/specification/plan documents.
 - You MUST create a dedicated folder under `./docs/` for each unit of work, named `00x-work` where `00x` is a zero-padded sequence number (e.g. `001`) and `work` is a brief description of the task (for example: `001-add-order-endpoint`).
 - You MUST include a `requirements.md` in each `./docs/00x-work/` folder.
 - You MUST ensure each work package `requirements.md` aligns with and links to `../business-requirements.md`.
@@ -32,18 +36,21 @@ These rules apply when adding or updating documentation for a unit of work. They
 
 - You SHOULD keep titles, headings, and filenames consistent across work items to make diffs and reviews predictable.
 - You SHOULD keep the `work` portion of the folder name short but descriptive.
+- You SHOULD ensure each work package `requirements.md` references relevant items from `../systems-analysis.md` (for example `UCx`, `SARx`, `NFRx`) where it helps traceability.
 
 ### MUST NOT
 
 - You MUST NOT store requirements/spec/plan for a unit of work outside its `./docs/00x-work/` folder.
 - You MUST NOT combine multiple unrelated units of work into a single `00x-work` folder.
 - You MUST NOT place project-level business requirements inside a `./docs/00x-work/` folder.
+- You MUST NOT place project-level systems analysis inside a `./docs/00x-work/` folder.
 
 ## Output and Validation (optional)
 
-- Expected artifacts: a project-level `./docs/business-requirements.md` plus one or more `./docs/00x-work/` folders containing `requirements.md`, `technical-specification.md`, and `delivery-plan.md`.
+- Expected artifacts: project-level `./docs/business-requirements.md` and `./docs/systems-analysis.md` plus one or more `./docs/00x-work/` folders containing `requirements.md`, `technical-specification.md`, and `delivery-plan.md`.
 - Validate success by confirming that:
   - `./docs/business-requirements.md` exists at the project level.
+  - `./docs/systems-analysis.md` exists at the project level before any new `./docs/00x-work/` packages are created.
   - each `./docs/00x-work/requirements.md` file links to `../business-requirements.md` and aligns with the project-level requirements.
   - each `./docs/00x-work/` folder exists, is correctly numbered/named, and contains the required documents.
 

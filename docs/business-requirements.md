@@ -1,6 +1,6 @@
 # Business Requirements
 
-This document captures the business context and high-level requirements for the Algorithmic Trading Platform project. It describes what should be built and why, and provides the foundation for work packages under `./docs/00x-work/`.
+This document captures the business context and high-level requirements for the Algorithmic Trading Platform project. It describes what should be built and why, and provides the foundation for systems analysis and work packages under `./docs/00x-work/`.
 
 ## 1. Summary
 
@@ -10,6 +10,7 @@ This document captures the business context and high-level requirements for the 
 - **Date**: 2026-03-05
 - **Status**: draft
 - **Outputs**:
+  - `./docs/systems-analysis.md`
   - Work packages under `./docs/00x-work/` with `requirements.md`, `technical-specification.md`, and `delivery-plan.md`
 
 ### 1.1 Links
@@ -17,6 +18,7 @@ This document captures the business context and high-level requirements for the 
 | Document | Path |
 | --- | --- |
 | Business requirements | `./docs/business-requirements.md` |
+| Systems analysis | `./docs/systems-analysis.md` |
 
 ## 2. Context
 
@@ -43,7 +45,7 @@ The platform provides measurable business value by achieving positive net profit
 
 | ID | Measure | Target | How it will be assessed | Notes |
 | --- | --- | --- | --- | --- |
-| SM1 | Net profitability | Positive net profitability each month | Monthly outcome reporting shows net profitability is positive for each month within the 6-month evaluation window. | Evaluation window: 6 months. Net profitability includes realised and unrealised P&L and trading costs (including spread, commissions, and financing where applicable). Source of truth is the platform’s activity ledger reconciled against `IG` account activity. |
+| SM1 | Net profitability | Positive net profitability each month | Monthly outcome reporting shows net profitability is positive for each month within the 6-month evaluation window. | Evaluation window: 6 months. Net profitability includes realised and unrealised P&L and trading costs (including spread, commissions, and financing where applicable). Source of truth is `IG` account activity/statements; the platform’s activity ledger must reconcile against `IG` (reconciliation tolerance up to £0.01 per trade). |
 
 ## 4. Scope
 
@@ -63,6 +65,7 @@ The platform provides measurable business value by achieving positive net profit
 
 - The initial release is not intended for external customers.
 - Manual/discretionary trading workflows or a manual trading user experience.
+- Execute trades in the `IG` live environment (initial release is demo-only for execution).
 
 ## 5. Stakeholders and Users
 
@@ -143,10 +146,15 @@ If you already know likely work packages, outline them here. Keep this section b
 
 ## 10. Open Questions
 
-- What is the intended operating model: strictly intraday (flatten positions end-of-day) or can positions be held overnight?
-- What is the minimum acceptable latency / freshness threshold for market data before trading must pause?
-- What retention period is required for the audit trail and operational logs?
-- What is the authoritative source for profitability reporting (platform ledger, `IG` statements, or both), and what reconciliation tolerance is acceptable?
+### 10.1 Resolved decisions
+
+- Operating model: strictly intraday (flatten positions end-of-day; no overnight positions).
+- Market data freshness tolerance: configurable with a default tolerance of 5 seconds.
+- Audit and operational record retention: 90 days.
+- Profitability reporting: `IG` account activity/statements are authoritative; the platform ledger reconciles to `IG` with tolerance up to £0.01 per trade.
+
+### 10.2 Remaining open questions
+
 - What safeguards are required before enabling live trading (for example explicit opt-in, separate configuration, or additional approvals)?
 
 ## 11. Glossary (optional)
