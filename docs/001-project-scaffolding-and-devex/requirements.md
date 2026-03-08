@@ -6,23 +6,23 @@ This document defines the requirements for work package 001, establishing a base
 
 - **Work item**: 001 Project scaffolding and DevEx
 - **Work folder**: `./docs/001-project-scaffolding-and-devex/`
-- **Business requirements**: `../business-requirements.md`
+- **Business requirements**: [Business requirements](../business-requirements.md)
 - **Owner**: TNC Trading
 - **Date**: 2026-03-08
 - **Status**: draft
 - **Outputs**:
-  - `technical-specification.md`
-  - `delivery-plan.md`
+  - [Technical specification](technical-specification.md)
+  - [Delivery plan](delivery-plan.md)
 
 ### 1.1 Links
 
 | Document | Path |
 | --- | --- |
-| Business requirements | `../business-requirements.md` |
-| Systems analysis | `../systems-analysis.md` |
-| Requirements | `requirements.md` |
-| Technical specification | `technical-specification.md` |
-| Delivery plan | `delivery-plan.md` |
+| Business requirements | [Business requirements](../business-requirements.md) |
+| Systems analysis | [Systems analysis](../systems-analysis.md) |
+| Requirements | [Requirements](requirements.md) |
+| Technical specification | [Technical specification](technical-specification.md) |
+| Delivery plan | [Delivery plan](delivery-plan.md) |
 
 ## 2. Context
 
@@ -115,7 +115,7 @@ Use `OR1`, `OR2`, ... for operational requirements.
 
 | ID  | Requirement | Acceptance criteria | Notes |
 | --- | ----------- | ------------------- | ----- |
-| OR1 | Document how to build, start, and validate the local platform baseline. | (1) Project-level documentation exists at `./docs/local-development.md` that describes prerequisites, build command(s), start command(s), and the health check endpoint(s) to verify the platform is live and ready. (2) The documentation includes where to look for logs and how to interpret basic startup/readiness failures. (3) This work package references that project-level documentation from within `./docs/001-project-scaffolding-and-devex/` so it is discoverable while remaining a single canonical guide for the project. (4) The work package documentation includes a brief quick-start section sufficient to complete the baseline build/start/validate workflow without requiring the reader to navigate outside `./docs/001-project-scaffolding-and-devex/`. | The canonical location is at the `./docs/` level for reuse throughout the project; work packages should reference it and only include minimal quick-start guidance to remain self-contained. |
+| OR1 | Document how to build, start, and validate the local platform baseline. | (1) Documentation exists within `./docs/001-project-scaffolding-and-devex/` that describes prerequisites, build command(s), start command(s), and the health check endpoint(s) to verify the platform is live and ready. (2) Documentation includes where to look for logs and how to interpret basic startup/readiness failures. | Documentation for this work item must be self-contained within the work package folder. |
 
 ## 11. Assumptions, Risks, and Dependencies
 
