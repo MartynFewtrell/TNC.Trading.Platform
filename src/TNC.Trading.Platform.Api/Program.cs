@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Scalar.AspNetCore;
+using Microsoft.AspNetCore.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,7 +32,8 @@ app.MapGet("/", (IHostEnvironment environment) => Results.Ok(new
 {
     service = environment.ApplicationName,
     environment = environment.EnvironmentName
-}));
+}))
+.WithOpenApi();
 
 if (app.Environment.IsDevelopment())
 {
