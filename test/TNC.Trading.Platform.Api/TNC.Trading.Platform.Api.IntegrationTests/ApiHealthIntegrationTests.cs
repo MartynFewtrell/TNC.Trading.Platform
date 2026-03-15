@@ -18,8 +18,8 @@ public class ApiHealthIntegrationTests
 
         using var httpClient = app.CreateHttpClient("api");
 
-        var livenessResponse = await httpClient.GetAsync("/health/live");
-        var readinessResponse = await httpClient.GetAsync("/health/ready");
+        using var livenessResponse = await httpClient.GetAsync("/health/live");
+        using var readinessResponse = await httpClient.GetAsync("/health/ready");
 
         Assert.Equal(HttpStatusCode.OK, livenessResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, readinessResponse.StatusCode);
