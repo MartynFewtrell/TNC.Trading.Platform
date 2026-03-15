@@ -149,8 +149,7 @@ public static class Extensions
             })
             .WithName("HealthReadiness")
             .WithSummary("Readiness health check")
-            .WithDescription("Returns 200 when the service is ready to serve traffic, otherwise 503.")
-            .WithOpenApi();
+            .WithDescription("Returns 200 when the service is ready to serve traffic, otherwise 503.");
 
         app.MapGet(livenessEndpointPath, async (HealthCheckService healthCheckService, CancellationToken cancellationToken) =>
             {
@@ -162,8 +161,7 @@ public static class Extensions
             })
             .WithName("HealthLiveness")
             .WithSummary("Liveness health check")
-            .WithDescription("Returns 200 when the service process is alive, otherwise 503.")
-            .WithOpenApi();
+            .WithDescription("Returns 200 when the service process is alive, otherwise 503.");
 
         return app;
     }
