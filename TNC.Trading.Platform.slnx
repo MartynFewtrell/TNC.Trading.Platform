@@ -1,1 +1,11 @@
-<Solution />
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.csproj" />
+    <Project Path="src/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.csproj" />
+    <Project Path="src/TNC.Trading.Platform.ServiceDefaults/TNC.Trading.Platform.ServiceDefaults.csproj" />
+  </Folder>
+  <Folder Name="/test/" />
+  <Folder Name="/test/TNC.Trading.Platform.Api/">
+    <Project Path="test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.IntegrationTests/TNC.Trading.Platform.Api.IntegrationTests.csproj" />
+  </Folder>
+</Solution>
