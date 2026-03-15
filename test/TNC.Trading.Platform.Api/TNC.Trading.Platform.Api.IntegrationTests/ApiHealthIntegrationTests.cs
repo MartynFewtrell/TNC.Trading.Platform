@@ -14,6 +14,8 @@ public class ApiHealthIntegrationTests
         await using var app = await appHost.BuildAsync();
         await app.StartAsync();
 
+        await app.WaitForResourcesHealthyAsync();
+
         using var httpClient = app.CreateHttpClient("api");
 
         var livenessResponse = await httpClient.GetAsync("/health/live");
