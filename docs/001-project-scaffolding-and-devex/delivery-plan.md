@@ -10,6 +10,7 @@ This document plans how work package 001 will be delivered incrementally based o
   - [Business requirements](../business-requirements.md)
   - [Requirements](requirements.md)
   - [Technical specification](technical-specification.md)
+  - [Local development guide](../local-development.md)
 
 ## Description of work
 
@@ -54,26 +55,26 @@ Before starting any work item, and again before marking a work item as complete,
 
 ### Work Item 1 details
 
-- [ ] Work Item 1: Single PR delivery (scaffold, harness, tests, docs)
-  - [ ] Build and test baseline established
-  - [ ] Task 1: Establish baseline structure and SDK pin
-    - [ ] Step 1: Ensure `src/` exists (create if missing)
-    - [ ] Step 2: Ensure `test/` exists (create if missing)
-    - [ ] Step 3: Add `global.json` targeting the latest .NET LTS SDK (per Microsoft Learn)
-    - [ ] Step 4: Create/update the solution file to include all projects introduced by this work package
-  - [ ] Task 2: Implement local run harness and service defaults
-    - [ ] Step 1: Create the Aspire AppHost project at `src/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.csproj`
-    - [ ] Step 2: Create the minimal HTTP host project at `src/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.csproj`
-    - [ ] Step 3: Create the shared defaults project at `src/TNC.Trading.Platform.ServiceDefaults/TNC.Trading.Platform.ServiceDefaults.csproj` and apply it to the API service
-    - [ ] Step 4: Expose liveness at `/health/live` and readiness at `/health/ready`
-    - [ ] Step 5: Validate local run via the AppHost entry point
-  - [ ] Task 3: Establish baseline tests and documentation
-    - [ ] Step 1: Create baseline test project structure under `test/` per repo test approach (for example `test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.IntegrationTests/`)
-    - [ ] Step 2: Add an Aspire closed-box smoke test that starts the `AppHost` (using `Aspire.Hosting.Testing` and `DistributedApplicationTestingBuilder`) and verifies `/health/live` and `/health/ready`
-    - [ ] Step 3: Expand work package documentation to include prerequisites, build/start commands, health endpoints, log locations, and basic troubleshooting (self-contained)
-    - [ ] Step 4: Ensure this work package contains a brief quick-start that can be followed without leaving this folder
-    - [ ] Step 5: Document local validation steps (build/run/health)
-  - [ ] Build and test validation
+- [x] Work Item 1: Single PR delivery (scaffold, harness, tests, docs)
+  - [x] Build and test baseline established
+  - [x] Task 1: Establish baseline structure and SDK pin
+    - [x] Step 1: Ensure `src/` exists (create if missing)
+    - [x] Step 2: Ensure `test/` exists (create if missing)
+    - [x] Step 3: Add `global.json` targeting the latest .NET LTS SDK (per Microsoft Learn)
+    - [x] Step 4: Create/update the solution file to include all projects introduced by this work package
+  - [x] Task 2: Implement local run harness and service defaults
+    - [x] Step 1: Create the Aspire AppHost project at `src/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.csproj`
+    - [x] Step 2: Create the minimal HTTP host project at `src/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.csproj`
+    - [x] Step 3: Create the shared defaults project at `src/TNC.Trading.Platform.ServiceDefaults/TNC.Trading.Platform.ServiceDefaults.csproj` and apply it to the API service
+    - [x] Step 4: Expose liveness at `/health/live` and readiness at `/health/ready`
+    - [x] Step 5: Validate local run via the AppHost entry point
+  - [x] Task 3: Establish baseline tests and documentation
+    - [x] Step 1: Create baseline test project structure under `test/` per repo test approach (for example `test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.IntegrationTests/`)
+    - [x] Step 2: Add an Aspire closed-box smoke test that starts the `AppHost` (using `Aspire.Hosting.Testing` and `DistributedApplicationTestingBuilder`) and verifies `/health/live` and `/health/ready`
+    - [x] Step 3: Expand work package documentation to include prerequisites, build/start commands, health endpoints, log locations, and basic troubleshooting (self-contained)
+    - [x] Step 4: Ensure this work package contains a brief quick-start that can be followed without leaving this folder
+    - [x] Step 5: Document local validation steps (build/run/health)
+  - [x] Build and test validation
 
   - **Files**:
     - `global.json`: Pin .NET SDK for consistent local builds
@@ -103,12 +104,12 @@ Not applicable for this work package (single work item delivered in one PR).
 
 ## Acceptance checklist
 
-- [ ] Work item aligns with `../business-requirements.md`.
-- [ ] All referenced `FRx` requirements are implemented and validated.
-- [ ] All referenced `NFx` requirements have measurements or checks.
-- [ ] All referenced `SRx` security requirements are implemented and validated.
-- [ ] Docs updated under `./docs/001-project-scaffolding-and-devex/`.
-- [ ] Rollback/backout plan documented for each work item.
+- [x] Work item aligns with `../business-requirements.md`.
+- [x] All referenced `FRx` requirements are implemented and validated.
+- [x] All referenced `NFx` requirements have measurements or checks.
+- [x] All referenced `SRx` security requirements are implemented and validated.
+- [x] Docs updated under `./docs/001-project-scaffolding-and-devex/`.
+- [x] Rollback/backout plan documented for each work item.
 
 ## Notes
 
@@ -118,6 +119,8 @@ Not applicable for this work package (single work item delivered in one PR).
 ## Quick start
 
 This quick start is provided to satisfy `OR1` (work-package-local guidance).
+
+Project-wide reusable guidance is also available in [Local development guide](../local-development.md).
 
 ### Prerequisites
 

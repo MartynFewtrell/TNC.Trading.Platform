@@ -24,6 +24,7 @@ Applies to: `**/*`
 - For Azure authentication, use Microsoft Entra ID.
 - Ensure authentication guidance and implementations are compatible with OIDC, OAuth 2.0, and SAML 2.0.
 - Use the functional test naming convention: `<001>_<FR1>_point_of_test`, where `001` is the work package number (from the subfolder) and `FR1/FR2/...` comes from the requirements document.
+- Use descriptive test file names that match the contained test class; avoid generic names like UnitTest1.cs.
 - Project-wide developer run documentation (e.g., how to build/start/validate locally) should live at the top level under `docs/` for reuse across work packages, with work packages referencing it as needed.
 
 ### SHOULD
