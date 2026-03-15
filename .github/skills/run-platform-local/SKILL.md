@@ -11,17 +11,17 @@ Use this skill when you need to start the local distributed app for this reposit
 
 ## Repository context
 
-- Workspace root: `D:\Repos\TNC.Trading\TNC.Trading.Platform`
+- Workspace root: repository root (the folder containing this repository)
 - AppHost path: `src/TNC.Trading.Platform.AppHost`
 - Start command: `aspire run`
-- Login URL: `https://localhost:17257/login?t=0fb968b2ad34efa0316270ec954d2a36`
+- Login URL: application login page (for example `/login`) on the frontend exposed by Aspire; obtain the full URL from the Aspire dashboard or `aspire run` console output.
 
 ## Steps
 
 1. Change to `src/TNC.Trading.Platform.AppHost` from the repository root.
 2. Start the app using `aspire run`.
-3. Wait until startup begins or the endpoint is reachable.
-4. Open the default browser to `https://localhost:17257/login?t=0fb968b2ad34efa0316270ec954d2a36`.
+3. Wait until Aspire reports that the application is running and the frontend endpoint is reachable (via the Aspire dashboard or console output).
+4. Open the default browser to the frontend URL reported by Aspire and navigate to the `/login` page.
 5. Keep Aspire running unless the user asks to stop it.
 
 ## Commands
@@ -29,7 +29,10 @@ Use this skill when you need to start the local distributed app for this reposit
 ```powershell
 Set-Location src/TNC.Trading.Platform.AppHost
 aspire run
-Start-Process "https://localhost:17257/login?t=0fb968b2ad34efa0316270ec954d2a36"
+# After Aspire starts, note the frontend URL from the Aspire dashboard or console output,
+# then open the login page in the default browser, for example:
+# $frontendUrl = "<frontend-url-from-aspire>"
+# Start-Process "$frontendUrl/login"
 ```
 
 ## Output expectations
