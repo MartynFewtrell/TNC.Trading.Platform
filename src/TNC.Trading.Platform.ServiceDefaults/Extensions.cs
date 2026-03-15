@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.OpenApi;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
@@ -59,6 +60,9 @@ public static class Extensions
     /// <returns>The original builder for fluent chaining.</returns>
     public static TBuilder ConfigureOpenTelemetry<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
     {
+        var readinessEndpointPath = GetReadinessEndpointPath(builder.Configuration);
+        var livenessEndpointPath = GetLivenessEndpointPath(builder.Configuration);
+
         builder.Logging.AddOpenTelemetry(logging =>
         {
             logging.IncludeFormattedMessage = true;
@@ -78,8 +82,8 @@ public static class Extensions
                     .AddAspNetCoreInstrumentation(tracing =>
                         // Exclude health check requests from tracing
                         tracing.Filter = context =>
-                            !context.Request.Path.StartsWithSegments(DefaultReadinessEndpointPath)
-                            && !context.Request.Path.StartsWithSegments(DefaultLivenessEndpointPath)
+                            !context.Request.Path.StartsWithSegments(readinessEndpointPath)
+                            && !context.Request.Path.StartsWithSegments(livenessEndpointPath)
                     )
                     // Uncomment the following line to enable gRPC instrumentation (requires the OpenTelemetry.Instrumentation.GrpcNetClient package)
                     //.AddGrpcClientInstrumentation()
@@ -132,8 +136,8 @@ public static class Extensions
     /// <returns>The original web application for fluent chaining.</returns>
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
-        var readinessEndpointPath = app.Configuration["Health:Path:Readiness"] ?? DefaultReadinessEndpointPath;
-        var livenessEndpointPath = app.Configuration["Health:Path:Liveness"] ?? DefaultLivenessEndpointPath;
+        var readinessEndpointPath = GetReadinessEndpointPath(app.Configuration);
+        var livenessEndpointPath = GetLivenessEndpointPath(app.Configuration);
 
         app.MapGet(readinessEndpointPath, async (HealthCheckService healthCheckService, CancellationToken cancellationToken) =>
             {
@@ -169,4 +173,10 @@ public static class Extensions
 
         return app;
     }
+
+    private static string GetReadinessEndpointPath(IConfiguration configuration) =>
+        configuration["Health:Path:Readiness"] ?? DefaultReadinessEndpointPath;
+
+    private static string GetLivenessEndpointPath(IConfiguration configuration) =>
+        configuration["Health:Path:Liveness"] ?? DefaultLivenessEndpointPath;
 }
