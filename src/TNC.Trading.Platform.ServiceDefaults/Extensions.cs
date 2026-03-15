@@ -1,3 +1,4 @@
+using System;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -168,8 +169,21 @@ public static class Extensions
     }
 
     private static string GetReadinessEndpointPath(IConfiguration configuration) =>
-        configuration["Health:Path:Readiness"] ?? DefaultReadinessEndpointPath;
+        NormalizeHealthEndpointPath(configuration["Health:Path:Readiness"], DefaultReadinessEndpointPath);
 
     private static string GetLivenessEndpointPath(IConfiguration configuration) =>
-        configuration["Health:Path:Liveness"] ?? DefaultLivenessEndpointPath;
+        NormalizeHealthEndpointPath(configuration["Health:Path:Liveness"], DefaultLivenessEndpointPath);
+
+    private static string NormalizeHealthEndpointPath(string? configuredPath, string defaultPath)
+    {
+        var path = string.IsNullOrWhiteSpace(configuredPath) ? defaultPath : configuredPath;
+
+        if (path.StartsWith("/", StringComparison.Ordinal))
+        {
+            return path;
+        }
+
+        // Ensure exactly one leading slash while preserving the rest of the path.
+        return "/" + path.TrimStart('/');
+    }
 }
