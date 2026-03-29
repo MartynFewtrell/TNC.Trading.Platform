@@ -27,11 +27,12 @@ Applies to: `**/*`
 - Use descriptive test file names that match the contained test class; avoid generic names like UnitTest1.cs.
 - Project-wide developer run documentation (e.g., how to build/start/validate locally) should live at the top level under `docs/` for reuse across work packages, with work packages referencing it as needed.
 - Implement requested Copilot artifacts as Agent Skills (in `.github/skills` with `SKILL.md`), not as `.prompt.md` files.
+- Requirements documents should remain implementation-agnostic and refer to a data store for configuration rather than naming SQL Server directly.
 
 ### SHOULD
 
 - Prefer C# with the latest .NET LTS, Minimal APIs for HTTP services, and Blazor for front ends when applicable.
-- Prefer SQL Server for persistence when a relational database is required.
+- Prefer a data store for configuration rather than naming SQL Server directly when a relational database is required.
 - Prefer .NET Aspire for local desktop/distributed development orchestration.
 - Prefer Azure Container Apps for deployments when containerized hosting is appropriate.
 - Prefer scalable service-based architecture with messaging when the problem domain benefits from it.
