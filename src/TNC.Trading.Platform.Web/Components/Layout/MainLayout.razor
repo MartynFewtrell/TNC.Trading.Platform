@@ -1,0 +1,13 @@
+@inherits LayoutComponentBase
+
+<div class="shell">
+    <nav class="sidebar">
+        <div class="brand">TNC Trading Platform</div>
+        <NavLink href="/status" Match="NavLinkMatch.All">Status</NavLink>
+        <NavLink href="/configuration">Configuration</NavLink>
+    </nav>
+
+    <main class="content">
+        @Body
+    </main>
+</div>

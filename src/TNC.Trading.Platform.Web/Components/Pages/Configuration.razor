@@ -1,0 +1,324 @@
+@page "/configuration"
+@inject PlatformApiClient PlatformApiClient
+
+<PageTitle>Platform configuration</PageTitle>
+
+<h1>Platform configuration</h1>
+
+@if (!string.IsNullOrWhiteSpace(loadError))
+{
+    <p class="error">@loadError</p>
+}
+else if (form is null)
+{
+    <p>Loading platform configuration...</p>
+}
+else
+{
+    <EditForm Model="form" OnValidSubmit="SaveAsync">
+        <div class="panel-grid">
+            <section class="panel">
+                <h2>Environments</h2>
+                <label>
+                    Platform environment
+                    <InputSelect @bind-Value="form.PlatformEnvironment">
+                        <option value="Test">Test</option>
+                        <option value="Live">Live</option>
+                    </InputSelect>
+                </label>
+                <label>
+                    Broker environment
+                    <InputSelect @bind-Value="form.BrokerEnvironment">
+                        <option value="Demo">Demo</option>
+                        <option value="Live">Live</option>
+                    </InputSelect>
+                </label>
+                <p class="hint">Startup-fixed changes apply on the next platform start.</p>
+            </section>
+
+            <section class="panel">
+                <h2>Trading schedule</h2>
+                <label>
+                    Start of day
+                    <InputText @bind-Value="form.StartOfDayText" type="time" />
+                </label>
+                <label>
+                    End of day
+                    <InputText @bind-Value="form.EndOfDayText" type="time" />
+                </label>
+                <label>
+                    Trading days (comma separated)
+                    <InputText @bind-Value="form.TradingDaysCsv" />
+                </label>
+                <label>
+                    Weekend behavior
+                    <InputSelect @bind-Value="form.TradingSchedule.WeekendBehavior">
+                        <option value="ExcludeWeekends">ExcludeWeekends</option>
+                        <option value="IncludeSaturday">IncludeSaturday</option>
+                        <option value="IncludeSunday">IncludeSunday</option>
+                        <option value="IncludeFullWeekend">IncludeFullWeekend</option>
+                    </InputSelect>
+                </label>
+                <label>
+                    Bank holidays (comma separated yyyy-MM-dd)
+                    <InputText @bind-Value="form.BankHolidayCsv" />
+                </label>
+                <label>
+                    Time zone
+                    <InputText @bind-Value="form.TradingSchedule.TimeZone" />
+                </label>
+            </section>
+
+            <section class="panel">
+                <h2>Retry policy</h2>
+                <label>
+                    Initial delay seconds
+                    <InputNumber @bind-Value="form.RetryPolicy.InitialDelaySeconds" />
+                </label>
+                <label>
+                    Max automatic retries
+                    <InputNumber @bind-Value="form.RetryPolicy.MaxAutomaticRetries" />
+                </label>
+                <label>
+                    Multiplier
+                    <InputNumber @bind-Value="form.RetryPolicy.Multiplier" />
+                </label>
+                <label>
+                    Max delay seconds
+                    <InputNumber @bind-Value="form.RetryPolicy.MaxDelaySeconds" />
+                </label>
+                <label>
+                    Periodic delay minutes
+                    <InputNumber @bind-Value="form.RetryPolicy.PeriodicDelayMinutes" />
+                </label>
+            </section>
+
+            <section class="panel">
+                <h2>Notifications</h2>
+                <label>
+                    Provider
+                    <InputText @bind-Value="form.NotificationSettings.Provider" />
+                </label>
+                <label>
+                    Email recipient
+                    <InputText @bind-Value="form.NotificationSettings.EmailTo" />
+                </label>
+            </section>
+
+            <section class="panel">
+                <h2>IG credentials</h2>
+                <p class="hint">Stored values are never shown. Enter a field only when you want to replace it.</p>
+                <p>Stored API key: @(form.Credentials.HasApiKey ? "Present" : "Missing")</p>
+                <p>Stored identifier: @(form.Credentials.HasIdentifier ? "Present" : "Missing")</p>
+                <p>Stored password: @(form.Credentials.HasPassword ? "Present" : "Missing")</p>
+                <label>
+                    New API key
+                    <InputText @bind-Value="form.CredentialsUpdate.ApiKey" />
+                </label>
+                <label>
+                    New identifier
+                    <InputText @bind-Value="form.CredentialsUpdate.Identifier" />
+                </label>
+                <label>
+                    New password
+                    <InputText @bind-Value="form.CredentialsUpdate.Password" type="password" />
+                </label>
+                <label>
+                    Changed by
+                    <InputText @bind-Value="form.ChangedBy" />
+                </label>
+            </section>
+        </div>
+
+        <button type="submit" disabled="@saveInProgress">@(saveInProgress ? "Saving..." : "Save configuration")</button>
+    </EditForm>
+
+    @if (!string.IsNullOrWhiteSpace(saveMessage))
+    {
+        <p>@saveMessage</p>
+    }
+}
+
+@code {
+    private ConfigurationFormModel? form;
+    private bool saveInProgress;
+    private string? loadError;
+    private string? saveMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loadError = null;
+
+        try
+        {
+            var configuration = await PlatformApiClient.GetConfigurationAsync(CancellationToken.None);
+            form = ConfigurationFormModel.From(configuration);
+        }
+        catch (HttpRequestException exception)
+        {
+            loadError = $"Unable to load platform configuration: {exception.Message}";
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (form is null)
+        {
+            return;
+        }
+
+        saveInProgress = true;
+        saveMessage = null;
+
+        try
+        {
+            var updated = await PlatformApiClient.UpdateConfigurationAsync(form.ToRequest(), CancellationToken.None);
+            form = ConfigurationFormModel.From(updated);
+            saveMessage = updated.RestartRequired
+                ? "Configuration saved. Startup-fixed changes apply on the next platform start."
+                : "Configuration saved.";
+        }
+        catch (Exception exception) when (exception is FormatException or HttpRequestException)
+        {
+            saveMessage = $"Configuration save failed: {exception.Message}";
+        }
+        finally
+        {
+            saveInProgress = false;
+        }
+    }
+
+    private sealed class ConfigurationFormModel
+    {
+        public string PlatformEnvironment { get; set; } = string.Empty;
+
+        public string BrokerEnvironment { get; set; } = string.Empty;
+
+        public UpdateTradingScheduleViewModel TradingSchedule { get; set; } = new()
+        {
+            StartOfDay = new TimeOnly(8, 0),
+            EndOfDay = new TimeOnly(16, 30),
+            WeekendBehavior = "ExcludeWeekends",
+            TimeZone = "UTC"
+        };
+
+        public string StartOfDayText { get; set; } = "08:00";
+
+        public string EndOfDayText { get; set; } = "16:30";
+
+        public string TradingDaysCsv { get; set; } = "Monday,Tuesday,Wednesday,Thursday,Friday";
+
+        public string BankHolidayCsv { get; set; } = string.Empty;
+
+        public UpdateRetryPolicyViewModel RetryPolicy { get; set; } = new()
+        {
+            InitialDelaySeconds = 1,
+            MaxAutomaticRetries = 5,
+            Multiplier = 2,
+            MaxDelaySeconds = 60,
+            PeriodicDelayMinutes = 5
+        };
+
+        public UpdateNotificationSettingsViewModel NotificationSettings { get; set; } = new()
+        {
+            Provider = "RecordedOnly"
+        };
+
+        public CredentialPresenceViewModel Credentials { get; set; } = new(false, false, false);
+
+        public UpdateCredentialsViewModel CredentialsUpdate { get; set; } = new();
+
+        public string ChangedBy { get; set; } = "operator";
+
+        public static ConfigurationFormModel From(PlatformConfigurationViewModel configuration) => new()
+        {
+            PlatformEnvironment = configuration.PlatformEnvironment,
+            BrokerEnvironment = configuration.BrokerEnvironment,
+            TradingSchedule = new UpdateTradingScheduleViewModel
+            {
+                StartOfDay = configuration.TradingSchedule.StartOfDay,
+                EndOfDay = configuration.TradingSchedule.EndOfDay,
+                TradingDays = configuration.TradingSchedule.TradingDays,
+                WeekendBehavior = configuration.TradingSchedule.WeekendBehavior,
+                BankHolidayExclusions = configuration.TradingSchedule.BankHolidayExclusions,
+                TimeZone = configuration.TradingSchedule.TimeZone
+            },
+            StartOfDayText = configuration.TradingSchedule.StartOfDay.ToString("HH:mm"),
+            EndOfDayText = configuration.TradingSchedule.EndOfDay.ToString("HH:mm"),
+            TradingDaysCsv = string.Join(',', configuration.TradingSchedule.TradingDays),
+            BankHolidayCsv = string.Join(',', configuration.TradingSchedule.BankHolidayExclusions.Select(item => item.ToString("yyyy-MM-dd"))),
+            RetryPolicy = new UpdateRetryPolicyViewModel
+            {
+                InitialDelaySeconds = configuration.RetryPolicy.InitialDelaySeconds,
+                MaxAutomaticRetries = configuration.RetryPolicy.MaxAutomaticRetries,
+                Multiplier = configuration.RetryPolicy.Multiplier,
+                MaxDelaySeconds = configuration.RetryPolicy.MaxDelaySeconds,
+                PeriodicDelayMinutes = configuration.RetryPolicy.PeriodicDelayMinutes
+            },
+            NotificationSettings = new UpdateNotificationSettingsViewModel
+            {
+                Provider = configuration.NotificationSettings.Provider,
+                EmailTo = configuration.NotificationSettings.EmailTo
+            },
+            Credentials = configuration.Credentials,
+            CredentialsUpdate = new UpdateCredentialsViewModel()
+        };
+
+        public UpdatePlatformConfigurationViewModel ToRequest() => new()
+        {
+            PlatformEnvironment = PlatformEnvironment,
+            BrokerEnvironment = BrokerEnvironment,
+            TradingSchedule = new UpdateTradingScheduleViewModel
+            {
+                StartOfDay = TimeOnly.Parse(StartOfDayText),
+                EndOfDay = TimeOnly.Parse(EndOfDayText),
+                TradingDays = ParseTradingDays(TradingDaysCsv),
+                WeekendBehavior = TradingSchedule.WeekendBehavior,
+                BankHolidayExclusions = ParseBankHolidays(BankHolidayCsv),
+                TimeZone = TradingSchedule.TimeZone
+            },
+            RetryPolicy = new UpdateRetryPolicyViewModel
+            {
+                InitialDelaySeconds = RetryPolicy.InitialDelaySeconds,
+                MaxAutomaticRetries = RetryPolicy.MaxAutomaticRetries,
+                Multiplier = RetryPolicy.Multiplier,
+                MaxDelaySeconds = RetryPolicy.MaxDelaySeconds,
+                PeriodicDelayMinutes = RetryPolicy.PeriodicDelayMinutes
+            },
+            NotificationSettings = new UpdateNotificationSettingsViewModel
+            {
+                Provider = NotificationSettings.Provider,
+                EmailTo = NotificationSettings.EmailTo
+            },
+            Credentials = new UpdateCredentialsViewModel
+            {
+                ApiKey = CredentialsUpdate.ApiKey,
+                Identifier = CredentialsUpdate.Identifier,
+                Password = CredentialsUpdate.Password
+            },
+            ChangedBy = ChangedBy
+        };
+
+        private static IReadOnlyList<DayOfWeek> ParseTradingDays(string value) =>
+            value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(item => Enum.Parse<DayOfWeek>(item, ignoreCase: true))
+                .ToArray();
+
+        private static IReadOnlyList<DateOnly> ParseBankHolidays(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return [];
+            }
+
+            return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(DateOnly.Parse)
+                .ToArray();
+        }
+    }
+}

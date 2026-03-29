@@ -1,0 +1,89 @@
+html, body {
+    font-family: Arial, Helvetica, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: #f5f7fb;
+    color: #1d2433;
+}
+
+.shell {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    min-height: 100vh;
+}
+
+.sidebar {
+    background: #1d2433;
+    color: #fff;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.sidebar a {
+    color: #d8e4ff;
+    text-decoration: none;
+}
+
+.sidebar a.active {
+    font-weight: 700;
+    color: #fff;
+}
+
+.brand {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+}
+
+.content {
+    padding: 1.5rem;
+}
+
+.panel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+}
+
+.panel {
+    background: #fff;
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+    margin-bottom: 1rem;
+}
+
+label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 0.75rem;
+}
+
+input, select, button {
+    font: inherit;
+    padding: 0.5rem;
+}
+
+button {
+    cursor: pointer;
+}
+
+.error {
+    color: #a61b1b;
+}
+
+.warning {
+    color: #8a5a00;
+}
+
+.hint {
+    color: #5a6478;
+}
+
+th, td {
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+}

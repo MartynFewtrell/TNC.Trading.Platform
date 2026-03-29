@@ -49,47 +49,47 @@ Before starting *any* work item, and again before marking a work item as complet
 ### Work Item 1 details
 
 - [ ] Work Item 1: End-to-end environment and auth foundation
-  - [ ] Build and test baseline established
-  - [ ] Task 1: Implement SQL-backed configuration management, environment selection, and live-use guardrails
-    - [ ] Step 1: Add SQL-backed platform, broker, retry, notification, and protected credential configuration models
-    - [ ] Step 2: Add startup loading and validation for explicit broker-environment selection from SQL Server
-    - [ ] Step 3: Add trading-schedule configuration for start-of-day, end-of-day, permitted trading days, weekend treatment, and bank-holiday exclusions
-    - [ ] Step 4: Add secure `IG` credential storage and write-only update handling
-    - [ ] Step 5: Add Test-platform live-option visibility and active-use blocking
-    - [ ] Step 6: Add status fields for platform environment, broker environment, trading-schedule state, and live-option availability
-  - [ ] Task 2: Implement durable auth/session state and redacted operational records
-    - [ ] Step 1: Add SQL-backed persistence for configuration, current auth state, retry cycles, operational events, configuration-audit records, and notification records
-    - [ ] Step 2: Add IG demo authentication contracts and response sanitization
-    - [ ] Step 3: Persist auth success, failure, degraded startup, retry activity, retry exhaustion, manual retry, expiry, recovery, trading-schedule transition, and blocked-live events with environment context
-    - [ ] Step 4: Persist configuration change audit records without exposing secrets
-    - [ ] Step 5: Ensure logs, records, notifications, API responses, and UI views never expose secrets
-  - [ ] Task 3: Implement session supervision, degraded startup, and retry-cycle behavior
-    - [ ] Step 1: Add trading-schedule gate and hosted session supervisor for startup auth and session-validity checks
-    - [ ] Step 2: Add scheduled connect and disconnect behavior around trading periods, non-trading weekends, and configured bank holidays
-    - [ ] Step 3: Add initial exponential retry behavior and transition to periodic retry during active trading periods
-    - [ ] Step 4: Add retry-cycle state tracking, retry attempt number, retry phase, next scheduled retry time, and out-of-schedule state
-    - [ ] Step 5: Add manual retry after retry exhaustion and automatic retry-budget reset after failed manual retry during the configured trading schedule
-  - [ ] Task 4: Implement operator API and Blazor UI behavior
-    - [ ] Step 1: Add `GET /api/platform/status`
-    - [ ] Step 2: Add `GET /api/platform/configuration`
-    - [ ] Step 3: Add `PUT /api/platform/configuration`
-    - [ ] Step 4: Add `POST /api/platform/auth/manual-retry`
-    - [ ] Step 5: Add `GET /api/platform/events?category=auth&environment=demo`
-    - [ ] Step 6: Add Blazor status page, configuration page, trading-schedule visibility, degraded-state messaging, retry progress, blocked reasons, and manual-retry interaction
-    - [ ] Step 7: Keep non-auth-dependent UI available while visibly blocking auth-dependent actions
-  - [ ] Task 5: Implement notification delivery and AppHost orchestration
-    - [ ] Step 1: Add notification dispatcher and provider abstraction
-    - [ ] Step 2: Add Azure Communication Services Email provider mapping for production-oriented notification delivery
-    - [ ] Step 3: Add local Mailpit Aspire integration for desktop notification validation
-    - [ ] Step 4: Add failure, retry-limit, recovery, blocked-live, and new failure-cycle notification flows
-    - [ ] Step 5: Extend AppHost for API, Blazor UI, SQL Server, Mailpit, and bootstrap configuration wiring
-    - [ ] Step 6: Add retention handling for 90-day operational records
+  - [x] Build and test baseline established
+  - [x] Task 1: Implement SQL-backed configuration management, environment selection, and live-use guardrails
+    - [x] Step 1: Add SQL-backed platform, broker, retry, notification, and protected credential configuration models
+    - [x] Step 2: Add startup loading and validation for explicit broker-environment selection from SQL Server
+    - [x] Step 3: Add trading-schedule configuration for start-of-day, end-of-day, permitted trading days, weekend treatment, and bank-holiday exclusions
+    - [x] Step 4: Add secure `IG` credential storage and write-only update handling
+    - [x] Step 5: Add Test-platform live-option visibility and active-use blocking
+    - [x] Step 6: Add status fields for platform environment, broker environment, trading-schedule state, and live-option availability
+  - [x] Task 2: Implement durable auth/session state and redacted operational records
+    - [x] Step 1: Add SQL-backed persistence for configuration, current auth state, retry cycles, operational events, configuration-audit records, and notification records
+    - [x] Step 2: Add IG demo authentication contracts and response sanitization
+    - [x] Step 3: Persist auth success, failure, degraded startup, retry activity, retry exhaustion, manual retry, expiry, recovery, trading-schedule transition, and blocked-live events with environment context
+    - [x] Step 4: Persist configuration change audit records without exposing secrets
+    - [x] Step 5: Ensure logs, records, notifications, API responses, and UI views never expose secrets
+  - [x] Task 3: Implement session supervision, degraded startup, and retry-cycle behavior
+    - [x] Step 1: Add trading-schedule gate and hosted session supervisor for startup auth and session-validity checks
+    - [x] Step 2: Add scheduled connect and disconnect behavior around trading periods, non-trading weekends, and configured bank holidays
+    - [x] Step 3: Add initial exponential retry behavior and transition to periodic retry during active trading periods
+    - [x] Step 4: Add retry-cycle state tracking, retry attempt number, retry phase, next scheduled retry time, and out-of-schedule state
+    - [x] Step 5: Add manual retry after retry exhaustion and automatic retry-budget reset after failed manual retry during the configured trading schedule
+  - [x] Task 4: Implement operator API and Blazor UI behavior
+    - [x] Step 1: Add `GET /api/platform/status`
+    - [x] Step 2: Add `GET /api/platform/configuration`
+    - [x] Step 3: Add `PUT /api/platform/configuration`
+    - [x] Step 4: Add `POST /api/platform/auth/manual-retry`
+    - [x] Step 5: Add `GET /api/platform/events?category=auth&environment=demo`
+    - [x] Step 6: Add Blazor status page, configuration page, trading-schedule visibility, degraded-state messaging, retry progress, blocked reasons, and manual-retry interaction
+    - [x] Step 7: Keep non-auth-dependent UI available while visibly blocking auth-dependent actions
+  - [x] Task 5: Implement notification delivery and AppHost orchestration
+    - [x] Step 1: Add notification dispatcher and provider abstraction
+    - [x] Step 2: Add Azure Communication Services Email provider mapping for production-oriented notification delivery
+    - [x] Step 3: Add local Mailpit Aspire integration for desktop notification validation
+    - [x] Step 4: Add failure, retry-limit, recovery, blocked-live, and new failure-cycle notification flows
+    - [x] Step 5: Extend AppHost for API, Blazor UI, SQL Server, Mailpit, and bootstrap configuration wiring
+    - [x] Step 6: Add retention handling for 90-day operational records
   - [ ] Task 6: Add requirement-driven validation coverage
-    - [ ] Step 1: Add unit tests for validators, configuration rules, trading-schedule gating, retry timing, retry cycles, redaction, protected credential handling, and notification mapping
-    - [ ] Step 2: Add integration tests for configuration load/update behavior, trading-schedule enforcement, auth success/failure, degraded startup, retry transitions, manual retry, persistence, and notification dispatch behavior
-    - [ ] Step 3: Add functional tests under `test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.FunctionalTests/002-environment-and-auth-foundation`
-    - [ ] Step 4: Add minimal E2E coverage for API and UI working together under Aspire, including configuration editing and trading-schedule enforcement
-    - [ ] Step 5: Confirm functional test names follow `002_FRx_point_of_test`
+    - [x] Step 1: Add unit tests for validators, configuration rules, trading-schedule gating, retry timing, retry cycles, redaction, protected credential handling, and notification mapping
+    - [x] Step 2: Add integration tests for configuration load/update behavior, trading-schedule enforcement, auth success/failure, degraded startup, retry transitions, manual retry, persistence, and notification dispatch behavior
+    - [x] Step 3: Add functional tests under `test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.FunctionalTests/002-environment-and-auth-foundation`
+    - [x] Step 4: Add minimal E2E coverage for API and UI working together under Aspire, including configuration editing and trading-schedule enforcement
+    - [x] Step 5: Confirm functional test names follow `002_FRx_point_of_test`
     - [ ] Step 6: Confirm local notification validation can be observed in Mailpit
     - [ ] Step 7: Run one manual end-to-end verification through the full Aspire AppHost stack before PR completion
   - [ ] Build and test validation

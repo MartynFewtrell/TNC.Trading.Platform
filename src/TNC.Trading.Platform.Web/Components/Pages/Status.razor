@@ -1,0 +1,159 @@
+@page "/"
+@page "/status"
+@inject PlatformApiClient PlatformApiClient
+
+<PageTitle>Platform status</PageTitle>
+
+<h1>Platform status</h1>
+
+@if (!string.IsNullOrWhiteSpace(loadError))
+{
+    <p class="error">@loadError</p>
+}
+else if (status is null || events is null)
+{
+    <p>Loading platform status...</p>
+}
+else
+{
+    <section class="panel">
+        <h2>Environment</h2>
+        <dl>
+            <dt>Platform environment</dt>
+            <dd>@status.PlatformEnvironment</dd>
+            <dt>Broker environment</dt>
+            <dd>@status.BrokerEnvironment</dd>
+            <dt>Live option availability</dt>
+            <dd>@(status.LiveOptionAvailable ? "Available" : "Visible but blocked")</dd>
+        </dl>
+    </section>
+
+    <section class="panel">
+        <h2>Trading schedule</h2>
+        <dl>
+            <dt>Schedule state</dt>
+            <dd>@(status.TradingScheduleState.IsActive ? "Active" : "Inactive")</dd>
+            <dt>Reason</dt>
+            <dd>@status.TradingScheduleState.Reason</dd>
+            <dt>Daily window</dt>
+            <dd>@status.TradingSchedule.StartOfDay - @status.TradingSchedule.EndOfDay (@status.TradingSchedule.TimeZone)</dd>
+            <dt>Trading days</dt>
+            <dd>@string.Join(", ", status.TradingSchedule.TradingDays)</dd>
+            <dt>Weekend behavior</dt>
+            <dd>@status.TradingSchedule.WeekendBehavior</dd>
+            <dt>Bank holidays</dt>
+            <dd>@(status.TradingSchedule.BankHolidayExclusions.Count == 0 ? "None configured" : string.Join(", ", status.TradingSchedule.BankHolidayExclusions))</dd>
+        </dl>
+    </section>
+
+    <section class="panel">
+        <h2>Auth state</h2>
+        <dl>
+            <dt>Session status</dt>
+            <dd>@status.AuthState.SessionStatus</dd>
+            <dt>Degraded</dt>
+            <dd>@(status.AuthState.IsDegraded ? "Yes" : "No")</dd>
+            <dt>Blocked reason</dt>
+            <dd>@(status.AuthState.BlockedReason ?? "None")</dd>
+            <dt>Retry phase</dt>
+            <dd>@status.RetryState.Phase</dd>
+            <dt>Automatic attempt number</dt>
+            <dd>@status.RetryState.AutomaticAttemptNumber</dd>
+            <dt>Next retry</dt>
+            <dd>@(status.RetryState.NextRetryAtUtc?.ToLocalTime().ToString("u") ?? "Not scheduled")</dd>
+        </dl>
+
+        @if (status.AuthState.IsDegraded)
+        {
+            <p class="warning">Auth-dependent actions are blocked until the platform can restore an IG demo session.</p>
+        }
+
+        <button @onclick="TriggerManualRetryAsync" disabled="@(!status.RetryState.ManualRetryAvailable || manualRetryInProgress)">
+            @(manualRetryInProgress ? "Retrying..." : "Trigger manual retry")
+        </button>
+
+        @if (!string.IsNullOrWhiteSpace(manualRetryMessage))
+        {
+            <p>@manualRetryMessage</p>
+        }
+    </section>
+
+    <section class="panel">
+        <h2>Recent auth events</h2>
+        @if (events.Events.Count == 0)
+        {
+            <p>No auth events recorded.</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Type</th>
+                        <th>Summary</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var platformEvent in events.Events.Take(10))
+                {
+                    <tr>
+                        <td>@platformEvent.OccurredAtUtc.ToLocalTime().ToString("u")</td>
+                        <td>@platformEvent.EventType</td>
+                        <td>@platformEvent.Summary</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
+}
+
+@code {
+    private PlatformStatusViewModel? status;
+    private PlatformEventsViewModel? events;
+    private bool manualRetryInProgress;
+    private string? loadError;
+    private string? manualRetryMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loadError = null;
+
+        try
+        {
+            status = await PlatformApiClient.GetStatusAsync(CancellationToken.None);
+            events = await PlatformApiClient.GetAuthEventsAsync(CancellationToken.None);
+        }
+        catch (HttpRequestException exception)
+        {
+            loadError = $"Unable to load platform status: {exception.Message}";
+        }
+    }
+
+    private async Task TriggerManualRetryAsync()
+    {
+        manualRetryInProgress = true;
+        manualRetryMessage = null;
+
+        try
+        {
+            var retry = await PlatformApiClient.TriggerManualRetryAsync(CancellationToken.None);
+            manualRetryMessage = $"Manual retry started with cycle id {retry.RetryCycleId}.";
+        }
+        catch (HttpRequestException exception)
+        {
+            manualRetryMessage = $"Manual retry could not be started: {exception.Message}";
+        }
+        finally
+        {
+            manualRetryInProgress = false;
+            await LoadAsync();
+        }
+    }
+}
