@@ -1,4 +1,4 @@
-using TNC.Trading.Platform.Api.Configuration;
+using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Api.Infrastructure.Platform;
 
 namespace TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration;

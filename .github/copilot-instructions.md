@@ -1,5 +1,5 @@
 ---
-description: 'Defines repo-wide Copilot guidance for technology choices, references, authentication, and test naming so contributions stay consistent with the team’s .NET standards.'
+description: 'Defines repo-wide Copilot guidance for technology choices, minimal API organization, references, authentication, and test naming so contributions stay consistent with the team’s .NET standards.'
 applyTo: '**/*'
 ---
 
@@ -28,6 +28,8 @@ Applies to: `**/*`
 - Project-wide developer run documentation (e.g., how to build/start/validate locally) should live at the top level under `docs/` for reuse across work packages, with work packages referencing it as needed.
 - Implement requested Copilot artifacts as Agent Skills (in `.github/skills` with `SKILL.md`), not as `.prompt.md` files.
 - Requirements documents should remain implementation-agnostic and refer to a data store for configuration rather than naming SQL Server directly.
+- Keep `Program.cs` focused on startup orchestration when using Minimal APIs, and place endpoint mappings in dedicated registration extensions grouped by route or feature area.
+- When creating a delivery plan based on refactoring advice, scope the plan to that refactor objective rather than to existing work-package docs unless explicitly instructed to reuse those docs.
 
 ### SHOULD
 

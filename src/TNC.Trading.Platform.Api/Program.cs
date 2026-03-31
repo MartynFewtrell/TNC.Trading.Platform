@@ -1,15 +1,11 @@
 using System.Diagnostics;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.OpenApi;
 using Scalar.AspNetCore;
-using TNC.Trading.Platform.Api.Features.GetPlatformConfiguration;
-using TNC.Trading.Platform.Api.Features.GetPlatformEvents;
-using TNC.Trading.Platform.Api.Features.GetPlatformStatus;
-using TNC.Trading.Platform.Api.Features.TriggerManualAuthRetry;
+using TNC.Trading.Platform.Api.Features.Platform;
 using TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration;
-using TNC.Trading.Platform.Api.Infrastructure.Notifications;
-using TNC.Trading.Platform.Api.Infrastructure.Persistence;
-using TNC.Trading.Platform.Api.Infrastructure.Platform;
+using TNC.Trading.Platform.Application.Services;
+using TNC.Trading.Platform.Infrastructure.Persistence;
+using TNC.Trading.Platform.Infrastructure.Platform;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,34 +13,9 @@ builder.Services.AddOpenApi();
 builder.AddServiceDefaults();
 builder.Services.AddDataProtection();
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddDbContext<PlatformDbContext>(options =>
-{
-    var connectionString = builder.Configuration.GetConnectionString("platformdb");
-    if (string.IsNullOrWhiteSpace(connectionString))
-    {
-        options.UseInMemoryDatabase("tnc-trading-platform");
-        return;
-    }
-
-    options.UseSqlServer(connectionString);
-});
-builder.Services.AddScoped<ProtectedCredentialService>();
-builder.Services.AddScoped<TradingScheduleGate>();
-builder.Services.AddScoped<INotificationProvider, RecordedNotificationProvider>();
-builder.Services.AddScoped<INotificationProvider, SmtpNotificationProvider>();
-builder.Services.AddScoped<INotificationProvider, AzureCommunicationServicesEmailNotificationProvider>();
-builder.Services.AddScoped<NotificationDispatcher>();
-builder.Services.AddScoped<PlatformConfigurationService>();
-builder.Services.AddScoped<PlatformStateCoordinator>();
-builder.Services.AddScoped<OperationalRecordRetentionProcessor>();
-builder.Services.AddScoped<GetPlatformStatusHandler>();
-builder.Services.AddScoped<GetPlatformConfigurationHandler>();
+builder.Services.AddPlatformApplication();
+builder.Services.AddPlatformInfrastructure(builder.Configuration);
 builder.Services.AddScoped<UpdatePlatformConfigurationValidator>();
-builder.Services.AddScoped<UpdatePlatformConfigurationHandler>();
-builder.Services.AddScoped<TriggerManualAuthRetryHandler>();
-builder.Services.AddScoped<GetPlatformEventsHandler>();
-builder.Services.AddHostedService<PlatformAuthSupervisor>();
-builder.Services.AddHostedService<OperationalRecordRetentionService>();
 
 var app = builder.Build();
 
@@ -82,55 +53,7 @@ app.Use(async (context, next) =>
     await next();
 });
 
-app.MapGet("/", async (GetPlatformStatusHandler handler, CancellationToken cancellationToken) => Results.Ok(await handler.HandleAsync(new GetPlatformStatusRequest(), cancellationToken)))
-.WithOpenApi();
-
-app.MapGet("/api/platform/status", async (GetPlatformStatusHandler handler, CancellationToken cancellationToken) =>
-        Results.Ok(await handler.HandleAsync(new GetPlatformStatusRequest(), cancellationToken)))
-.WithOpenApi();
-
-app.MapGet("/api/platform/configuration", async (GetPlatformConfigurationHandler handler, CancellationToken cancellationToken) =>
-        Results.Ok(await handler.HandleAsync(new GetPlatformConfigurationRequest(), cancellationToken)))
-.WithOpenApi();
-
-app.MapPut("/api/platform/configuration", async (UpdatePlatformConfigurationRequest request, UpdatePlatformConfigurationHandler handler, CancellationToken cancellationToken) =>
-    {
-        try
-        {
-            var response = await handler.HandleAsync(request, cancellationToken);
-            return Results.Ok(response);
-        }
-        catch (PlatformValidationException exception)
-        {
-            return Results.ValidationProblem(exception.Errors.ToDictionary(item => item.Key, item => item.Value));
-        }
-    })
-.WithOpenApi();
-
-app.MapPost("/api/platform/auth/manual-retry", async (TriggerManualAuthRetryHandler handler, CancellationToken cancellationToken) =>
-    {
-        try
-        {
-            var response = await handler.HandleAsync(new TriggerManualAuthRetryRequest(), cancellationToken);
-            return Results.Accepted("/api/platform/status", response);
-        }
-        catch (InvalidOperationException exception)
-        {
-            return Results.Conflict(new { error = exception.Message });
-        }
-    })
-.WithOpenApi();
-
-app.MapGet("/api/platform/events", async (string? category, string? environment, GetPlatformEventsHandler handler, CancellationToken cancellationToken) =>
-        Results.Ok(await handler.HandleAsync(new GetPlatformEventsRequest(category, environment), cancellationToken)))
-.WithOpenApi();
-
-app.MapGet("/metadata", (IHostEnvironment environment) => Results.Ok(new
-{
-    service = environment.ApplicationName,
-    environment = environment.EnvironmentName
-}))
-.WithOpenApi();
+app.MapPlatformEndpoints();
 
 if (app.Environment.IsDevelopment())
 {

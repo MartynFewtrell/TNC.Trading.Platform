@@ -4,13 +4,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.InMemory.Infrastructure.Internal;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace TNC.Trading.Platform.Api.UnitTests;
+namespace TNC.Trading.Platform.Application.UnitTests;
 
-internal static class ApiReflection
+internal static class ApplicationReflection
 {
     private static readonly Lazy<Assembly[]> PlatformAssemblies = new(() =>
     [
-        LoadAssembly("TNC.Trading.Platform.Api"),
         LoadAssembly("TNC.Trading.Platform.Application"),
         LoadAssembly("TNC.Trading.Platform.Infrastructure")
     ]);
