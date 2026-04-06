@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using TNC.Trading.Platform.Application.Services;
 using TNC.Trading.Platform.Infrastructure.Notifications;
 using TNC.Trading.Platform.Infrastructure.Persistence;
@@ -10,15 +11,22 @@ namespace TNC.Trading.Platform.Infrastructure.Platform;
 
 internal static class PlatformInfrastructureServiceCollectionExtensions
 {
-    public static IServiceCollection AddPlatformInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddPlatformInfrastructure(this IServiceCollection services, IConfiguration configuration, IHostEnvironment hostEnvironment)
     {
         services.AddDbContext<PlatformDbContext>(options =>
         {
             var connectionString = configuration.GetConnectionString("platformdb");
             if (string.IsNullOrWhiteSpace(connectionString))
             {
-                options.UseInMemoryDatabase("tnc-trading-platform");
-                return;
+                if (hostEnvironment.IsDevelopment())
+                {
+                    options.UseInMemoryDatabase("tnc-trading-platform");
+                    return;
+                }
+
+                throw new InvalidOperationException(
+                    "The 'platformdb' connection string is required but has not been configured. " +
+                    "Ensure the connection string is provided via application configuration before starting the application.");
             }
 
             options.UseSqlServer(connectionString);

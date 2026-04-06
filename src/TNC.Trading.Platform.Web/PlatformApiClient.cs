@@ -37,9 +37,12 @@ internal sealed class PlatformApiClient(HttpClient httpClient)
         return content ?? throw new InvalidOperationException("Manual retry response was empty.");
     }
 
-    public async Task<PlatformEventsViewModel> GetAuthEventsAsync(CancellationToken cancellationToken)
+    public async Task<PlatformEventsViewModel> GetAuthEventsAsync(string? brokerEnvironment, CancellationToken cancellationToken)
     {
-        var response = await httpClient.GetFromJsonAsync<PlatformEventsViewModel>("/api/platform/events?category=auth&environment=Demo", JsonOptions, cancellationToken);
+        var url = string.IsNullOrWhiteSpace(brokerEnvironment)
+            ? "/api/platform/events?category=auth"
+            : $"/api/platform/events?category=auth&environment={Uri.EscapeDataString(brokerEnvironment)}";
+        var response = await httpClient.GetFromJsonAsync<PlatformEventsViewModel>(url, JsonOptions, cancellationToken);
         return response ?? throw new InvalidOperationException("Platform events response was empty.");
     }
 }

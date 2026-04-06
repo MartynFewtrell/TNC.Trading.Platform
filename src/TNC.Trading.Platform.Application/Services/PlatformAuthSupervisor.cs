@@ -23,8 +23,8 @@ internal sealed class PlatformAuthSupervisor(IServiceScopeFactory serviceScopeFa
             catch (Exception exception)
             {
                 logger.LogError(
-                    "Platform auth supervision tick failed: {ErrorMessage}",
-                    exception.Message);
+                    exception,
+                    "Platform auth supervision tick failed.");
             }
 
             await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false);

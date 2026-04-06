@@ -60,7 +60,7 @@ else
             <dt>Automatic attempt number</dt>
             <dd data-testid="auth-automatic-attempt-value">@status.RetryState.AutomaticAttemptNumber</dd>
             <dt>Next retry</dt>
-            <dd data-testid="auth-next-retry-value">@(status.RetryState.NextRetryAtUtc?.ToLocalTime().ToString("u") ?? "Not scheduled")</dd>
+            <dd data-testid="auth-next-retry-value">@(status.RetryState.NextRetryAtUtc?.ToString("u") ?? "Not scheduled")</dd>
         </dl>
 
         @if (status.AuthState.IsDegraded)
@@ -98,7 +98,7 @@ else
                 @foreach (var platformEvent in events.Events.Take(10))
                 {
                     <tr>
-                        <td>@platformEvent.OccurredAtUtc.ToLocalTime().ToString("u")</td>
+                        <td>@platformEvent.OccurredAtUtc.ToString("u")</td>
                         <td>@platformEvent.EventType</td>
                         <td>@platformEvent.Summary</td>
                     </tr>
@@ -128,7 +128,7 @@ else
         try
         {
             status = await PlatformApiClient.GetStatusAsync(CancellationToken.None);
-            events = await PlatformApiClient.GetAuthEventsAsync(CancellationToken.None);
+            events = await PlatformApiClient.GetAuthEventsAsync(status.BrokerEnvironment, CancellationToken.None);
         }
         catch (HttpRequestException exception)
         {

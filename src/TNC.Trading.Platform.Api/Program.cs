@@ -14,7 +14,7 @@ builder.AddServiceDefaults();
 builder.Services.AddDataProtection();
 builder.Services.AddSingleton<TimeProvider>(_ => PlatformTimeProviderFactory.Create(builder.Configuration));
 builder.Services.AddPlatformApplication();
-builder.Services.AddPlatformInfrastructure(builder.Configuration);
+builder.Services.AddPlatformInfrastructure(builder.Configuration, builder.Environment);
 builder.Services.AddScoped<UpdatePlatformConfigurationValidator>();
 
 var app = builder.Build();
