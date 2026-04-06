@@ -22,13 +22,19 @@ Applies to: `**/*.cs`
 ### MUST
 
 - Follow formatting rules defined in `.editorconfig`.
+- Keep one top-level class, interface, record, struct, enum, or delegate per file.
+- Name each C# file to match its top-level type.
 - Use the C# language version already configured by the repository.
   - Do not change `LangVersion` (or rely on preview language features) as part of feature work unless the work item explicitly requires it.
 
 - Follow naming conventions:
-  - Use PascalCase for types, methods, and public members.
+  - Use PascalCase for classes, records, structs, enums, delegates, methods, positional record parameters, and public members.
   - Use camelCase for local variables.
+  - Use camelCase for class and struct primary constructor parameters.
   - Prefix interface names with `I`.
+  - Use singular names for enums unless they represent flags values.
+  - Do not use `Enum`, `Flag`, or `Flags` suffixes in enum type names.
+  - Name classes, records, and structs with nouns or noun phrases.
 
 - Write null-safe code:
   - Respect nullable reference types annotations.
@@ -53,7 +59,7 @@ Applies to: `**/*.cs`
 
 ### SHOULD
 
-- Prefer file-scoped namespaces when the project already uses them.
+- Prefer file-scoped namespaces when all types in the file belong to the same namespace.
 - Prefer pattern matching and switch expressions when they reduce complexity.
 - Prefer `nameof(...)` over string literals when referencing members.
 - Prefer `async`/`await` end-to-end for I/O and avoid blocking calls.

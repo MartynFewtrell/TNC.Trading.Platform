@@ -19,6 +19,8 @@ Applies to: `**/*`
 
 - When choosing a .NET target version (if `global.json` does not define it), determine the latest .NET LTS version via Microsoft Learn and target that by default.
 - Ground .NET best-practice guidance in Microsoft Learn when possible, and periodically re-validate repository instruction files against Microsoft Learn.
+- For C# source files, keep one top-level class, interface, record, struct, enum, or delegate per file and name the file to match the top-level type. Prefer file-scoped namespaces in new C# files when all types in the file belong to the same namespace.
+- Follow Microsoft Learn C# naming conventions for top-level types: use PascalCase for classes, records, structs, enums, and delegates; prefix interfaces with `I`; use singular enum names unless the enum is a flags enum.
 - For .NET Aspire guidance, use `https://aspire.dev/` as the primary reference site and include it in documentation/rules so guidance can be re-researched as Aspire evolves.
 - For local authentication, use Keycloak running in a container orchestrated by Aspire.
 - For Azure authentication, use Microsoft Entra ID.

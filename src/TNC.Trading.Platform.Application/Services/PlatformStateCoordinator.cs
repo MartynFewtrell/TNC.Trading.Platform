@@ -1,156 +1,10 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using TNC.Trading.Platform.Application.Configuration;
-using TNC.Trading.Platform.Application.Features.GetPlatformConfiguration;
-using TNC.Trading.Platform.Application.Features.GetPlatformEvents;
-using TNC.Trading.Platform.Application.Features.GetPlatformStatus;
-using TNC.Trading.Platform.Application.Features.TriggerManualAuthRetry;
-using TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration;
 using TNC.Trading.Platform.Application.Infrastructure.Ig;
 
 namespace TNC.Trading.Platform.Application.Services;
-
-internal interface IPlatformConfigurationStore
-{
-    Task<PlatformConfigurationSnapshot> ApplyStartupConfigurationAsync(CancellationToken cancellationToken);
-
-    Task<PlatformConfigurationSnapshot> GetCurrentAsync(CancellationToken cancellationToken);
-
-    Task<PlatformConfigurationSnapshot> GetRuntimeAsync(
-        PlatformEnvironmentKind? platformEnvironment,
-        BrokerEnvironmentKind? brokerEnvironment,
-        CancellationToken cancellationToken);
-
-    Task<UpdatePlatformConfigurationResult> UpdateAsync(PlatformConfigurationUpdate update, CancellationToken cancellationToken);
-}
-
-internal interface IPlatformRuntimeStateStore
-{
-    Task<PlatformRuntimeState> GetOrCreateAsync(CancellationToken cancellationToken);
-
-    Task SaveAsync(PlatformRuntimeState state, CancellationToken cancellationToken);
-}
-
-internal interface IPlatformRetryCycleStore
-{
-    Task UpsertAsync(PlatformRetryCycle cycle, CancellationToken cancellationToken);
-}
-
-internal interface IPlatformEventStore
-{
-    Task<IReadOnlyList<OperationalEventModel>> GetEventsAsync(string? category, string? environment, CancellationToken cancellationToken);
-
-    Task AddAsync(PlatformEventRecord record, CancellationToken cancellationToken);
-}
-
-internal interface INotificationDispatcher
-{
-    Task DispatchFailureAsync(PlatformConfigurationSnapshot configuration, string summary, string correlationId, Guid? retryCycleId, CancellationToken cancellationToken);
-
-    Task DispatchRetryLimitReachedAsync(PlatformConfigurationSnapshot configuration, string summary, string correlationId, Guid? retryCycleId, CancellationToken cancellationToken);
-
-    Task DispatchRecoveryAsync(PlatformConfigurationSnapshot configuration, string summary, string correlationId, Guid? retryCycleId, CancellationToken cancellationToken);
-
-    Task DispatchBlockedLiveAsync(PlatformConfigurationSnapshot configuration, string summary, string correlationId, Guid? retryCycleId, CancellationToken cancellationToken);
-}
-
-internal static class PlatformApplicationServiceCollectionExtensions
-{
-    public static IServiceCollection AddPlatformApplication(this IServiceCollection services)
-    {
-        services.AddScoped<PlatformConfigurationService>();
-        services.AddScoped<TradingScheduleGate>();
-        services.AddScoped<PlatformStateCoordinator>();
-        services.AddScoped<GetPlatformStatusHandler>();
-        services.AddScoped<GetPlatformConfigurationHandler>();
-        services.AddScoped<UpdatePlatformConfigurationHandler>();
-        services.AddScoped<TriggerManualAuthRetryHandler>();
-        services.AddScoped<GetPlatformEventsHandler>();
-        services.AddHostedService<PlatformAuthSupervisor>();
-
-        return services;
-    }
-}
-
-internal sealed class PlatformConfigurationService(IPlatformConfigurationStore store)
-{
-    public Task<PlatformConfigurationSnapshot> ApplyStartupConfigurationAsync(CancellationToken cancellationToken) =>
-        store.ApplyStartupConfigurationAsync(cancellationToken);
-
-    public Task<PlatformConfigurationSnapshot> GetCurrentAsync(CancellationToken cancellationToken) =>
-        store.GetCurrentAsync(cancellationToken);
-
-    public Task<PlatformConfigurationSnapshot> GetRuntimeAsync(
-        PlatformEnvironmentKind? platformEnvironment,
-        BrokerEnvironmentKind? brokerEnvironment,
-        CancellationToken cancellationToken) =>
-        store.GetRuntimeAsync(platformEnvironment, brokerEnvironment, cancellationToken);
-
-    public Task<UpdatePlatformConfigurationResult> UpdateAsync(PlatformConfigurationUpdate update, CancellationToken cancellationToken) =>
-        store.UpdateAsync(update, cancellationToken);
-}
-
-internal sealed class TradingScheduleGate
-{
-    public TradingScheduleStatus Evaluate(TradingScheduleConfiguration tradingSchedule, DateTimeOffset utcNow)
-    {
-        var timeZone = ResolveTimeZone(tradingSchedule.TimeZone);
-        var localNow = TimeZoneInfo.ConvertTime(utcNow, timeZone);
-        var currentDate = DateOnly.FromDateTime(localNow.DateTime);
-
-        if (tradingSchedule.BankHolidayExclusions.Contains(currentDate))
-        {
-            return new TradingScheduleStatus(false, "Trading schedule is inactive for the configured bank holiday.");
-        }
-
-        if (!IsTradingDayActive(tradingSchedule, localNow.DayOfWeek))
-        {
-            return new TradingScheduleStatus(false, "Trading schedule is inactive for the current day.");
-        }
-
-        var currentTime = TimeOnly.FromDateTime(localNow.DateTime);
-        if (currentTime < tradingSchedule.StartOfDay || currentTime >= tradingSchedule.EndOfDay)
-        {
-            return new TradingScheduleStatus(false, "Trading schedule is inactive for the current time window.");
-        }
-
-        return new TradingScheduleStatus(true, "Trading schedule is active.");
-    }
-
-    private static bool IsTradingDayActive(TradingScheduleConfiguration tradingSchedule, DayOfWeek currentDay)
-    {
-        if (tradingSchedule.TradingDays.Contains(currentDay))
-        {
-            return true;
-        }
-
-        return currentDay switch
-        {
-            DayOfWeek.Saturday => tradingSchedule.WeekendBehavior is WeekendBehavior.IncludeSaturday or WeekendBehavior.IncludeFullWeekend,
-            DayOfWeek.Sunday => tradingSchedule.WeekendBehavior is WeekendBehavior.IncludeSunday or WeekendBehavior.IncludeFullWeekend,
-            _ => false
-        };
-    }
-
-    private static TimeZoneInfo ResolveTimeZone(string configuredTimeZone)
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById(configuredTimeZone);
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.Utc;
-        }
-        catch (InvalidTimeZoneException)
-        {
-            return TimeZoneInfo.Utc;
-        }
-    }
-}
 
 internal sealed class PlatformStateCoordinator(
     IConfiguration configuration,
@@ -235,7 +89,7 @@ internal sealed class PlatformStateCoordinator(
         currentState.NextRetryAtUtc = now.AddSeconds(nextDelay);
         currentState.SessionStatus = PlatformSessionStatus.Degraded;
         currentState.IsDegraded = true;
-        currentState.BlockedReason = "IG demo credentials are incomplete.";
+        currentState.BlockedReason = MissingCredentialsBlockedReason;
         currentState.EstablishedAtUtc = null;
         currentState.LastValidatedAtUtc = now;
         currentState.LastTransitionAtUtc = now;
@@ -790,33 +644,5 @@ internal sealed class PlatformStateCoordinator(
         }
 
         return delay;
-    }
-}
-
-internal sealed class PlatformAuthSupervisor(IServiceScopeFactory serviceScopeFactory, ILogger<PlatformAuthSupervisor> logger) : BackgroundService
-{
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                using var scope = serviceScopeFactory.CreateScope();
-                var coordinator = scope.ServiceProvider.GetRequiredService<PlatformStateCoordinator>();
-                await coordinator.TickAsync(stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception exception)
-            {
-                logger.LogError(
-                    "Platform auth supervision tick failed: {ErrorMessage}",
-                    exception.Message);
-            }
-
-            await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).ConfigureAwait(false);
-        }
     }
 }

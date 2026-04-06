@@ -1,28 +1,4 @@
-using TNC.Trading.Platform.Application.Configuration;
-
-namespace TNC.Trading.Platform.Application.Infrastructure.Ig;
-
-internal sealed record IgAuthenticateRequest(
-    BrokerEnvironmentKind Environment,
-    string ApiKey,
-    string Identifier,
-    string Password);
-
-internal sealed record IgAuthenticateResponse(
-    string CurrentAccountId,
-    string? LightstreamerEndpoint,
-    DateTimeOffset? ExpiresAtUtc,
-    string? ClientSessionToken,
-    string? AccountSecurityToken,
-    IReadOnlyDictionary<string, string?> Headers);
-
-internal sealed record SanitizedIgAuthenticateResponse(
-    string CurrentAccountId,
-    string? LightstreamerEndpoint,
-    DateTimeOffset? ExpiresAtUtc,
-    bool HasClientSessionToken,
-    bool HasAccountSecurityToken,
-    IReadOnlyDictionary<string, string> Headers);
+﻿namespace TNC.Trading.Platform.Application.Infrastructure.Ig;
 
 internal static class IgAuthenticationResponseSanitizer
 {
