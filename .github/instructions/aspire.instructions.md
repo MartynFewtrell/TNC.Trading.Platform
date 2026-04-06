@@ -86,5 +86,5 @@ Applies to: `src/**/AppHost/**/*, src/**/ServiceDefaults/**/*, src/**/*AppHost*.
 - https://learn.microsoft.com/dotnet/aspire/
 - https://learn.microsoft.com/dotnet/aspire/fundamentals/app-host-overview
 - https://learn.microsoft.com/dotnet/aspire/get-started/upgrade-to-aspire-13
-- `/.github/instructions/microsoft-stack-dotnet.instructions.md`
-- `/.github/instructions/folder-structure.instructions.md`
+- `/.github/instructions/dotnet-stack.instructions.md`
+- `/.github/instructions/folders.instructions.md`

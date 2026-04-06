@@ -12,7 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 builder.AddServiceDefaults();
 builder.Services.AddDataProtection();
-builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<TimeProvider>(_ => PlatformTimeProviderFactory.Create(builder.Configuration));
 builder.Services.AddPlatformApplication();
 builder.Services.AddPlatformInfrastructure(builder.Configuration);
 builder.Services.AddScoped<UpdatePlatformConfigurationValidator>();
@@ -25,7 +25,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     await dbContext.Database.EnsureCreatedAsync();
 
     var configurationService = scope.ServiceProvider.GetRequiredService<PlatformConfigurationService>();
-    await configurationService.GetCurrentAsync(CancellationToken.None);
+    await configurationService.ApplyStartupConfigurationAsync(CancellationToken.None);
 
     var retentionProcessor = scope.ServiceProvider.GetRequiredService<OperationalRecordRetentionProcessor>();
     await retentionProcessor.ApplyAsync(CancellationToken.None);

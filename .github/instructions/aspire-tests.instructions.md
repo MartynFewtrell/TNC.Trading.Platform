@@ -14,7 +14,7 @@ These instructions define how to write automated tests for distributed applicati
 Applies to: `test/**/*.cs, test/**/*.csproj`
 
 - Applies when creating or updating Aspire-based test projects.
-- These rules are additive to `/.github/instructions/aspire-best-practices.instructions.md` and `/.github/instructions/folder-structure.instructions.md`.
+- These rules are additive to `/.github/instructions/aspire.instructions.md` and `/.github/instructions/folders.instructions.md`.
 
 ## Instructions
 
@@ -70,5 +70,5 @@ Applies to: `test/**/*.cs, test/**/*.csproj`
 - https://aspire.dev/testing/manage-app-host/
 - https://aspire.dev/testing/accessing-resources/
 - https://www.nuget.org/packages/Aspire.Hosting.Testing
-- `/.github/instructions/aspire-best-practices.instructions.md`
-- `/.github/instructions/folder-structure.instructions.md`
+- `/.github/instructions/aspire.instructions.md`
+- `/.github/instructions/folders.instructions.md`

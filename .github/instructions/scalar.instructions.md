@@ -67,9 +67,9 @@ Applies to: `src/**/*.cs, src/**/*.csproj`
 ## References (optional)
 
 - `./.github/copilot-instructions.md`
-- `./.github/instructions/aspire-best-practices.instructions.md`
+- `./.github/instructions/aspire.instructions.md`
 - `./.github/instructions/csharp.instructions.md`
-- `./.github/instructions/microsoft-stack-dotnet.instructions.md`
+- `./.github/instructions/dotnet-stack.instructions.md`
 
 ## Notes (optional)
 

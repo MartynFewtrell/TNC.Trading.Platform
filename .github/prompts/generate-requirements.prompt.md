@@ -1,8 +1,8 @@
 ---
 agent: 'agent'
 description: 'Interactive requirements-document generator that asks one question at a time to produce a new `requirements.md` using the repo requirements template.'
-name: generate-requirements-document
-model: 'gpt-5.2'
+name: generate-requirements
+model: 'gpt-5.4'
 # tags: [requirements, docs, iterative-work]
 ---
 
@@ -40,7 +40,7 @@ The output MUST follow `.github/templates/requirements.template.md`.
 - MUST: Ensure the target `./docs/00x-work/` folder exists before writing `requirements.md`.
 - MUST: Output exactly one markdown document: the full content of `requirements.md`.
 - MUST: Keep the document self-contained within the chosen `./docs/00x-work/` folder context.
-- MUST: Follow `.github/instructions/iterative-work-docs.instructions.md` conventions:
+- MUST: Follow `.github/instructions/work-packages.instructions.md` conventions:
   - `requirements.md` belongs under a dedicated `./docs/00x-work/` folder for the unit of work.
   - The `00x` prefix is zero-padded and monotonically increasing.
   - The work item docs set is `requirements.md`, `technical-specification.md`, `delivery-plan.md` in the same folder.

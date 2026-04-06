@@ -317,4 +317,4 @@ None at this stage.
 - Project business context: `docs/business-requirements.md`
 - Project systems analysis: `docs/systems-analysis.md`
 - Existing solution baseline: `src/TNC.Trading.Platform.Api`, `src/TNC.Trading.Platform.AppHost`, and `src/TNC.Trading.Platform.ServiceDefaults`
-- Relevant repo guidance: `.github/copilot-instructions.md`, `.github/instructions/docs-authoring.instructions.md`, `.github/instructions/iterative-work-docs.instructions.md`, `.github/instructions/authentication.instructions.md`, `.github/instructions/test-approach.instructions.md`, and `.github/instructions/architecture-guidelines.instructions.md`
+- Relevant repo guidance: `.github/copilot-instructions.md`, `.github/instructions/docs.instructions.md`, `.github/instructions/work-packages.instructions.md`, `.github/instructions/auth.instructions.md`, `.github/instructions/tests.instructions.md`, and `.github/instructions/architecture.instructions.md`

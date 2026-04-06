@@ -24,8 +24,8 @@ The repository needs a baseline solution structure and a repeatable local run ha
 
 ### 2.3 Constraints
 
-- Work package documents must be stored in this folder per `../../.github/instructions/iterative-work-docs.instructions.md`.
-- Documentation under `docs/` must follow `../../.github/instructions/docs-authoring.instructions.md`.
+- Work package documents must be stored in this folder per `../../.github/instructions/work-packages.instructions.md`.
+- Documentation under `docs/` must follow `../../.github/instructions/docs.instructions.md`.
 - Do not introduce secrets into source control and do not log secrets (`BR12`, `NFR1`, `SR2`, `SR3`).
 - Prefer .NET Aspire for local orchestration per repository standards, and reference Aspire guidance via `https://aspire.dev/`.
 
@@ -163,7 +163,7 @@ No data model is introduced in this work package.
 | --------- | -------- | -------- | ----- |
 | Unit | Shared defaults behaviors where practical | `test/` | Keep unit tests fast and deterministic.
 | Integration | Minimal HTTP host wiring (health endpoints, startup) | `test/` | Can be added as a smoke/integration test depending on harness.
-| Functional | End-to-end local smoke (build → run → health) | `test/` | If functional tests are added, name them `<001>_<FRx>_point_of_test`.
+| Functional | End-to-end local smoke (build → run → health) | `test/` | If functional tests are added, use readable `MethodName_StateUnderTest_ExpectedResult` names such as `CalculateTotal_ShouldReturnZero_WhenCartIsEmpty` while keeping work package and requirement traceability explicit through structure or metadata.
 
 ## 9. Rollout Plan
 

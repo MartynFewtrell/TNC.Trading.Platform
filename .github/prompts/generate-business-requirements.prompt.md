@@ -1,8 +1,8 @@
 ---
 agent: 'agent'
 description: 'Interactive business-requirements generator that asks one question at a time to produce a new `business-requirements.md` using the repo business requirements template.'
-name: generate-business-requirements-document
-model: 'gpt-5.2'
+name: generate-business-requirements
+model: 'gpt-5.4'
 # tags: [business-requirements, docs, iterative-work]
 ---
 
@@ -41,7 +41,7 @@ The output MUST follow `.github/templates/business-requirements.template.md`.
 - MUST: Keep the document non-technical.
   - Focus on business context, desired outcomes, scope boundaries, stakeholders, and high-level requirements.
   - Do not prescribe specific technical designs, architectures, frameworks, or implementation steps.
-- MUST: Follow `.github/instructions/docs-authoring.instructions.md` conventions for Markdown structure.
+- MUST: Follow `.github/instructions/docs.instructions.md` conventions for Markdown structure.
 - MUST: Ask only one question at a time.
 - MUST: For each question, provide numbered suggested answers and include `Other: <free text>`.
 - MUST: Keep a single evolving draft of `business-requirements.md` visible after each user answer.

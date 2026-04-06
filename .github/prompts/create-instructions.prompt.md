@@ -1,8 +1,8 @@
 ---
 agent: 'agent'
 description: 'Create a new *.instructions.md file that matches this repo\'s conventions (front matter, applyTo scoping, kebab-case naming) and produces clear, enforceable rules.'
-name: create-instructions-file
-model: 'gpt-5.2'
+name: create-instructions
+model: 'gpt-5.4'
 # tools: ['search', 'microsoft.docs.mcp']
 # tags: [copilot, instructions, repo-standards]
 ---
@@ -60,7 +60,7 @@ ${RESEARCH_MODE="auto"} <!-- auto | always | never: controls whether to run a do
 - MUST: Ask clarifying questions until there is enough detail to output a high-quality instructions file.
 - MUST: Ask only one question at a time.
 - MUST: For each question, provide numbered suggested answers and include `Other: <free text>`.
-- MUST: Produce a final `*.instructions.md` that follows the template structure and front matter guidance in `.github/templates/copilot-instructions.template.md`.
+- MUST: Produce a final `*.instructions.md` that follows the template structure and front matter guidance in `.github/templates/instructions.template.md`.
 
 ### Repo conventions
 
@@ -113,7 +113,7 @@ When the user invokes this prompt, treat their first message as the **initial id
 At each turn:
 
 1. Extract what's already known from the user's initial idea and prior answers.
-2. Identify gaps relative to the template sections and front matter in `.github/templates/copilot-instructions.template.md`.
+2. Identify gaps relative to the template sections and front matter in `.github/templates/instructions.template.md`.
 3. Walk the template from top to bottom. For the first section that is missing or ambiguous, ask one question to resolve it.
 4. Ask **one** question that resolves the first unresolved section you encounter.
 
@@ -130,7 +130,7 @@ Before producing the final `*.instructions.md`, ensure:
 
 Return the new instruction file as a single markdown document, using the shared template as the required scaffold:
 
-- Template to follow: `.github/templates/copilot-instructions.template.md`
+- Template to follow: `.github/templates/instructions.template.md`
 - Replace all placeholders (including front matter fields) with concrete values.
 
 ```markdown
@@ -158,4 +158,4 @@ Create instructions for `src/MyService/**/*.cs` to enforce async/await and struc
 
 ### Example response (optional)
 
-A complete `*.instructions.md` file following `.github/templates/copilot-instructions.template.md`.
+A complete `*.instructions.md` file following `.github/templates/instructions.template.md`.

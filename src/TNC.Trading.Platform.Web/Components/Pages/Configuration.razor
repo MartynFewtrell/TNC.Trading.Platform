@@ -30,10 +30,14 @@ else
                     Broker environment
                     <InputSelect @bind-Value="form.BrokerEnvironment">
                         <option value="Demo">Demo</option>
-                        <option value="Live">Live</option>
+                        <option value="Live" disabled="@(form.PlatformEnvironment == "Test")">Live</option>
                     </InputSelect>
                 </label>
-                <p class="hint">Startup-fixed changes apply on the next platform start.</p>
+                <p class="hint" data-testid="configuration-startup-hint">Startup-fixed changes apply on the next platform start.</p>
+                @if (form.RestartRequired)
+                {
+                    <p class="warning" role="status" data-testid="configuration-restart-required-indicator">Pending startup-fixed changes will apply on the next platform start.</p>
+                }
             </section>
 
             <section class="panel">
@@ -107,10 +111,10 @@ else
 
             <section class="panel">
                 <h2>IG credentials</h2>
-                <p class="hint">Stored values are never shown. Enter a field only when you want to replace it.</p>
-                <p>Stored API key: @(form.Credentials.HasApiKey ? "Present" : "Missing")</p>
-                <p>Stored identifier: @(form.Credentials.HasIdentifier ? "Present" : "Missing")</p>
-                <p>Stored password: @(form.Credentials.HasPassword ? "Present" : "Missing")</p>
+                <p class="hint" data-testid="configuration-secret-handling-hint">Stored values are never shown. Enter a field only when you want to replace it.</p>
+                <p data-testid="configuration-stored-api-key">Stored API key: @(form.Credentials.HasApiKey ? "Present" : "Missing")</p>
+                <p data-testid="configuration-stored-identifier">Stored identifier: @(form.Credentials.HasIdentifier ? "Present" : "Missing")</p>
+                <p data-testid="configuration-stored-password">Stored password: @(form.Credentials.HasPassword ? "Present" : "Missing")</p>
                 <label>
                     New API key
                     <InputText @bind-Value="form.CredentialsUpdate.ApiKey" />
@@ -130,12 +134,12 @@ else
             </section>
         </div>
 
-        <button type="submit" disabled="@saveInProgress">@(saveInProgress ? "Saving..." : "Save configuration")</button>
+        <button data-testid="configuration-save-button" type="submit" disabled="@saveInProgress">@(saveInProgress ? "Saving..." : "Save configuration")</button>
     </EditForm>
 
     @if (!string.IsNullOrWhiteSpace(saveMessage))
     {
-        <p>@saveMessage</p>
+        <p role="status" data-testid="configuration-save-message">@saveMessage</p>
     }
 }
 
@@ -233,6 +237,8 @@ else
 
         public UpdateCredentialsViewModel CredentialsUpdate { get; set; } = new();
 
+        public bool RestartRequired { get; set; }
+
         public string ChangedBy { get; set; } = "operator";
 
         public static ConfigurationFormModel From(PlatformConfigurationViewModel configuration) => new()
@@ -266,7 +272,8 @@ else
                 EmailTo = configuration.NotificationSettings.EmailTo
             },
             Credentials = configuration.Credentials,
-            CredentialsUpdate = new UpdateCredentialsViewModel()
+            CredentialsUpdate = new UpdateCredentialsViewModel(),
+            RestartRequired = configuration.RestartRequired
         };
 
         public UpdatePlatformConfigurationViewModel ToRequest() => new()

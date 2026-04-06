@@ -4,8 +4,14 @@ namespace TNC.Trading.Platform.Infrastructure.UnitTests;
 
 public class OperationalDataRedactorTests
 {
+    /// <summary>
+    /// Trace: FR7, SR2, TR3.
+    /// Verifies: operational payload serialization redacts nested sensitive values before they are recorded.
+    /// Expected: sensitive fields are replaced with redaction markers throughout the serialized JSON output.
+    /// Why: persisted operational payloads must not become a path for leaking secrets during diagnostics or audit review.
+    /// </summary>
     [Fact]
-    public void Serialize_RedactsSensitiveNestedProperties()
+    public void Serialize_ShouldRedactSensitiveValues_WhenPayloadContainsNestedSecretFields()
     {
         var payload = new
         {
@@ -37,8 +43,14 @@ public class OperationalDataRedactorTests
         Assert.Equal("[redacted]", items[1].GetProperty("nonSecret").GetString());
     }
 
+    /// <summary>
+    /// Trace: FR7, SR2, TR3.
+    /// Verifies: plaintext summaries are scrubbed when they contain password or bearer-token assignments.
+    /// Expected: the returned text omits raw secret fragments and includes redaction markers instead.
+    /// Why: log and notification text must remain operationally useful without exposing sensitive authentication material.
+    /// </summary>
     [Fact]
-    public void RedactText_RedactsSensitiveAssignmentsInPlainText()
+    public void RedactText_ShouldRedactSensitiveAssignments_WhenPlainTextContainsSecrets()
     {
         var redacted = (string?)InfrastructureReflection.InvokeStatic(
             "TNC.Trading.Platform.Infrastructure.Platform.OperationalDataRedactor",

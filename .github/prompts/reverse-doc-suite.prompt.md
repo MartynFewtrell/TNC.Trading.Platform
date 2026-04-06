@@ -3,8 +3,8 @@ agent: 'agent' # one of: agent | ask | Plan
 description: 'Reverse-engineer the repository into a complete /docs markdown documentation suite enabling a clean-room reimplementation with equivalent functionality.'
 
 # Strongly recommended
-name: reverse-engineer-doc-suite
-model: 'gpt-5.2'
+name: reverse-doc-suite
+model: 'gpt-5.4'
 
 # Optional
 # tools: ['search', 'search/readFile', 'runCommands', 'web/fetch']

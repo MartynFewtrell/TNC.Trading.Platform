@@ -1,8 +1,8 @@
 ---
 agent: 'agent'
 description: 'Interactive systems-analysis generator that asks one question at a time to produce a new `systems-analysis.md` using the repo systems analysis template.'
-name: generate-systems-analysis-document
-model: 'gpt-5.2'
+name: generate-systems-analysis
+model: 'gpt-5.4'
 # tags: [systems-analysis, docs, iterative-work]
 ---
 
@@ -40,7 +40,7 @@ The output MUST follow `.github/templates/systems-analysis.template.md`.
 - MUST: Keep the document implementation-agnostic.
   - Focus on system boundary, context, actors, use cases, business rules, analysis-level requirements, quality attributes, and (when helpful) analysis-level architectural decisions and interaction diagrams.
   - Do not prescribe specific architectures, frameworks, deployment topologies, or implementation steps.
-- MUST: Follow `.github/instructions/docs-authoring.instructions.md` conventions for Markdown structure.
+- MUST: Follow `.github/instructions/docs.instructions.md` conventions for Markdown structure.
 - MUST: Ask only one question at a time.
 - MUST: For each question, provide numbered suggested answers and include `Other: <free text>`.
 - MUST: Keep a single evolving draft of `systems-analysis.md` visible after each user answer.

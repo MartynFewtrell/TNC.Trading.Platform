@@ -1,8 +1,8 @@
 ---
 agent: 'agent'
 description: 'Interactive technical-specification generator that asks one question at a time to produce a new `technical-specification.md` from a `requirements.md` using the repo technical specification template.'
-name: generate-technical-specification
-model: 'gpt-5.2'
+name: generate-technical-spec
+model: 'gpt-5.4'
 # tags: [technical-spec, docs, iterative-work]
 ---
 
@@ -12,7 +12,7 @@ model: 'gpt-5.2'
 
 You are a Solution Architect. Produce a new `technical-specification.md` for a project or unit of work under `./docs/00x-work/`.
 
-The output MUST follow `.github/templates/technical-specification.template.md`.
+The output MUST follow `.github/templates/technical-spec.template.md`.
 
 ## When to use
 
@@ -36,8 +36,8 @@ The output MUST follow `.github/templates/technical-specification.template.md`.
 
 ## Constraints
 
-- MUST: Use `.github/templates/technical-specification.template.md` as the output scaffold.
-- MUST: Follow `/.github/instructions/iterative-work-docs.instructions.md` conventions:
+- MUST: Use `.github/templates/technical-spec.template.md` as the output scaffold.
+- MUST: Follow `/.github/instructions/work-packages.instructions.md` conventions:
   - The work item docs set is `requirements.md`, `technical-specification.md`, `delivery-plan.md` in the same `./docs/00x-work/` folder.
   - The `00x` prefix is zero-padded and monotonically increasing.
 - MUST: Infer as much technical context as possible from repo instruction files before asking questions.
@@ -69,7 +69,7 @@ When the user invokes this prompt, treat their first message as the initial idea
    - authentication approach (local vs Azure)
    - testing strategy expectations
    - any repo-specific constraints
-4. Create an initial draft by copying `.github/templates/technical-specification.template.md`.
+4. Create an initial draft by copying `.github/templates/technical-spec.template.md`.
 5. Populate the draft using:
    - the requirements document
    - the business requirements document (when available)
@@ -104,7 +104,7 @@ The **Next question** MUST be the last item in the message.
 
 Return a single markdown document that is the complete `technical-specification.md` content.
 
-The output MUST follow `.github/templates/technical-specification.template.md` structure (headings, numbering, and tables).
+The output MUST follow `.github/templates/technical-spec.template.md` structure (headings, numbering, and tables).
 
 ## Notes (optional)
 
@@ -112,7 +112,7 @@ The output MUST follow `.github/templates/technical-specification.template.md` s
   - Local development: Keycloak (container) orchestrated by Aspire
   - Azure: Microsoft Entra ID
   - App protocols: OIDC / OAuth 2.0 (SAML 2.0 at the IdP boundary when required)
-- Prefer a testing pyramid and follow repo test conventions for unit/integration/E2E/functional tests.
+- Prefer a testing pyramid and follow repo test conventions for unit/integration/E2E/functional tests, including readable `MethodName_StateUnderTest_ExpectedResult` test names and comments that capture requirement traceability plus what each test verifies and why.
 
 ## Examples (optional)
 
@@ -122,4 +122,4 @@ Create a technical specification for `./docs/001-add-order-endpoint/requirements
 
 ### Example response (optional)
 
-A complete `technical-specification.md` document following `.github/templates/technical-specification.template.md`, produced via iterative draft updates and one-question-at-a-time clarification.
+A complete `technical-specification.md` document following `.github/templates/technical-spec.template.md`, produced via iterative draft updates and one-question-at-a-time clarification.

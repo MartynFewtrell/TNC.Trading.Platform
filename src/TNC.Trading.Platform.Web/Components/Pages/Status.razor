@@ -16,25 +16,25 @@ else if (status is null || events is null)
 }
 else
 {
-    <section class="panel">
+    <section class="panel" data-testid="status-environment-panel">
         <h2>Environment</h2>
         <dl>
             <dt>Platform environment</dt>
-            <dd>@status.PlatformEnvironment</dd>
+            <dd data-testid="platform-environment-value">@status.PlatformEnvironment</dd>
             <dt>Broker environment</dt>
-            <dd>@status.BrokerEnvironment</dd>
+            <dd data-testid="broker-environment-value">@status.BrokerEnvironment</dd>
             <dt>Live option availability</dt>
-            <dd>@(status.LiveOptionAvailable ? "Available" : "Visible but blocked")</dd>
+            <dd data-testid="live-option-availability-value">@(status.LiveOptionAvailable ? "Available" : "Visible but blocked")</dd>
         </dl>
     </section>
 
-    <section class="panel">
+    <section class="panel" data-testid="status-trading-schedule-panel">
         <h2>Trading schedule</h2>
         <dl>
             <dt>Schedule state</dt>
-            <dd>@(status.TradingScheduleState.IsActive ? "Active" : "Inactive")</dd>
+            <dd data-testid="trading-schedule-state-value">@(status.TradingScheduleState.IsActive ? "Active" : "Inactive")</dd>
             <dt>Reason</dt>
-            <dd>@status.TradingScheduleState.Reason</dd>
+            <dd data-testid="trading-schedule-reason-value">@status.TradingScheduleState.Reason</dd>
             <dt>Daily window</dt>
             <dd>@status.TradingSchedule.StartOfDay - @status.TradingSchedule.EndOfDay (@status.TradingSchedule.TimeZone)</dd>
             <dt>Trading days</dt>
@@ -46,35 +46,35 @@ else
         </dl>
     </section>
 
-    <section class="panel">
+    <section class="panel" data-testid="status-auth-panel">
         <h2>Auth state</h2>
         <dl>
             <dt>Session status</dt>
-            <dd>@status.AuthState.SessionStatus</dd>
+            <dd data-testid="auth-session-status-value">@status.AuthState.SessionStatus</dd>
             <dt>Degraded</dt>
-            <dd>@(status.AuthState.IsDegraded ? "Yes" : "No")</dd>
+            <dd data-testid="auth-degraded-value">@(status.AuthState.IsDegraded ? "Yes" : "No")</dd>
             <dt>Blocked reason</dt>
-            <dd>@(status.AuthState.BlockedReason ?? "None")</dd>
+            <dd data-testid="auth-blocked-reason-value">@(status.AuthState.BlockedReason ?? "None")</dd>
             <dt>Retry phase</dt>
-            <dd>@status.RetryState.Phase</dd>
+            <dd data-testid="auth-retry-phase-value">@status.RetryState.Phase</dd>
             <dt>Automatic attempt number</dt>
-            <dd>@status.RetryState.AutomaticAttemptNumber</dd>
+            <dd data-testid="auth-automatic-attempt-value">@status.RetryState.AutomaticAttemptNumber</dd>
             <dt>Next retry</dt>
-            <dd>@(status.RetryState.NextRetryAtUtc?.ToLocalTime().ToString("u") ?? "Not scheduled")</dd>
+            <dd data-testid="auth-next-retry-value">@(status.RetryState.NextRetryAtUtc?.ToLocalTime().ToString("u") ?? "Not scheduled")</dd>
         </dl>
 
         @if (status.AuthState.IsDegraded)
         {
-            <p class="warning">Auth-dependent actions are blocked until the platform can restore an IG demo session.</p>
+            <p class="warning" role="alert" data-testid="auth-degraded-warning">Auth-dependent actions are blocked until the platform can restore an IG demo session.</p>
         }
 
-        <button @onclick="TriggerManualRetryAsync" disabled="@(!status.RetryState.ManualRetryAvailable || manualRetryInProgress)">
+        <button data-testid="manual-retry-button" @onclick="TriggerManualRetryAsync" disabled="@(!status.RetryState.ManualRetryAvailable || manualRetryInProgress)">
             @(manualRetryInProgress ? "Retrying..." : "Trigger manual retry")
         </button>
 
         @if (!string.IsNullOrWhiteSpace(manualRetryMessage))
         {
-            <p>@manualRetryMessage</p>
+            <p role="status" data-testid="manual-retry-message">@manualRetryMessage</p>
         }
     </section>
 

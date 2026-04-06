@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -14,7 +15,14 @@ namespace TNC.Trading.Platform.Application.Services;
 
 internal interface IPlatformConfigurationStore
 {
+    Task<PlatformConfigurationSnapshot> ApplyStartupConfigurationAsync(CancellationToken cancellationToken);
+
     Task<PlatformConfigurationSnapshot> GetCurrentAsync(CancellationToken cancellationToken);
+
+    Task<PlatformConfigurationSnapshot> GetRuntimeAsync(
+        PlatformEnvironmentKind? platformEnvironment,
+        BrokerEnvironmentKind? brokerEnvironment,
+        CancellationToken cancellationToken);
 
     Task<UpdatePlatformConfigurationResult> UpdateAsync(PlatformConfigurationUpdate update, CancellationToken cancellationToken);
 }
@@ -69,8 +77,17 @@ internal static class PlatformApplicationServiceCollectionExtensions
 
 internal sealed class PlatformConfigurationService(IPlatformConfigurationStore store)
 {
+    public Task<PlatformConfigurationSnapshot> ApplyStartupConfigurationAsync(CancellationToken cancellationToken) =>
+        store.ApplyStartupConfigurationAsync(cancellationToken);
+
     public Task<PlatformConfigurationSnapshot> GetCurrentAsync(CancellationToken cancellationToken) =>
         store.GetCurrentAsync(cancellationToken);
+
+    public Task<PlatformConfigurationSnapshot> GetRuntimeAsync(
+        PlatformEnvironmentKind? platformEnvironment,
+        BrokerEnvironmentKind? brokerEnvironment,
+        CancellationToken cancellationToken) =>
+        store.GetRuntimeAsync(platformEnvironment, brokerEnvironment, cancellationToken);
 
     public Task<UpdatePlatformConfigurationResult> UpdateAsync(PlatformConfigurationUpdate update, CancellationToken cancellationToken) =>
         store.UpdateAsync(update, cancellationToken);
@@ -89,7 +106,7 @@ internal sealed class TradingScheduleGate
             return new TradingScheduleStatus(false, "Trading schedule is inactive for the configured bank holiday.");
         }
 
-        if (!tradingSchedule.TradingDays.Contains(localNow.DayOfWeek))
+        if (!IsTradingDayActive(tradingSchedule, localNow.DayOfWeek))
         {
             return new TradingScheduleStatus(false, "Trading schedule is inactive for the current day.");
         }
@@ -101,6 +118,21 @@ internal sealed class TradingScheduleGate
         }
 
         return new TradingScheduleStatus(true, "Trading schedule is active.");
+    }
+
+    private static bool IsTradingDayActive(TradingScheduleConfiguration tradingSchedule, DayOfWeek currentDay)
+    {
+        if (tradingSchedule.TradingDays.Contains(currentDay))
+        {
+            return true;
+        }
+
+        return currentDay switch
+        {
+            DayOfWeek.Saturday => tradingSchedule.WeekendBehavior is WeekendBehavior.IncludeSaturday or WeekendBehavior.IncludeFullWeekend,
+            DayOfWeek.Sunday => tradingSchedule.WeekendBehavior is WeekendBehavior.IncludeSunday or WeekendBehavior.IncludeFullWeekend,
+            _ => false
+        };
     }
 
     private static TimeZoneInfo ResolveTimeZone(string configuredTimeZone)
@@ -131,12 +163,15 @@ internal sealed class PlatformStateCoordinator(
     TimeProvider timeProvider,
     ILogger<PlatformStateCoordinator> logger)
 {
+    private const string MissingCredentialsBlockedReason = "IG demo credentials are incomplete.";
+    private static readonly ConcurrentDictionary<Guid, byte> DegradedFailureNotificationsObservedThisProcess = new();
+
     public async Task<PlatformStatusModel> GetStatusAsync(CancellationToken cancellationToken)
     {
         await TickAsync(cancellationToken).ConfigureAwait(false);
 
-        var currentConfiguration = await platformConfigurationService.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var currentState = await runtimeStateStore.GetOrCreateAsync(cancellationToken).ConfigureAwait(false);
+        var currentConfiguration = await GetRuntimeConfigurationAsync(currentState, cancellationToken).ConfigureAwait(false);
         var scheduleStatus = tradingScheduleGate.Evaluate(currentConfiguration.TradingSchedule, timeProvider.GetUtcNow());
         ApplyRuntimeContext(currentConfiguration, currentState, scheduleStatus);
 
@@ -167,9 +202,9 @@ internal sealed class PlatformStateCoordinator(
 
     public async Task<ManualRetryResult> TriggerManualRetryAsync(CancellationToken cancellationToken)
     {
-        var currentConfiguration = await platformConfigurationService.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var scheduleStatus = tradingScheduleGate.Evaluate(currentConfiguration.TradingSchedule, timeProvider.GetUtcNow());
         var currentState = await runtimeStateStore.GetOrCreateAsync(cancellationToken).ConfigureAwait(false);
+        var currentConfiguration = await GetRuntimeConfigurationAsync(currentState, cancellationToken).ConfigureAwait(false);
+        var scheduleStatus = tradingScheduleGate.Evaluate(currentConfiguration.TradingSchedule, timeProvider.GetUtcNow());
         ApplyRuntimeContext(currentConfiguration, currentState, scheduleStatus);
 
         if (!scheduleStatus.IsActive)
@@ -229,8 +264,8 @@ internal sealed class PlatformStateCoordinator(
 
     public async Task TickAsync(CancellationToken cancellationToken)
     {
-        var currentConfiguration = await platformConfigurationService.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var currentState = await runtimeStateStore.GetOrCreateAsync(cancellationToken).ConfigureAwait(false);
+        var currentConfiguration = await GetRuntimeConfigurationAsync(currentState, cancellationToken).ConfigureAwait(false);
         var now = timeProvider.GetUtcNow();
         var scheduleStatus = tradingScheduleGate.Evaluate(currentConfiguration.TradingSchedule, now);
         ApplyRuntimeContext(currentConfiguration, currentState, scheduleStatus);
@@ -262,83 +297,6 @@ internal sealed class PlatformStateCoordinator(
         }
 
         await TransitionToDegradedAsync(currentConfiguration, currentState, cancellationToken).ConfigureAwait(false);
-
-        if (currentState.NextRetryAtUtc is not null && currentState.NextRetryAtUtc <= now)
-        {
-            if (currentState.RetryPhase == AuthRetryPhase.InitialAutomatic)
-            {
-                currentState.AutomaticAttemptNumber += 1;
-                if (currentState.AutomaticAttemptNumber >= currentConfiguration.RetryPolicy.MaxAutomaticRetries)
-                {
-                    currentState.RetryPhase = AuthRetryPhase.Periodic;
-                    currentState.RetryLimitReached = true;
-                    currentState.NextRetryAtUtc = now.AddMinutes(currentConfiguration.RetryPolicy.PeriodicDelayMinutes);
-                    currentState.LastTransitionAtUtc = now;
-
-                    var lastDelay = GetDelayBeforeAttempt(currentConfiguration.RetryPolicy, currentState.AutomaticAttemptNumber);
-                    var summary = $"Initial automatic IG demo auth retries are exhausted after {currentState.AutomaticAttemptNumber} attempts. Periodic retry continues every {currentConfiguration.RetryPolicy.PeriodicDelayMinutes} minutes.";
-                    var correlationId = CreateCorrelationId();
-
-                    await UpsertRetryCycleAsync(currentState.CurrentRetryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, lastDelay, cancellationToken).ConfigureAwait(false);
-                    await WriteOperationalEventAsync(
-                        currentConfiguration,
-                        "auth",
-                        "RetryLimitReached",
-                        summary,
-                        new
-                        {
-                            currentState.AutomaticAttemptNumber,
-                            LastScheduledDelaySeconds = lastDelay,
-                            currentConfiguration.RetryPolicy.PeriodicDelayMinutes
-                        },
-                        "Warning",
-                        correlationId,
-                        currentState.CurrentRetryCycleId,
-                        cancellationToken).ConfigureAwait(false);
-                    await notificationDispatcher.DispatchRetryLimitReachedAsync(currentConfiguration, summary, correlationId, currentState.CurrentRetryCycleId, cancellationToken).ConfigureAwait(false);
-                }
-                else
-                {
-                    var nextDelay = GetDelayBeforeAttempt(currentConfiguration.RetryPolicy, currentState.AutomaticAttemptNumber + 1);
-                    currentState.NextRetryAtUtc = now.AddSeconds(nextDelay);
-                    currentState.LastTransitionAtUtc = now;
-
-                    await UpsertRetryCycleAsync(currentState.CurrentRetryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, nextDelay, cancellationToken).ConfigureAwait(false);
-                    await WriteOperationalEventAsync(
-                        currentConfiguration,
-                        "auth",
-                        "RetryScheduled",
-                        $"Automatic retry {currentState.AutomaticAttemptNumber} failed. Next retry is scheduled at {currentState.NextRetryAtUtc:O}.",
-                        new
-                        {
-                            currentState.AutomaticAttemptNumber,
-                            currentState.NextRetryAtUtc
-                        },
-                        "Information",
-                        CreateCorrelationId(),
-                        currentState.CurrentRetryCycleId,
-                        cancellationToken).ConfigureAwait(false);
-                }
-            }
-            else
-            {
-                currentState.NextRetryAtUtc = now.AddMinutes(currentConfiguration.RetryPolicy.PeriodicDelayMinutes);
-                currentState.LastTransitionAtUtc = now;
-
-                await UpsertRetryCycleAsync(currentState.CurrentRetryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, currentConfiguration.RetryPolicy.PeriodicDelayMinutes * 60, cancellationToken).ConfigureAwait(false);
-                await WriteOperationalEventAsync(
-                    currentConfiguration,
-                    "auth",
-                    "PeriodicRetryScheduled",
-                    $"Periodic retry remains active. Next retry is scheduled at {currentState.NextRetryAtUtc:O}.",
-                    new { currentState.NextRetryAtUtc },
-                    "Information",
-                    CreateCorrelationId(),
-                    currentState.CurrentRetryCycleId,
-                    cancellationToken).ConfigureAwait(false);
-            }
-        }
-
         await runtimeStateStore.SaveAsync(currentState, cancellationToken).ConfigureAwait(false);
     }
 
@@ -349,6 +307,9 @@ internal sealed class PlatformStateCoordinator(
 
         if (currentConfiguration.Credentials.IsComplete)
         {
+            var authAttemptCorrelationId = CreateCorrelationId();
+            await RecordAuthAttemptAsync(currentConfiguration, retryCycleId, authAttemptCorrelationId, cancellationToken).ConfigureAwait(false);
+
             currentState.SessionStatus = PlatformSessionStatus.Active;
             currentState.IsDegraded = false;
             currentState.BlockedReason = null;
@@ -381,7 +342,7 @@ internal sealed class PlatformStateCoordinator(
 
         currentState.SessionStatus = PlatformSessionStatus.Degraded;
         currentState.IsDegraded = true;
-        currentState.BlockedReason = "IG demo credentials are incomplete.";
+        currentState.BlockedReason = MissingCredentialsBlockedReason;
         currentState.RetryPhase = AuthRetryPhase.InitialAutomatic;
         currentState.AutomaticAttemptNumber = 0;
         var nextDelay = GetDelayBeforeAttempt(currentConfiguration.RetryPolicy, 1);
@@ -442,6 +403,7 @@ internal sealed class PlatformStateCoordinator(
             retryCycleId,
             cancellationToken).ConfigureAwait(false);
 
+        ForgetDegradedFailureNotification(retryCycleId);
         currentState.CurrentRetryCycleId = null;
     }
 
@@ -480,6 +442,7 @@ internal sealed class PlatformStateCoordinator(
             correlationId,
             retryCycleId,
             cancellationToken).ConfigureAwait(false);
+        ForgetDegradedFailureNotification(retryCycleId);
         currentState.CurrentRetryCycleId = null;
         await notificationDispatcher.DispatchBlockedLiveAsync(currentConfiguration, "A live broker action was blocked because the platform environment is Test.", correlationId, retryCycleId, cancellationToken).ConfigureAwait(false);
     }
@@ -495,6 +458,8 @@ internal sealed class PlatformStateCoordinator(
 
         var wasDegraded = currentState.IsDegraded;
         var retryCycleId = currentState.CurrentRetryCycleId;
+        var authAttemptCorrelationId = CreateCorrelationId();
+        await RecordAuthAttemptAsync(currentConfiguration, retryCycleId, authAttemptCorrelationId, cancellationToken).ConfigureAwait(false);
         var sanitizedAuthResponse = IgAuthenticationResponseSanitizer.Sanitize(new IgAuthenticateResponse(
             "configured-demo-session",
             null,
@@ -543,6 +508,7 @@ internal sealed class PlatformStateCoordinator(
             retryCycleId,
             cancellationToken).ConfigureAwait(false);
 
+        ForgetDegradedFailureNotification(retryCycleId);
         currentState.CurrentRetryCycleId = null;
 
         if (wasDegraded)
@@ -551,29 +517,77 @@ internal sealed class PlatformStateCoordinator(
         }
     }
 
+    private Task RecordAuthAttemptAsync(
+        PlatformConfigurationSnapshot currentConfiguration,
+        Guid? retryCycleId,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        return WriteOperationalEventAsync(
+            currentConfiguration,
+            "auth",
+            "AuthAttempted",
+            $"IG {currentConfiguration.BrokerEnvironment.ToString().ToLowerInvariant()} auth attempt started.",
+            new
+            {
+                AttemptedBrokerEnvironment = currentConfiguration.BrokerEnvironment.ToString(),
+                retryCycleId
+            },
+            "Information",
+            correlationId,
+            retryCycleId,
+            cancellationToken);
+    }
+
     private async Task TransitionToDegradedAsync(PlatformConfigurationSnapshot currentConfiguration, PlatformRuntimeState currentState, CancellationToken cancellationToken)
     {
-        if (currentState.SessionStatus == PlatformSessionStatus.Degraded)
+        if (currentState.SessionStatus == PlatformSessionStatus.Degraded
+            && string.Equals(currentState.BlockedReason, MissingCredentialsBlockedReason, StringComparison.Ordinal)
+            && currentState.RetryPhase == AuthRetryPhase.None
+            && currentState.AutomaticAttemptNumber == 0
+            && currentState.NextRetryAtUtc is null
+            && !currentState.RetryLimitReached)
         {
+            if (ShouldDispatchDegradedFailureNotification(currentState.CurrentRetryCycleId))
+            {
+                var replayCorrelationId = CreateCorrelationId();
+                await WriteOperationalEventAsync(
+                    currentConfiguration,
+                    "auth",
+                    "FailureDetected",
+                    "IG demo auth is degraded because required credentials are incomplete.",
+                    new
+                    {
+                        RetryCycleId = currentState.CurrentRetryCycleId,
+                        ReplayedAtStartup = true
+                    },
+                    "Warning",
+                    replayCorrelationId,
+                    currentState.CurrentRetryCycleId,
+                    cancellationToken).ConfigureAwait(false);
+                await notificationDispatcher.DispatchFailureAsync(currentConfiguration, "IG demo auth is degraded because required credentials are incomplete.", replayCorrelationId, currentState.CurrentRetryCycleId, cancellationToken).ConfigureAwait(false);
+            }
+
             return;
         }
 
         var now = timeProvider.GetUtcNow();
+        var retryCycleId = currentState.CurrentRetryCycleId ?? Guid.NewGuid();
+        _ = DegradedFailureNotificationsObservedThisProcess.TryAdd(retryCycleId, 0);
         currentState.SessionStatus = PlatformSessionStatus.Degraded;
         currentState.IsDegraded = true;
-        currentState.BlockedReason = "IG demo credentials are incomplete.";
-        currentState.RetryPhase = AuthRetryPhase.InitialAutomatic;
+        currentState.BlockedReason = MissingCredentialsBlockedReason;
+        currentState.RetryPhase = AuthRetryPhase.None;
         currentState.AutomaticAttemptNumber = 0;
-        var nextDelay = GetDelayBeforeAttempt(currentConfiguration.RetryPolicy, 1);
-        currentState.NextRetryAtUtc = now.AddSeconds(nextDelay);
+        currentState.NextRetryAtUtc = null;
         currentState.RetryLimitReached = false;
-        currentState.CurrentRetryCycleId = Guid.NewGuid();
+        currentState.CurrentRetryCycleId = retryCycleId;
         currentState.EstablishedAtUtc = null;
         currentState.ExpiresAtUtc = null;
         currentState.LastValidatedAtUtc = now;
         currentState.LastTransitionAtUtc = now;
 
-        await UpsertRetryCycleAsync(currentState.CurrentRetryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, nextDelay, cancellationToken).ConfigureAwait(false);
+        await UpsertRetryCycleAsync(currentState.CurrentRetryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, lastDelaySeconds: null, cancellationToken).ConfigureAwait(false);
 
         var correlationId = CreateCorrelationId();
         await WriteOperationalEventAsync(
@@ -581,12 +595,12 @@ internal sealed class PlatformStateCoordinator(
             "auth",
             "FailureDetected",
             "IG demo auth is degraded because required credentials are incomplete.",
-            new { RetryCycleId = currentState.CurrentRetryCycleId },
+            new { RetryCycleId = retryCycleId },
             "Warning",
             correlationId,
-            currentState.CurrentRetryCycleId,
+            retryCycleId,
             cancellationToken).ConfigureAwait(false);
-        await notificationDispatcher.DispatchFailureAsync(currentConfiguration, "IG demo auth is degraded because required credentials are incomplete.", correlationId, currentState.CurrentRetryCycleId, cancellationToken).ConfigureAwait(false);
+        await notificationDispatcher.DispatchFailureAsync(currentConfiguration, "IG demo auth is degraded because required credentials are incomplete.", correlationId, retryCycleId, cancellationToken).ConfigureAwait(false);
     }
 
     private static void ApplyRuntimeContext(PlatformConfigurationSnapshot currentConfiguration, PlatformRuntimeState currentState, TradingScheduleStatus scheduleStatus)
@@ -721,6 +735,46 @@ internal sealed class PlatformStateCoordinator(
     }
 
     private static string CreateCorrelationId() => Guid.NewGuid().ToString("N");
+
+    private static bool ShouldDispatchDegradedFailureNotification(Guid? retryCycleId)
+    {
+        return retryCycleId is Guid value
+            && DegradedFailureNotificationsObservedThisProcess.TryAdd(value, 0);
+    }
+
+    private static void ForgetDegradedFailureNotification(Guid? retryCycleId)
+    {
+        if (retryCycleId is Guid value)
+        {
+            _ = DegradedFailureNotificationsObservedThisProcess.TryRemove(value, out _);
+        }
+    }
+
+    private async Task<PlatformConfigurationSnapshot> GetRuntimeConfigurationAsync(
+        PlatformRuntimeState currentState,
+        CancellationToken cancellationToken)
+    {
+        var platformEnvironment = TryParsePlatformEnvironment(currentState.PlatformEnvironment);
+        var brokerEnvironment = TryParseBrokerEnvironment(currentState.BrokerEnvironment);
+
+        return await platformConfigurationService
+            .GetRuntimeAsync(platformEnvironment, brokerEnvironment, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static PlatformEnvironmentKind? TryParsePlatformEnvironment(string? value)
+    {
+        return Enum.TryParse<PlatformEnvironmentKind>(value, ignoreCase: true, out var platformEnvironment)
+            ? platformEnvironment
+            : null;
+    }
+
+    private static BrokerEnvironmentKind? TryParseBrokerEnvironment(string? value)
+    {
+        return Enum.TryParse<BrokerEnvironmentKind>(value, ignoreCase: true, out var brokerEnvironment)
+            ? brokerEnvironment
+            : null;
+    }
 
     internal static int GetDelayBeforeAttempt(RetryPolicyConfiguration retryPolicy, int attemptNumber)
     {

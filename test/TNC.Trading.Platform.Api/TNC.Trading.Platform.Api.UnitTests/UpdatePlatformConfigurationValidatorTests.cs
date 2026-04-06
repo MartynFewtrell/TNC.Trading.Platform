@@ -4,8 +4,14 @@ namespace TNC.Trading.Platform.Api.UnitTests;
 
 public class UpdatePlatformConfigurationValidatorTests
 {
+    /// <summary>
+    /// Trace: FR8, FR20, SR4.
+    /// Verifies: configuration validation rejects a live broker selection when the platform environment is Test.
+    /// Expected: validation throws a platform validation exception that includes a broker-environment error.
+    /// Why: the Test-platform safeguard must prevent unsafe live activation before configuration can be persisted.
+    /// </summary>
     [Fact]
-    public void Validate_WithTestPlatformAndLiveBroker_ThrowsPlatformValidationException()
+    public void Validate_ShouldThrowPlatformValidationException_WhenPlatformIsTestAndBrokerIsLive()
     {
         var validator = ApiReflection.Create("TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration.UpdatePlatformConfigurationValidator");
         var request = CreateRequest("Test", "Live", new TimeOnly(8, 0), new TimeOnly(16, 30));
@@ -17,8 +23,14 @@ public class UpdatePlatformConfigurationValidatorTests
         Assert.Contains("BrokerEnvironment", errors.Keys);
     }
 
+    /// <summary>
+    /// Trace: FR21, FR20.
+    /// Verifies: configuration validation rejects a trading window whose end occurs before its start.
+    /// Expected: validation throws a platform validation exception that includes a trading-schedule error.
+    /// Why: invalid trading-window values must be blocked before unusable schedule configuration is stored.
+    /// </summary>
     [Fact]
-    public void Validate_WithInvalidTradingWindow_ThrowsPlatformValidationException()
+    public void Validate_ShouldThrowPlatformValidationException_WhenTradingWindowIsInvalid()
     {
         var validator = ApiReflection.Create("TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration.UpdatePlatformConfigurationValidator");
         var request = CreateRequest("Live", "Demo", new TimeOnly(16, 30), new TimeOnly(8, 0));

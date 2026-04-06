@@ -33,6 +33,7 @@ Applies to: `src/**/*.cs, src/**/*.csproj, src/**/*.sln, src/**/*.razor, src/**/
 - Default database choice is Microsoft SQL Server.
 - Use a migration-based schema workflow for SQL Server (for example EF Core migrations if the repo uses EF Core).
 - Keep all connection strings and credentials out of source control; use configuration + secret injection (development user-secrets; production secret store/managed identity where applicable).
+- Follow `/.github/instructions/configuration.instructions.md` for operator-managed configuration storage and secret-handling flows.
 
 - Use .NET Aspire for desktop/local development for distributed applications.
   - Prefer the established Aspire patterns in the repo (for example an `AppHost` project and shared service defaults if present).
@@ -62,8 +63,8 @@ Applies to: `src/**/*.cs, src/**/*.csproj, src/**/*.sln, src/**/*.razor, src/**/
 - Use structured logging and distributed tracing for services (OpenTelemetry conventions if present in the repo).
 - Use resilience patterns for cross-service calls (timeouts, retries with backoff, idempotency where applicable).
 
-- Keep solution/project structure aligned with `/.github/instructions/folder-structure.instructions.md`.
-- For iterative work items, keep docs aligned with `/.github/instructions/iterative-work-docs.instructions.md`.
+- Keep solution/project structure aligned with `/.github/instructions/folders.instructions.md`.
+- For iterative work items, keep docs aligned with `/.github/instructions/work-packages.instructions.md`.
 
 ### MUST NOT
 
@@ -88,8 +89,9 @@ Applies to: `src/**/*.cs, src/**/*.csproj, src/**/*.sln, src/**/*.razor, src/**/
 
 ## References (optional)
 
-- `/.github/instructions/folder-structure.instructions.md`
-- `/.github/instructions/iterative-work-docs.instructions.md`
+- `/.github/instructions/configuration.instructions.md`
+- `/.github/instructions/folders.instructions.md`
+- `/.github/instructions/work-packages.instructions.md`
 - https://learn.microsoft.com/dotnet/core/releases-and-support
 - https://learn.microsoft.com/dotnet/core/tools/global-json
 - https://learn.microsoft.com/aspnet/core/fundamentals/openapi/overview

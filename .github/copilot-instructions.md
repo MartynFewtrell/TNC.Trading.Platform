@@ -1,5 +1,5 @@
 ---
-description: 'Defines repo-wide Copilot guidance for technology choices, minimal API organization, references, authentication, and test naming so contributions stay consistent with the team’s .NET standards.'
+description: 'Defines repo-wide Copilot guidance for technology choices, workflow boundaries, and where scoped repository standards live so contributions stay consistent with this repo’s .NET conventions.'
 applyTo: '**/*'
 ---
 
@@ -23,18 +23,16 @@ Applies to: `**/*`
 - For local authentication, use Keycloak running in a container orchestrated by Aspire.
 - For Azure authentication, use Microsoft Entra ID.
 - Ensure authentication guidance and implementations are compatible with OIDC, OAuth 2.0, and SAML 2.0.
-- Use the functional test naming convention: `<001>_<FR1>_point_of_test`, where `001` is the work package number (from the subfolder) and `FR1/FR2/...` comes from the requirements document.
-- Use descriptive test file names that match the contained test class; avoid generic names like UnitTest1.cs.
 - Project-wide developer run documentation (e.g., how to build/start/validate locally) should live at the top level under `docs/` for reuse across work packages, with work packages referencing it as needed.
 - Implement requested Copilot artifacts as Agent Skills (in `.github/skills` with `SKILL.md`), not as `.prompt.md` files.
-- Requirements documents should remain implementation-agnostic and refer to a data store for configuration rather than naming SQL Server directly.
 - Keep `Program.cs` focused on startup orchestration when using Minimal APIs, and place endpoint mappings in dedicated registration extensions grouped by route or feature area.
-- When creating a delivery plan based on refactoring advice, scope the plan to that refactor objective rather than to existing work-package docs unless explicitly instructed to reuse those docs.
+- Do not draft `docs/00x-work/` work packages unless explicitly requested.
+- Use automated test method names in the MethodName_StateUnderTest_ExpectedResult style, e.g., `CalculateTotal_ShouldReturnZero_WhenCartIsEmpty`, because it reads naturally and enhances clarity.
+- Fully document automated tests with comments that capture requirement traceability, explain what each test verifies, the expected outcome, and why the behavior matters.
 
 ### SHOULD
 
 - Prefer C# with the latest .NET LTS, Minimal APIs for HTTP services, and Blazor for front ends when applicable.
-- Prefer a data store for configuration rather than naming SQL Server directly when a relational database is required.
 - Prefer .NET Aspire for local desktop/distributed development orchestration.
 - Prefer Azure Container Apps for deployments when containerized hosting is appropriate.
 - Prefer scalable service-based architecture with messaging when the problem domain benefits from it.
@@ -47,7 +45,6 @@ Applies to: `**/*`
 
 ## Output and Validation (optional)
 
-- If adding or renaming functional tests, validate that names follow `<001>_<FRx>_point_of_test`.
 - If changing runtime/authentication behavior, validate OIDC/OAuth2/SAML compatibility for the relevant environment (local vs Azure).
 
 ## References (optional)
@@ -55,14 +52,16 @@ Applies to: `**/*`
 - `https://learn.microsoft.com/dotnet/`
 - `https://aspire.dev/`
 
-- `./.github/instructions/architecture-guidelines.instructions.md`
-- `./.github/instructions/aspire-best-practices.instructions.md`
-- `./.github/instructions/aspire-testing.instructions.md`
-- `./.github/instructions/authentication.instructions.md`
+- `./.github/instructions/architecture.instructions.md`
+- `./.github/instructions/aspire.instructions.md`
+- `./.github/instructions/aspire-tests.instructions.md`
+- `./.github/instructions/auth.instructions.md`
+- `./.github/instructions/configuration.instructions.md`
 - `./.github/instructions/csharp.instructions.md`
-- `./.github/instructions/docs-authoring.instructions.md`
-- `./.github/instructions/folder-structure.instructions.md`
-- `./.github/instructions/iterative-work-docs.instructions.md`
-- `./.github/instructions/microsoft-stack-dotnet.instructions.md`
-- `./.github/instructions/playwright-dotnet.instructions.md`
-- `./.github/instructions/test-approach.instructions.md`
+- `./.github/instructions/docs.instructions.md`
+- `./.github/instructions/dotnet-stack.instructions.md`
+- `./.github/instructions/folders.instructions.md`
+- `./.github/instructions/playwright.instructions.md`
+- `./.github/instructions/scalar.instructions.md`
+- `./.github/instructions/tests.instructions.md`
+- `./.github/instructions/work-packages.instructions.md`

@@ -1,8 +1,8 @@
 ---
 agent: 'agent'
 description: 'Executes a `delivery-plan.md` in order to produce working code, updating the plan checkboxes as tasks complete and enforcing build+test gates before and after each work item.'
-name: execute-delivery-plan
-model: 'gpt-5.2'
+name: execute-delivery
+model: 'gpt-5.4'
 # tags: [delivery-plan, execution, build, test]
 ---
 

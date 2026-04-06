@@ -3,7 +3,7 @@ description: 'Standardize iterative work documentation under `./docs/00x-work/` 
 applyTo: 'docs/**/*.md'
 ---
 
-# Iterative Work Documentation Instructions
+# Work package documentation instructions
 
 ## Overview
 
@@ -21,6 +21,8 @@ These rules apply when adding or updating documentation for a unit of work. They
   - This document defines the business context, desired outcomes, and high-level requirements for the overall initiative.
   - It is the foundation upon which systems analysis and work packages are defined.
 
+- You MUST NOT draft a new `./docs/00x-work/` work package unless the user or task explicitly requests one.
+
 - You MUST maintain a project-level systems analysis document at `./docs/systems-analysis.md` before commencing any work packages.
   - This document refines the business requirements into system boundary/context, use cases, business rules, analysis-level requirements, and quality attributes.
   - It must remain implementation-agnostic and must not replace per-work-package requirements/specification/plan documents.
@@ -29,8 +31,12 @@ These rules apply when adding or updating documentation for a unit of work. They
 - You MUST ensure each work package `requirements.md` aligns with and links to `../business-requirements.md`.
 - You MUST produce a technical specification from the requirements and store it as `technical-specification.md` in the same `./docs/00x-work/` folder.
 - You MUST create a delivery plan based on both the requirements and technical specification and store it as `delivery-plan.md` in the same `./docs/00x-work/` folder.
+- Work package `requirements.md` documents MUST remain implementation-agnostic.
+  - Refer to a data store for configuration rather than naming SQL Server directly in requirements-level documents.
 - You MUST keep the `00x` number monotonically increasing (do not reuse a prior number for a different work item).
 - You MUST keep each work item's documentation self-contained within its `./docs/00x-work/` folder.
+- When asked to review a work package, you MUST create the review report as a physical markdown file within that work package, not only as chat output.
+- When creating a delivery plan from refactoring advice, you MUST scope the plan to that refactor objective rather than to existing work-package docs unless explicitly instructed to reuse them.
 
 ### SHOULD
 

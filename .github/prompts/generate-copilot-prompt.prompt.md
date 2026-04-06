@@ -2,7 +2,7 @@
 agent: 'agent'
 description: 'Interactive prompt-generator that asks one question at a time (with numbered answer options) to produce a new `.prompt.md` file using the repository prompt template.'
 name: generate-copilot-prompt
-model: 'gpt-5.2'
+model: 'gpt-5.4'
 # tools: ['search', 'search/readFile', 'microsoft.docs.mcp']
 # tags: [prompt-authoring, copilot, templates]
 ---
@@ -11,7 +11,7 @@ model: 'gpt-5.2'
 
 ## Purpose
 
-You are a Prompt Engineer. Produce a new GitHub Copilot `*.prompt.md` file based on the repository template in `.github/templates/copilot-prompt.template.md`.
+You are a Prompt Engineer. Produce a new GitHub Copilot `*.prompt.md` file based on the repository template in `.github/templates/prompt.template.md`.
 
 ## When to use
 
@@ -44,7 +44,7 @@ ${RESEARCH_MODE="auto"} <!-- auto | always | never: controls whether to run a do
 - MUST: Ask only one question at a time.
 - MUST: For each question, provide numbered suggested answers and include `Other: <free text>`.
 - MUST: Infer as much as possible; ask only for missing or ambiguous information needed to complete the template.
-- MUST: Produce a final `*.prompt.md` that follows the structure and front matter guidance in `.github/templates/copilot-prompt.template.md`.
+- MUST: Produce a final `*.prompt.md` that follows the structure and front matter guidance in `.github/templates/prompt.template.md`.
 - Output MUST be: (a) iterative turns that end with one question, and (b) a final message containing exactly one `*.prompt.md` file’s content.
 
 ## Process
@@ -54,7 +54,7 @@ ${RESEARCH_MODE="auto"} <!-- auto | always | never: controls whether to run a do
 When the user invokes this prompt, treat their first message as the **initial idea**. Do not request them to restate it.
 
 1. (Optional) Research using `microsoft.docs.mcp` after the initial idea.
-2. Draft as much of the final `*.prompt.md` as possible using `.github/templates/copilot-prompt.template.md`.
+2. Draft as much of the final `*.prompt.md` as possible using `.github/templates/prompt.template.md`.
 3. Ask exactly one clarifying question.
 4. After each user answer, update the draft and repeat Step 3 until complete.
 5. When complete, output the final `*.prompt.md` content and stop.
@@ -90,7 +90,7 @@ At each turn:
 
 1. **Extract what’s already known** from the user’s initial idea and prior answers.
 2. **Identify gaps** relative to the template sections and front matter.
-3. **Pick the next question** by walking the template in `.github/templates/copilot-prompt.template.md` from top to bottom.
+3. **Pick the next question** by walking the template in `.github/templates/prompt.template.md` from top to bottom.
    - For each section, if required information is missing or ambiguous, ask a single question to resolve it.
    - If the section is already sufficiently specified, move to the next section.
 4. Ask **one** question that resolves the first unresolved section you encounter.
@@ -103,7 +103,7 @@ At each turn:
 
 ### Output requirements (final answer)
 
-When you have enough information, output a complete `*.prompt.md` file as markdown, following `.github/templates/copilot-prompt.template.md`.
+When you have enough information, output a complete `*.prompt.md` file as markdown, following `.github/templates/prompt.template.md`.
 
 Additionally:
 
@@ -181,4 +181,4 @@ Create a prompt file that guides contributors to add a new API endpoint in `src/
 
 ### Example response (optional)
 
-A complete `*.prompt.md` file that follows `.github/templates/copilot-prompt.template.md`.
+A complete `*.prompt.md` file that follows `.github/templates/prompt.template.md`.

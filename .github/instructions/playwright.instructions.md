@@ -14,7 +14,7 @@ These instructions define how UI tests are authored with Playwright for .NET in 
 Applies to: `test/**/*.cs, test/**/*.csproj`
 
 - Applies when creating or updating Playwright UI tests.
-- These rules are additive to `/.github/instructions/folder-structure.instructions.md` (tests live under `test/`).
+- These rules are additive to `/.github/instructions/folders.instructions.md` (tests live under `test/`).
 
 ## Instructions
 
@@ -61,5 +61,5 @@ Applies to: `test/**/*.cs, test/**/*.csproj`
 
 ## References (optional)
 
-- `/.github/instructions/folder-structure.instructions.md`
+- `/.github/instructions/folders.instructions.md`
 - https://playwright.dev/dotnet/

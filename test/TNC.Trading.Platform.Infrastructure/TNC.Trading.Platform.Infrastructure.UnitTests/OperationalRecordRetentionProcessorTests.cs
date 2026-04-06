@@ -7,8 +7,14 @@ namespace TNC.Trading.Platform.Infrastructure.UnitTests;
 
 public class OperationalRecordRetentionProcessorTests
 {
+    /// <summary>
+    /// Trace: DR1.
+    /// Verifies: the retention processor deletes expired operational records while preserving recent ones.
+    /// Expected: records older than the configured retention window are removed and newer records remain in each operational table.
+    /// Why: retention cleanup must enforce the repository's review window without erasing current diagnostic history.
+    /// </summary>
     [Fact]
-    public async Task ApplyAsync_RemovesExpiredOperationalRecords()
+    public async Task ApplyAsync_ShouldRemoveExpiredOperationalRecords_WhenRetentionWindowIsExceeded()
     {
         var now = new DateTimeOffset(2026, 3, 29, 12, 0, 0, TimeSpan.Zero);
         await using var dbContext = InfrastructureReflection.CreateDbContext();

@@ -14,7 +14,7 @@ These instructions standardize how authentication is configured so local develop
 Applies to: `src/**/AppHost/**/*, src/**/*AppHost*.csproj, src/**/*.cs, src/**/*.csproj, src/**/*.json`
 
 - Applies when adding or changing authentication for APIs, web apps, or Aspire orchestration.
-- This is additive to `/.github/instructions/aspire-best-practices.instructions.md` and `/.github/instructions/microsoft-stack-dotnet.instructions.md`.
+- This is additive to `/.github/instructions/aspire.instructions.md` and `/.github/instructions/dotnet-stack.instructions.md`.
 
 ## Instructions
 

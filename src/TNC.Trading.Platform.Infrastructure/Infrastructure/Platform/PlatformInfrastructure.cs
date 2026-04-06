@@ -45,6 +45,45 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
     }
 }
 
+internal static class PlatformTimeProviderFactory
+{
+    public static TimeProvider Create(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var mode = configuration["Bootstrap:TimeProvider:Mode"];
+        if (!string.Equals(mode, "Incrementing", StringComparison.OrdinalIgnoreCase))
+        {
+            return TimeProvider.System;
+        }
+
+        var startUtc = DateTimeOffset.TryParse(configuration["Bootstrap:TimeProvider:StartUtc"], out var configuredStartUtc)
+            ? configuredStartUtc.ToUniversalTime()
+            : DateTimeOffset.UtcNow;
+        var stepSeconds = int.TryParse(configuration["Bootstrap:TimeProvider:StepSeconds"], out var configuredStepSeconds) && configuredStepSeconds > 0
+            ? configuredStepSeconds
+            : 1;
+
+        return new IncrementingTimeProvider(startUtc, TimeSpan.FromSeconds(stepSeconds));
+    }
+}
+
+internal sealed class IncrementingTimeProvider(DateTimeOffset initialUtcNow, TimeSpan step) : TimeProvider
+{
+    private readonly Lock syncLock = new();
+    private DateTimeOffset currentUtcNow = initialUtcNow;
+
+    public override DateTimeOffset GetUtcNow()
+    {
+        lock (syncLock)
+        {
+            var value = currentUtcNow;
+            currentUtcNow = currentUtcNow.Add(step);
+            return value;
+        }
+    }
+}
+
 internal sealed class ProtectedCredentialService(
     PlatformDbContext dbContext,
     IDataProtectionProvider dataProtectionProvider,
@@ -116,10 +155,37 @@ internal sealed class SqlPlatformConfigurationStore(
     ProtectedCredentialService protectedCredentialService,
     TimeProvider timeProvider) : IPlatformConfigurationStore
 {
+    public async Task<PlatformConfigurationSnapshot> ApplyStartupConfigurationAsync(CancellationToken cancellationToken)
+    {
+        var entity = await EnsureConfigurationAsync(cancellationToken).ConfigureAwait(false);
+        if (entity.RestartRequired)
+        {
+            entity.RestartRequired = false;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return await MapAsync(entity, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<PlatformConfigurationSnapshot> GetCurrentAsync(CancellationToken cancellationToken)
     {
         var entity = await EnsureConfigurationAsync(cancellationToken).ConfigureAwait(false);
         return await MapAsync(entity, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<PlatformConfigurationSnapshot> GetRuntimeAsync(
+        PlatformEnvironmentKind? platformEnvironment,
+        BrokerEnvironmentKind? brokerEnvironment,
+        CancellationToken cancellationToken)
+    {
+        var entity = await EnsureConfigurationAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!entity.RestartRequired || platformEnvironment is null || brokerEnvironment is null)
+        {
+            return await MapAsync(entity, cancellationToken).ConfigureAwait(false);
+        }
+
+        return await MapAsync(entity, platformEnvironment.Value, brokerEnvironment.Value, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<UpdatePlatformConfigurationResult> UpdateAsync(PlatformConfigurationUpdate update, CancellationToken cancellationToken)
@@ -230,7 +296,7 @@ internal sealed class SqlPlatformConfigurationStore(
             RetryMultiplier = GetInt32("Bootstrap:RetryPolicy:Multiplier", 2),
             RetryMaxDelaySeconds = GetInt32("Bootstrap:RetryPolicy:MaxDelaySeconds", 60),
             RetryPeriodicDelayMinutes = GetInt32("Bootstrap:RetryPolicy:PeriodicDelayMinutes", 5),
-            NotificationProvider = configuration["Bootstrap:NotificationSettings:Provider"] ?? "RecordedOnly",
+            NotificationProvider = GetNotificationProvider(),
             NotificationEmailTo = configuration["Bootstrap:NotificationSettings:EmailTo"],
             UpdatedAtUtc = timeProvider.GetUtcNow(),
             UpdatedBy = updatedBy,
@@ -240,6 +306,19 @@ internal sealed class SqlPlatformConfigurationStore(
         dbContext.PlatformConfigurations.Add(entity);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return entity;
+    }
+
+    private string GetNotificationProvider()
+    {
+        var configuredProvider = configuration["Bootstrap:NotificationSettings:Provider"];
+        if (!string.IsNullOrWhiteSpace(configuredProvider))
+        {
+            return configuredProvider;
+        }
+
+        return string.IsNullOrWhiteSpace(configuration["NotificationTransports:Smtp:Host"])
+            ? "RecordedOnly"
+            : "Smtp";
     }
 
     private IReadOnlyList<DayOfWeek> GetTradingDays()
@@ -295,7 +374,18 @@ internal sealed class SqlPlatformConfigurationStore(
         return string.IsNullOrWhiteSpace(configuredValue) ? defaultValue : TimeOnly.Parse(configuredValue);
     }
 
-    private async Task<PlatformConfigurationSnapshot> MapAsync(PlatformConfigurationEntity entity, CancellationToken cancellationToken)
+    private Task<PlatformConfigurationSnapshot> MapAsync(PlatformConfigurationEntity entity, CancellationToken cancellationToken)
+    {
+        var platformEnvironment = Enum.Parse<PlatformEnvironmentKind>(entity.PlatformEnvironment, ignoreCase: true);
+        var brokerEnvironment = Enum.Parse<BrokerEnvironmentKind>(entity.BrokerEnvironment, ignoreCase: true);
+        return MapAsync(entity, platformEnvironment, brokerEnvironment, cancellationToken);
+    }
+
+    private async Task<PlatformConfigurationSnapshot> MapAsync(
+        PlatformConfigurationEntity entity,
+        PlatformEnvironmentKind platformEnvironment,
+        BrokerEnvironmentKind brokerEnvironment,
+        CancellationToken cancellationToken)
     {
         var tradingDays = entity.TradingDaysCsv
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -303,8 +393,6 @@ internal sealed class SqlPlatformConfigurationStore(
             .ToArray();
 
         var bankHolidays = JsonSerializer.Deserialize<DateOnly[]>(entity.BankHolidayExclusionsJson) ?? [];
-        var platformEnvironment = Enum.Parse<PlatformEnvironmentKind>(entity.PlatformEnvironment, ignoreCase: true);
-        var brokerEnvironment = Enum.Parse<BrokerEnvironmentKind>(entity.BrokerEnvironment, ignoreCase: true);
         var credentials = await protectedCredentialService.GetPresenceAsync(brokerEnvironment, cancellationToken).ConfigureAwait(false);
 
         return new PlatformConfigurationSnapshot(
@@ -523,13 +611,16 @@ internal sealed class NotificationDispatcher(
         Guid? retryCycleId,
         CancellationToken cancellationToken)
     {
+        var sanitizedSummary = OperationalDataRedactor.RedactText(summary) ?? string.Empty;
+        var occurredAtUtc = timeProvider.GetUtcNow();
+
         var recipient = string.IsNullOrWhiteSpace(configuration.NotificationSettings.EmailTo)
             ? "unconfigured"
             : configuration.NotificationSettings.EmailTo!;
 
         var providerName = configuration.NotificationSettings.Provider;
         var dispatchResult = await DispatchAsync(
-            new NotificationMessage(notificationType, recipient, summary),
+            new NotificationMessage(notificationType, recipient, sanitizedSummary),
             providerName,
             cancellationToken).ConfigureAwait(false);
 
@@ -539,12 +630,32 @@ internal sealed class NotificationDispatcher(
             PlatformEnvironment = configuration.PlatformEnvironment.ToString(),
             BrokerEnvironment = configuration.BrokerEnvironment.ToString(),
             Recipient = recipient,
-            Summary = summary,
+            Summary = sanitizedSummary,
             DispatchStatus = dispatchResult.Status,
             Provider = dispatchResult.ProviderName,
             CorrelationId = correlationId,
             RetryCycleId = retryCycleId,
-            DispatchedAtUtc = timeProvider.GetUtcNow()
+            DispatchedAtUtc = occurredAtUtc
+        });
+
+        dbContext.OperationalEvents.Add(new OperationalEventEntity
+        {
+            Category = "notification",
+            EventType = notificationType,
+            PlatformEnvironment = configuration.PlatformEnvironment.ToString(),
+            BrokerEnvironment = configuration.BrokerEnvironment.ToString(),
+            Severity = dispatchResult.Status == "Failed" ? "Error" : "Information",
+            Summary = sanitizedSummary,
+            DetailsJson = OperationalDataRedactor.Serialize(new
+            {
+                Recipient = recipient,
+                DispatchStatus = dispatchResult.Status,
+                Provider = dispatchResult.ProviderName,
+                retryCycleId
+            }),
+            CorrelationId = correlationId,
+            RetryCycleId = retryCycleId,
+            OccurredAtUtc = occurredAtUtc
         });
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -554,7 +665,7 @@ internal sealed class NotificationDispatcher(
             dispatchResult.Status,
             notificationType,
             recipient,
-            summary);
+            sanitizedSummary);
     }
 
     private async Task<NotificationDispatchResult> DispatchAsync(
