@@ -2,10 +2,24 @@
   <Folder Name="/src/">
     <Project Path="src/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.csproj" />
     <Project Path="src/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.csproj" />
+    <Project Path="src/TNC.Trading.Platform.Application/TNC.Trading.Platform.Application.csproj" />
+    <Project Path="src/TNC.Trading.Platform.Infrastructure/TNC.Trading.Platform.Infrastructure.csproj" />
     <Project Path="src/TNC.Trading.Platform.ServiceDefaults/TNC.Trading.Platform.ServiceDefaults.csproj" />
+    <Project Path="src/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.csproj" />
   </Folder>
   <Folder Name="/test/" />
   <Folder Name="/test/TNC.Trading.Platform.Api/">
     <Project Path="test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.IntegrationTests/TNC.Trading.Platform.Api.IntegrationTests.csproj" />
+    <Project Path="test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.UnitTests/TNC.Trading.Platform.Api.UnitTests.csproj" />
+  </Folder>
+  <Folder Name="/test/TNC.Trading.Platform.Application/">
+    <Project Path="test/TNC.Trading.Platform.Application/TNC.Trading.Platform.Application.UnitTests/TNC.Trading.Platform.Application.UnitTests.csproj" />
+  </Folder>
+  <Folder Name="/test/TNC.Trading.Platform.Infrastructure/">
+    <Project Path="test/TNC.Trading.Platform.Infrastructure/TNC.Trading.Platform.Infrastructure.UnitTests/TNC.Trading.Platform.Infrastructure.UnitTests.csproj" />
+  </Folder>
+  <Folder Name="/test/TNC.Trading.Platform.Web/">
+    <Project Path="test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.FunctionalTests/TNC.Trading.Platform.Web.FunctionalTests.csproj" />
+    <Project Path="test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.E2ETests/TNC.Trading.Platform.Web.E2ETests.csproj" />
   </Folder>
 </Solution>

@@ -106,7 +106,7 @@ Use `TR1`, `TR2`, ... for testing requirements.
 
 | ID  | Requirement | Acceptance criteria | Notes |
 | --- | ----------- | ------------------- | ----- |
-| TR1 | Provide a baseline automated test structure suitable for future work packages. | (1) The solution can run tests from the repository root using a documented command. (2) If functional tests are introduced in this work package, they follow the naming convention `<001>_<FRx>_point_of_test`. | This work package may include smoke tests (for example health check reachability) where appropriate. |
+| TR1 | Provide a baseline automated test structure suitable for future work packages. | (1) The solution can run tests from the repository root using a documented command. (2) If functional tests are introduced in this work package, they follow the readable `MethodName_StateUnderTest_ExpectedResult` naming convention (for example `CalculateTotal_ShouldReturnZero_WhenCartIsEmpty`) while keeping work package and requirement traceability explicit through structure or metadata. | This work package may include smoke tests (for example health check reachability) where appropriate. |
 | TR2 | Provide a baseline quality gate for build correctness. | The solution builds successfully using the documented build command as part of local validation steps. | This requirement is intended to be automatable later. |
 
 ## 10. Operational Requirements (optional)

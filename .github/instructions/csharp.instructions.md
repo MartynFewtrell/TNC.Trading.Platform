@@ -14,21 +14,27 @@ These instructions define baseline rules for writing and changing C# code in thi
 Applies to: `**/*.cs`
 
 - These rules apply to all C# files under `src/` and `test/`.
-- For test code, also follow `/.github/instructions/test-approach.instructions.md` and (when applicable) `/.github/instructions/playwright-dotnet.instructions.md`.
-- For auth-related work, also follow `/.github/instructions/authentication.instructions.md`.
+- For test code, also follow `/.github/instructions/tests.instructions.md` and (when applicable) `/.github/instructions/playwright.instructions.md`.
+- For auth-related work, also follow `/.github/instructions/auth.instructions.md`.
 
 ## Instructions
 
 ### MUST
 
 - Follow formatting rules defined in `.editorconfig`.
+- Keep one top-level class, interface, record, struct, enum, or delegate per file.
+- Name each C# file to match its top-level type.
 - Use the C# language version already configured by the repository.
   - Do not change `LangVersion` (or rely on preview language features) as part of feature work unless the work item explicitly requires it.
 
 - Follow naming conventions:
-  - Use PascalCase for types, methods, and public members.
+  - Use PascalCase for classes, records, structs, enums, delegates, methods, positional record parameters, and public members.
   - Use camelCase for local variables.
+  - Use camelCase for class and struct primary constructor parameters.
   - Prefix interface names with `I`.
+  - Use singular names for enums unless they represent flags values.
+  - Do not use `Enum`, `Flag`, or `Flags` suffixes in enum type names.
+  - Name classes, records, and structs with nouns or noun phrases.
 
 - Write null-safe code:
   - Respect nullable reference types annotations.
@@ -41,7 +47,7 @@ Applies to: `**/*.cs`
   - For HTTP APIs, prefer returning standardized errors (Problem Details / RFC 9457) at the boundary.
 
 - Keep authentication implementation aligned with repo standards:
-  - If changing auth flows, OIDC configuration, token validation, or identity provider integration, follow `/.github/instructions/authentication.instructions.md`.
+  - If changing auth flows, OIDC configuration, token validation, or identity provider integration, follow `/.github/instructions/auth.instructions.md`.
 
 - Add or update tests when changing behavior:
   - Changes to business logic or external behavior MUST include appropriate unit/integration/functional test updates.
@@ -53,7 +59,7 @@ Applies to: `**/*.cs`
 
 ### SHOULD
 
-- Prefer file-scoped namespaces when the project already uses them.
+- Prefer file-scoped namespaces when all types in the file belong to the same namespace.
 - Prefer pattern matching and switch expressions when they reduce complexity.
 - Prefer `nameof(...)` over string literals when referencing members.
 - Prefer `async`/`await` end-to-end for I/O and avoid blocking calls.
@@ -72,7 +78,7 @@ Applies to: `**/*.cs`
 
 ## References (optional)
 
-- `/.github/instructions/microsoft-stack-dotnet.instructions.md`
-- `/.github/instructions/authentication.instructions.md`
-- `/.github/instructions/test-approach.instructions.md`
-- `/.github/instructions/playwright-dotnet.instructions.md`
+- `/.github/instructions/dotnet-stack.instructions.md`
+- `/.github/instructions/auth.instructions.md`
+- `/.github/instructions/tests.instructions.md`
+- `/.github/instructions/playwright.instructions.md`

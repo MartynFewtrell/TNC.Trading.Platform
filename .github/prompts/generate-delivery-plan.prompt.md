@@ -2,7 +2,7 @@
 agent: 'agent'
 description: 'Interactive delivery-plan generator that asks one question at a time to produce a new `delivery-plan.md` from `requirements.md` and `technical-specification.md` using the repo delivery plan template.'
 name: generate-delivery-plan
-model: 'gpt-5.2'
+model: 'gpt-5.4'
 # tags: [delivery-plan, docs, iterative-work]
 ---
 
@@ -38,7 +38,7 @@ The output MUST follow `.github/templates/delivery-plan.template.md`.
 ## Constraints
 
 - MUST: Use `.github/templates/delivery-plan.template.md` as the output scaffold.
-- MUST: Follow `/.github/instructions/iterative-work-docs.instructions.md` conventions:
+- MUST: Follow `/.github/instructions/work-packages.instructions.md` conventions:
   - The work item docs set is `requirements.md`, `technical-specification.md`, `delivery-plan.md` in the same `./docs/00x-work/` folder.
   - The `00x` prefix is zero-padded and monotonically increasing.
 
