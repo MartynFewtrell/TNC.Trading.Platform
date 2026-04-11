@@ -1,4 +1,4 @@
-# Systems Analysis Template
+﻿# Systems Analysis Template
 
 > Use this template to capture project-level systems analysis after `./docs/business-requirements.md` is drafted/approved and before creating any `./docs/00x-work/` work packages.
 >
@@ -14,7 +14,7 @@
 - **Inputs**:
   - `./docs/business-requirements.md`
 - **Outputs**:
-  - Work packages under `./docs/00x-work/` with `requirements.md`, `technical-specification.md`, and `delivery-plan.md`
+- Work packages under `./docs/00x-work/` with `requirements.md`, `technical-specification.md`, and numbered plan files under `plans/`
 
 ### 1.1 Links
 

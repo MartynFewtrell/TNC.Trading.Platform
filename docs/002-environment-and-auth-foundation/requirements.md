@@ -1,4 +1,4 @@
-# Requirements
+﻿# Requirements
 
 ## 1. Summary
 
@@ -10,7 +10,7 @@
 - **Status**: draft
 - **Outputs**:
   - `technical-specification.md`
-  - `delivery-plan.md`
+  - `plans/001-delivery-plan.md`
 
 ### 1.1 Links
 
@@ -19,7 +19,7 @@
 | Business requirements | `../business-requirements.md` |
 | Requirements | `requirements.md` |
 | Technical specification | `technical-specification.md` |
-| Delivery plan | `delivery-plan.md` |
+| Initial delivery plan | `plans/001-delivery-plan.md` |
 | Systems analysis | `../systems-analysis.md` |
 
 ## 2. Context

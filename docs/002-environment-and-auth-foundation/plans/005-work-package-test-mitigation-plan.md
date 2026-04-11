@@ -1,17 +1,17 @@
-# Work Package Test Mitigation Plan
+﻿# Work Package Test Mitigation Plan
 
 This plan turns the test review findings for work package 002 into a prioritized set of mitigation actions. It focuses on closing the highest-risk safety and confidence gaps first, prefers lower-level automated coverage before broader UI or E2E expansion, and keeps each work item traceable to the review report, requirements, and current repository evidence.
 
 ## Summary
 
-- **Source review**: `./docs/002-environment-and-auth-foundation/work-package-test-review-report.md`
+- **Source review**: `../work-package-test-review-report.md`
 - **Work package**: `./docs/002-environment-and-auth-foundation/`
 - **Status**: `completed`
 - **Inputs**:
-  - `work-package-test-review-report.md`
-  - `requirements.md`
-  - `technical-specification.md`
-  - `delivery-plan.md`
+  - `../work-package-test-review-report.md`
+  - `../requirements.md`
+  - `../technical-specification.md`
+  - `001-delivery-plan.md`
 
 ## Description of work
 
@@ -194,7 +194,7 @@ Before starting *any* mitigation work item, and again before marking a work item
 
 ## Acceptance checklist
 
-- [x] Every planned mitigation maps back to one or more findings in `work-package-test-review-report.md`.
+- [x] Every planned mitigation maps back to one or more findings in `../work-package-test-review-report.md`.
 - [x] High-priority missing or weak coverage is addressed before lower-priority improvements.
 - [x] The plan prefers lower-level automated tests before higher-level tests where practical.
 - [x] Required validation steps are defined for each work item.

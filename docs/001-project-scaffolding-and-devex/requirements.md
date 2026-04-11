@@ -1,4 +1,4 @@
-# 001 Project scaffolding and DevEx requirements
+﻿# 001 Project scaffolding and DevEx requirements
 
 This document defines the requirements for work package 001, establishing a baseline solution structure and a local run harness with consistent configuration, logging, and health checks. It is intended to enable safe, repeatable iterative delivery of subsequent work packages.
 
@@ -12,7 +12,7 @@ This document defines the requirements for work package 001, establishing a base
 - **Status**: draft
 - **Outputs**:
   - [Technical specification](technical-specification.md)
-  - [Delivery plan](delivery-plan.md)
+  - [Initial delivery plan](plans/001-delivery-plan.md)
 
 ### 1.1 Links
 
@@ -22,7 +22,7 @@ This document defines the requirements for work package 001, establishing a base
 | Systems analysis | [Systems analysis](../systems-analysis.md) |
 | Requirements | [Requirements](requirements.md) |
 | Technical specification | [Technical specification](technical-specification.md) |
-| Delivery plan | [Delivery plan](delivery-plan.md) |
+| Initial delivery plan | [Initial delivery plan](plans/001-delivery-plan.md) |
 
 ## 2. Context
 

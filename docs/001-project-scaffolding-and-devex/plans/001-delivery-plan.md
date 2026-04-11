@@ -1,16 +1,16 @@
-# 001 Project scaffolding and DevEx delivery plan
+﻿# 001 Project scaffolding and DevEx delivery plan
 
-This document plans how work package 001 will be delivered incrementally based on [Requirements](requirements.md) and [Technical specification](technical-specification.md).
+This document plans how work package 001 will be delivered incrementally based on [Requirements](../requirements.md) and [Technical specification](../technical-specification.md).
 
 ## Summary
 
-- **Source**: See [Requirements](requirements.md) for canonical work metadata (work item, owner, dates, links) and scope. See [Business requirements](../business-requirements.md) for project-level business context.
+- **Source**: See [Requirements](../requirements.md) for canonical work metadata (work item, owner, dates, links) and scope. See [Business requirements](../../business-requirements.md) for project-level business context.
 - **Status**: draft
 - **Inputs**:
-  - [Business requirements](../business-requirements.md)
-  - [Requirements](requirements.md)
-  - [Technical specification](technical-specification.md)
-  - [Local development guide](../local-development.md)
+  - [Business requirements](../../business-requirements.md)
+  - [Requirements](../requirements.md)
+  - [Technical specification](../technical-specification.md)
+- [Local development guide](../../wiki/local-development.md)
 
 ## Description of work
 
@@ -120,7 +120,7 @@ Not applicable for this work package (single work item delivered in one PR).
 
 This quick start is provided to satisfy `OR1` (work-package-local guidance).
 
-Project-wide reusable guidance is also available in [Local development guide](../local-development.md).
+Project-wide reusable guidance is also available in [Local development guide](../../wiki/local-development.md).
 
 ### Prerequisites
 

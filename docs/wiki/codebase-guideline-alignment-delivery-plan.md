@@ -4,13 +4,13 @@ This document plans how the current solution will be brought into alignment with
 
 ## Summary
 
-- **Source**: See [README](../README.md) for the current solution overview. See [repo Copilot instructions](../.github/copilot-instructions.md), the user-level Copilot instructions, [C# instructions](../.github/instructions/csharp.instructions.md), and [`.editorconfig`](../.editorconfig) for the target conventions.
+- **Source**: See [README](../../README.md) for the current solution overview. See [repo Copilot instructions](../../.github/copilot-instructions.md), the user-level Copilot instructions, [C# instructions](../../.github/instructions/csharp.instructions.md), and [`.editorconfig`](../../.editorconfig) for the target conventions.
 - **Status**: done
 - **Inputs**:
-  - [README](../README.md)
-  - [repo Copilot instructions](../.github/copilot-instructions.md)
-  - [C# instructions](../.github/instructions/csharp.instructions.md)
-  - [`.editorconfig`](../.editorconfig)
+  - [README](../../README.md)
+  - [repo Copilot instructions](../../.github/copilot-instructions.md)
+  - [C# instructions](../../.github/instructions/csharp.instructions.md)
+  - [`.editorconfig`](../../.editorconfig)
   - Microsoft Learn guidance for C# identifier naming, namespace declarations, and EditorConfig naming rules
 
 ## Description of work

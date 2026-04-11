@@ -1,4 +1,4 @@
----
+﻿---
 agent: 'agent'
 description: 'Interactive technical-specification generator that asks one question at a time to produce a new `technical-specification.md` from a `requirements.md` using the repo technical specification template.'
 name: generate-technical-spec
@@ -38,7 +38,7 @@ The output MUST follow `.github/templates/technical-spec.template.md`.
 
 - MUST: Use `.github/templates/technical-spec.template.md` as the output scaffold.
 - MUST: Follow `/.github/instructions/work-packages.instructions.md` conventions:
-  - The work item docs set is `requirements.md`, `technical-specification.md`, `delivery-plan.md` in the same `./docs/00x-work/` folder.
+  - The work item keeps `requirements.md` and `technical-specification.md` at the work-package root and stores numbered plan files under `plans/`, starting with `plans/001-delivery-plan.md`.
   - The `00x` prefix is zero-padded and monotonically increasing.
 - MUST: Infer as much technical context as possible from repo instruction files before asking questions.
   - Read and apply relevant defaults from `/.github/copilot-instructions.md` and `/.github/instructions/*.instructions.md`.

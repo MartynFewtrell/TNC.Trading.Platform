@@ -1,4 +1,4 @@
----
+﻿---
 description: 'Defines repo-wide Copilot guidance for technology choices, workflow boundaries, and where scoped repository standards live so contributions stay consistent with this repo’s .NET conventions.'
 applyTo: '**/*'
 ---
@@ -31,6 +31,8 @@ Applies to: `**/*`
 - Do not draft `docs/00x-work/` work packages unless explicitly requested.
 - Use automated test method names in the MethodName_StateUnderTest_ExpectedResult style, e.g., `CalculateTotal_ShouldReturnZero_WhenCartIsEmpty`, because it reads naturally and enhances clarity.
 - Fully document automated tests with comments that capture requirement traceability, explain what each test verifies, the expected outcome, and why the behavior matters.
+- Store plans in a `plans` subfolder within each work package, using `plans/001-delivery-plan.md` for the initial delivery plan and prefixes like `001-`, `002-`, `003-` for all subsequent plan files to show application order.
+- Treat `docs/wiki/` as the implementation documentation source of truth. Before any numbered plan is considered complete, update the affected wiki pages to reflect implemented changes in behavior, architecture, API surface, runtime behavior, operator guidance, local development, or testing approach. When plan work is completed, the wiki documentation under `docs/wiki` should be updated as needed to reflect the implemented changes before the work is considered complete.
 
 ### SHOULD
 

@@ -1,4 +1,4 @@
-# Work Package Test Review Report
+﻿# Work Package Test Review Report
 
 > Use this template to review a work package under `./docs/00x-work/` and assess whether its current automated tests provide sufficient coverage, strength, and confidence. Ground findings in repository evidence and separate confirmed gaps from assumptions.
 
@@ -10,7 +10,7 @@
 - **Reviewed artifacts**:
   - `docs/002-environment-and-auth-foundation/requirements.md`
   - `docs/002-environment-and-auth-foundation/technical-specification.md`
-  - `docs/002-environment-and-auth-foundation/delivery-plan.md`
+  - `docs/002-environment-and-auth-foundation/plans/001-delivery-plan.md`
   - `src/TNC.Trading.Platform.Api/...`
   - `src/TNC.Trading.Platform.Web/...`
   - `test/TNC.Trading.Platform.Api/...`
@@ -124,7 +124,7 @@
 ## Assumptions and missing information
 
 - Tests in `ApiHealthIntegrationTests`, `PlatformOperatorUiFunctionalTests`, and `PlatformOperatorUiE2ETests` set `AppHost__EnableInfrastructureContainers=false`; this strongly suggests current higher-level tests do not validate real containerized infrastructure. The exact effect of that flag is inferred from its name.
-- No automated evidence was found for the manual Mailpit validation step called out in `docs/002-environment-and-auth-foundation/delivery-plan.md`.
+- No automated evidence was found for the manual Mailpit validation step called out in `docs/002-environment-and-auth-foundation/plans/001-delivery-plan.md`.
 - This review is based on repository evidence only; it does not assume undocumented manual checks.
 
 ## Suggested next steps

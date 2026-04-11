@@ -1,4 +1,4 @@
-# Business Requirements Template
+﻿# Business Requirements Template
 
 > Use this template to capture the business context and high-level requirements for the overall project. This document describes *what* should be built and *why* (not the technical solution). It is the foundation for systems analysis and work packages under `./docs/00x-work/`.
 
@@ -11,7 +11,7 @@
 - **Status**: <draft|review|approved>
 - **Outputs**:
   - `./docs/systems-analysis.md`
-  - Work packages under `./docs/00x-work/` with `requirements.md`, `technical-specification.md`, and `delivery-plan.md`
+- Work packages under `./docs/00x-work/` with `requirements.md`, `technical-specification.md`, and numbered plan files under `plans/`
 
 ### 1.1 Links
 

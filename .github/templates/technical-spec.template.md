@@ -1,13 +1,13 @@
-# Technical Specification Template
+﻿# Technical Specification Template
 
-> Use this template to describe *how* the approved requirements will be implemented. This document should trace back to `FRx`, `NFx`, `SRx` (and optional `*Rx`) from `requirements.md` and feed into `delivery-plan.md`.
+> Use this template to describe *how* the approved requirements will be implemented. This document should trace back to `FRx`, `NFx`, `SRx` (and optional `*Rx`) from `requirements.md` and feed into the initial delivery plan at `plans/001-delivery-plan.md`.
 
 ## 1. Summary
 
 - **Source**: See `requirements.md` for canonical work metadata (work item, owner, dates, links) and identifiers (`FRx/NFx/SRx/...`). See `../business-requirements.md` for project-level business context (path is relative to the work-package folder, e.g. `./docs/00x-work/`).
 - **Status**: <draft|review|approved>
 - **Input**: `requirements.md` (and `../business-requirements.md` for project context — relative to the work-package folder)
-- **Output**: `delivery-plan.md`
+- **Output**: `plans/001-delivery-plan.md`
 
 ## 2. Problem and Context
 

@@ -1,15 +1,15 @@
-# Delivery Plan
+﻿# Delivery Plan
 
 This document describes how work package 002-environment-and-auth-foundation will be delivered in a single buildable, testable change set so the platform can safely select an IG environment, store operator-managed configuration in SQL Server, update supported configuration through the Blazor UI, maintain broker connectivity only during the configured trading schedule, establish and recover an IG demo session, remain observable while degraded, and notify the project owner on supported auth and blocked-live events.
 
 ## Summary
 
-- **Source**: See `requirements.md` for canonical work metadata, scope, and requirement identifiers. See `../business-requirements.md` for project-level business context and `technical-specification.md` for the implementation design.
+- **Source**: See `../requirements.md` for canonical work metadata, scope, and requirement identifiers. See `../../business-requirements.md` for project-level business context and `../technical-specification.md` for the implementation design.
 - **Status**: draft
 - **Inputs**:
-  - `../business-requirements.md`
-  - `requirements.md`
-  - `technical-specification.md`
+  - `../../business-requirements.md`
+  - `../requirements.md`
+  - `../technical-specification.md`
 
 ## Description of work
 
@@ -108,7 +108,7 @@ Before starting *any* work item, and again before marking a work item as complet
     - `src/TNC.Trading.Platform.AppHost/AppHost.cs`: orchestration for API, UI, SQL Server, Mailpit, and bootstrap wiring
     - `test/TNC.Trading.Platform.Api/*`: unit and integration coverage
     - `test/TNC.Trading.Platform.Web/*`: functional and E2E coverage
-    - `docs/002-environment-and-auth-foundation/delivery-plan.md`: finalized delivery plan
+    - `docs/002-environment-and-auth-foundation/plans/001-delivery-plan.md`: finalized delivery plan
   - **Work Item Dependencies**: SQL bootstrap connectivity, seeded SQL-backed configuration, protected `IG` credential storage/key management, Mailpit, and notification settings; internal sequencing should follow Tasks 1 through 6
   - **User Instructions**: provide the SQL bootstrap connection and initial configuration seed including trading-schedule values; manage supported configuration through the Blazor UI after startup; expect startup-fixed changes such as platform environment and broker environment selection to apply on the next platform start; update demo `IG` credentials through the secure write-only UI flow; run locally with Mailpit configured through Aspire for notification verification; complete one manual end-to-end Aspire AppHost run before PR sign-off; expect IG live to remain visible but unavailable in Test mode
 

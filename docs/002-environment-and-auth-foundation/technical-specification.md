@@ -1,4 +1,4 @@
-# Technical Specification
+﻿# Technical Specification
 
 This document describes how work package 002-environment-and-auth-foundation will be implemented so the platform can safely select an IG environment, manage operator-editable configuration in SQL Server, maintain broker connectivity only during the configured trading schedule, establish and recover an authenticated IG demo session, and expose the resulting operational state for later work packages.
 
@@ -7,7 +7,7 @@ This document describes how work package 002-environment-and-auth-foundation wil
 - **Source**: See `requirements.md` for canonical work metadata, work-package scope, and requirement identifiers. See `../business-requirements.md` for project-level business context and `../systems-analysis.md` for the related system analysis decisions and constraints.
 - **Status**: draft
 - **Input**: `requirements.md`, `../business-requirements.md`, and `../systems-analysis.md`
-- **Output**: `delivery-plan.md`
+- **Output**: `plans/001-delivery-plan.md`
 
 ## 2. Problem and Context
 

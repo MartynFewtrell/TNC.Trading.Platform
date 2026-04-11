@@ -1,16 +1,16 @@
-# 002 AppHost bootstrap refactor plan
+﻿# 002 AppHost bootstrap refactor plan
 
 This document plans a focused refactor that reduces AppHost-owned bootstrap environment variables and moves one-time application defaults into API-owned initialization aligned with the existing work-package requirements and technical direction.
 
 ## Summary
 
-- **Source**: See [Requirements](requirements.md) for canonical work metadata and [Technical specification](technical-specification.md) for the target architecture. The current refactor target is [AppHost.cs](../../src/TNC.Trading.Platform.AppHost/AppHost.cs).
+- **Source**: See [Requirements](../requirements.md) for canonical work metadata and [Technical specification](../technical-specification.md) for the target architecture. The current refactor target is [AppHost.cs](../../../src/TNC.Trading.Platform.AppHost/AppHost.cs).
 - **Status**: draft
 - **Inputs**:
-  - [Requirements](requirements.md)
-  - [Technical specification](technical-specification.md)
-  - [Delivery plan](delivery-plan.md)
-  - [AppHost.cs](../../src/TNC.Trading.Platform.AppHost/AppHost.cs)
+  - [Requirements](../requirements.md)
+  - [Technical specification](../technical-specification.md)
+  - [Initial delivery plan](001-delivery-plan.md)
+  - [AppHost.cs](../../../src/TNC.Trading.Platform.AppHost/AppHost.cs)
 
 ## Description of work
 

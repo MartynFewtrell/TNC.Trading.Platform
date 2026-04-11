@@ -1,4 +1,4 @@
----
+﻿---
 agent: 'agent'
 description: 'Reviews a work package and its current test approach to identify coverage gaps, weak tests, and prioritized recommendations to harden overall testing.'
 name: review-test-approach
@@ -45,7 +45,7 @@ ${REVIEW_DEPTH="standard"} <!-- quick | standard | deep: controls how much detai
 - MUST: Use `.github/templates/test-review-report.template.md` as the output scaffold.
 - MUST: Review `requirements.md` in the target work package.
 - MUST: Review `technical-specification.md` when it exists in the target work package.
-- SHOULD: Review `delivery-plan.md` when it exists in the target work package.
+- SHOULD: Review the existing numbered plan files in the target work package `plans/` folder when they exist.
 - MUST: Prefer the provided work-package artifacts and explicitly supplied paths before discovering additional repository files.
 - MUST: Inspect the current automated tests that relate to the work package and cite specific evidence using repository paths and, when practical, test class or method names.
 - MUST: Map documented requirements and acceptance criteria to current tests, partial coverage, or missing coverage.
@@ -70,7 +70,7 @@ ${REVIEW_DEPTH="standard"} <!-- quick | standard | deep: controls how much detai
 1. Load `.github/templates/test-review-report.template.md` and use it as the report scaffold.
 2. Locate the target work package under `./docs/00x-work/` and read the available work package documents.
    - Start with `requirements.md`.
-   - Then read `technical-specification.md` and `delivery-plan.md` when present or explicitly supplied.
+   - Then read `technical-specification.md` and any existing numbered plan files under `plans/` when present or explicitly supplied.
 3. Extract the scope, documented requirements, acceptance criteria, quality attributes, and stated delivery assumptions relevant to testing.
 4. Discover the related implementation and automated test files under `src/` and `test/`.
    - Prefer files explicitly referenced by the work-package artifacts.

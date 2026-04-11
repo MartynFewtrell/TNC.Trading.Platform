@@ -1,17 +1,17 @@
-# Work Package Test Mitigation Plan Template
+﻿# Work Package Test Mitigation Plan Template
 
 > Use this template to plan how the issues identified in a work-package test review will be mitigated. Keep the plan actionable, traceable to the review findings, and aligned to the repository testing approach.
 
 ## Summary
 
-- **Source review**: `<./docs/00x-work/work-package-test-review-report.md>`
+- **Source review**: `<../work-package-test-review-report.md>`
 - **Work package**: `<./docs/00x-work/>`
 - **Status**: `<draft|review|approved|in-progress|done>`
 - **Inputs**:
-  - `work-package-test-review-report.md`
-  - `requirements.md`
-  - `technical-specification.md`
-  - `delivery-plan.md`
+  - `../work-package-test-review-report.md`
+  - `../requirements.md`
+  - `../technical-specification.md`
+  - existing numbered plan files in this folder (for example `001-delivery-plan.md`)
 
 ## Description of work
 
@@ -61,6 +61,7 @@ Before starting *any* mitigation work item, and again before marking a work item
     - [ ] Step 2: [Description]
     - [ ] Step N: [Description]
   - [ ] Task N: [Additional mitigation task]
+  - [ ] Relevant `docs/wiki/` pages updated to reflect the delivered testing or implementation changes
   - [ ] Build and test validation
 
   - **Files**:
@@ -91,7 +92,8 @@ Copy the **Work Item 1 details** section for each additional work item.
 - [ ] High-priority missing or weak coverage is addressed before lower-priority improvements.
 - [ ] The plan prefers lower-level automated tests before higher-level tests where practical.
 - [ ] Required validation steps are defined for each work item.
-- [ ] Docs updated under `./docs/00x-work/`.
+- [ ] Relevant `docs/wiki/` pages are updated to reflect the delivered testing or implementation changes.
+- [ ] Affected wiki links resolve after documentation updates.
 - [ ] Rollback/backout plan documented for each work item.
 
 ## Notes
