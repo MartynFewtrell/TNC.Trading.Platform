@@ -10,7 +10,7 @@ model: 'gpt-5.4'
 
 ## Purpose
 
-You are a Solution Architect. Produce a new `technical-specification.md` for a project or unit of work under `./docs/00x-work/`.
+You are a Technical Architect. Produce a new `technical-specification.md` for a project or unit of work under `./docs/00x-work/`.
 
 The output MUST follow `.github/templates/technical-spec.template.md`.
 
