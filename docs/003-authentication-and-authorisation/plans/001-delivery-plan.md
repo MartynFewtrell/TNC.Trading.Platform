@@ -5,7 +5,7 @@
 ## Summary
 
 - **Source**: See `../requirements.md` for canonical work metadata (work item, owner, dates, links) and scope. See `../../business-requirements.md` for project-level business context.
-- **Status**: draft
+- **Status**: in-progress
 - **Inputs**:
   - `../../business-requirements.md`
   - `../requirements.md`
@@ -46,22 +46,22 @@ The final plan may include one or more work items.
 
 ### Work Item 1 details
 
-- [ ] Work Item 1: Establish local auth foundation and public entry flows
-  - [ ] Build and test baseline established
-  - [ ] Task 1: Compose the local identity provider and external configuration baseline
-    - [ ] Step 1: Add the Aspire Keycloak resource with stable local configuration and realm import support.
-    - [ ] Step 2: Create the repeatable realm import for the Web client, API client, delegated scopes, roles, and seeded development users.
-    - [ ] Step 3: Bind environment-driven authentication and authorization settings for local and Azure-aligned provider selection.
-  - [ ] Task 2: Register shared authentication and authorization services across the Web and API hosts
-    - [ ] Step 1: Add shared role, policy, claim-mapping, and scheme constants.
-    - [ ] Step 2: Register OIDC cookie authentication for the Blazor Web app with the `/signin-oidc` callback path.
-    - [ ] Step 3: Register bearer-token validation for the API without redirect behavior on protected endpoints.
-  - [ ] Task 3: Deliver public entry and sign-in lifecycle surfaces in the Blazor Web app
-    - [ ] Step 1: Implement the public landing page behavior for anonymous and authenticated users.
-    - [ ] Step 2: Add sign-in, sign-out, and access-denied endpoints or pages.
-    - [ ] Step 3: Confirm no-role users can authenticate and are routed to the access-denied experience.
-  - [ ] Relevant `docs/wiki/` pages updated to reflect the implemented changes
-  - [ ] Build and test validation
+- [x] Work Item 1: Establish local auth foundation and public entry flows
+  - [x] Build and test baseline established
+  - [x] Task 1: Compose the local identity provider and external configuration baseline
+    - [x] Step 1: Add the Aspire Keycloak resource with stable local configuration and realm import support.
+    - [x] Step 2: Create the repeatable realm import for the Web client, API client, delegated scopes, roles, and seeded development users.
+    - [x] Step 3: Bind environment-driven authentication and authorization settings for local and Azure-aligned provider selection.
+  - [x] Task 2: Register shared authentication and authorization services across the Web and API hosts
+    - [x] Step 1: Add shared role, policy, claim-mapping, and scheme constants.
+    - [x] Step 2: Register OIDC cookie authentication for the Blazor Web app with the `/signin-oidc` callback path.
+    - [x] Step 3: Register bearer-token validation for the API without redirect behavior on protected endpoints.
+  - [x] Task 3: Deliver public entry and sign-in lifecycle surfaces in the Blazor Web app
+    - [x] Step 1: Implement the public landing page behavior for anonymous and authenticated users.
+    - [x] Step 2: Add sign-in, sign-out, and access-denied endpoints or pages.
+    - [x] Step 3: Confirm no-role users can authenticate and are routed to the access-denied experience.
+  - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
+  - [x] Build and test validation
 
   - **Files**:
     - `src/TNC.Trading.Platform.AppHost/`: add the local Keycloak resource, realm import wiring, and environment configuration.
@@ -74,22 +74,22 @@ The final plan may include one or more work items.
 
 ### Work Item 2 details
 
-- [ ] Work Item 2: Protect baseline UI and API access with viewer-level operator flows
-  - [ ] Build and test baseline established
-  - [ ] Task 1: Protect the baseline viewer surfaces consistently across UI and API
-    - [ ] Step 1: Apply shared viewer-capable policies to protected Blazor routes and components.
-    - [ ] Step 2: Apply shared viewer-capable policies to the initial protected API endpoints while leaving health/readiness anonymous.
-    - [ ] Step 3: Verify anonymous users are challenged in the UI and receive `401 Unauthorized` from protected APIs.
-  - [ ] Task 2: Expose minimal authenticated operator context to the Blazor UI
-    - [ ] Step 1: Map the minimum required claims into a display-name-first authenticated operator context.
-    - [ ] Step 2: Surface authenticated navigation and operator-aware landing page content based on the viewer baseline.
-    - [ ] Step 3: Confirm unauthenticated users do not receive authenticated operator context.
-  - [ ] Task 3: Implement delegated viewer token acquisition and Web-to-API propagation
-    - [ ] Step 1: Request the baseline `platform.viewer` delegated scope for signed-in operator API access.
-    - [ ] Step 2: Acquire and attach viewer tokens for protected Web-to-API calls.
-    - [ ] Step 3: Validate audience, issuer, and failure behavior for missing or invalid delegated access.
-  - [ ] Relevant `docs/wiki/` pages updated to reflect the implemented changes
-  - [ ] Build and test validation
+- [x] Work Item 2: Protect baseline UI and API access with viewer-level operator flows
+  - [x] Build and test baseline established
+  - [x] Task 1: Protect the baseline viewer surfaces consistently across UI and API
+    - [x] Step 1: Apply shared viewer-capable policies to protected Blazor routes and components.
+    - [x] Step 2: Apply shared viewer-capable policies to the initial protected API endpoints while leaving health/readiness anonymous.
+    - [x] Step 3: Verify anonymous users are challenged in the UI and receive `401 Unauthorized` from protected APIs.
+  - [x] Task 2: Expose minimal authenticated operator context to the Blazor UI
+    - [x] Step 1: Map the minimum required claims into a display-name-first authenticated operator context.
+    - [x] Step 2: Surface authenticated navigation and operator-aware landing page content based on the viewer baseline.
+    - [x] Step 3: Confirm unauthenticated users do not receive authenticated operator context.
+  - [x] Task 3: Implement delegated viewer token acquisition and Web-to-API propagation
+    - [x] Step 1: Request the baseline `platform.viewer` delegated scope for signed-in operator API access.
+    - [x] Step 2: Acquire and attach viewer tokens for protected Web-to-API calls.
+    - [x] Step 3: Validate audience, issuer, and failure behavior for missing or invalid delegated access.
+  - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
+  - [x] Build and test validation
 
   - **Files**:
     - `src/TNC.Trading.Platform.Web/`: add route protection, authenticated operator context services, and delegated viewer token handling.
@@ -102,22 +102,22 @@ The final plan may include one or more work items.
 
 ### Work Item 3 details
 
-- [ ] Work Item 3: Add higher-privilege scopes, role boundaries, and denial behavior
-  - [ ] Build and test baseline established
-  - [ ] Task 1: Enforce the Administrator, Operator, and Viewer role matrix consistently
-    - [ ] Step 1: Assign feature-level policies to privileged Blazor routes and UI actions.
-    - [ ] Step 2: Assign the same role boundaries to privileged API endpoints.
-    - [ ] Step 3: Validate that each seeded role receives only the permitted capability set.
-  - [ ] Task 2: Add incremental delegated scope acquisition for privileged areas
-    - [ ] Step 1: Map `platform.operator` and `platform.admin` scopes to the privileged surfaces that require them.
-    - [ ] Step 2: Trigger interactive acquisition only when the operator enters a privileged area.
-    - [ ] Step 3: Fail safely when elevated scope acquisition is declined or unavailable.
-  - [ ] Task 3: Harden signed-in denial and recovery behavior
-    - [ ] Step 1: Route insufficient-role UI access to the dedicated access-denied page.
-    - [ ] Step 2: Return `403 Forbidden` from the API for authenticated callers lacking the required role.
-    - [ ] Step 3: Re-validate session-expiry and re-authentication behavior for protected surfaces.
-  - [ ] Relevant `docs/wiki/` pages updated to reflect the implemented changes
-  - [ ] Build and test validation
+- [x] Work Item 3: Add higher-privilege scopes, role boundaries, and denial behavior
+  - [x] Build and test baseline established
+  - [x] Task 1: Enforce the Administrator, Operator, and Viewer role matrix consistently
+    - [x] Step 1: Assign feature-level policies to privileged Blazor routes and UI actions.
+    - [x] Step 2: Assign the same role boundaries to privileged API endpoints.
+    - [x] Step 3: Validate that each seeded role receives only the permitted capability set.
+  - [x] Task 2: Add incremental delegated scope acquisition for privileged areas
+    - [x] Step 1: Map `platform.operator` and `platform.admin` scopes to the privileged surfaces that require them.
+    - [x] Step 2: Trigger interactive acquisition only when the operator enters a privileged area.
+    - [x] Step 3: Fail safely when elevated scope acquisition is declined or unavailable.
+  - [x] Task 3: Harden signed-in denial and recovery behavior
+    - [x] Step 1: Route insufficient-role UI access to the dedicated access-denied page.
+    - [x] Step 2: Return `403 Forbidden` from the API for authenticated callers lacking the required role.
+    - [x] Step 3: Re-validate session-expiry and re-authentication behavior for protected surfaces.
+  - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
+  - [x] Build and test validation
 
   - **Files**:
     - `src/TNC.Trading.Platform.Web/`: extend privileged route protection, elevated-scope handling, and access-denied routing.
@@ -131,21 +131,21 @@ The final plan may include one or more work items.
 ### Work Item 4 details
 
 - [ ] Work Item 4: Add auth observability, automated coverage, and documentation hardening
-  - [ ] Build and test baseline established
+  - [x] Build and test baseline established
   - [ ] Task 1: Add secret-safe auth observability and audit/event recording
-    - [ ] Step 1: Emit structured logs for sign-in, sign-out, failures, token acquisition failures, and access denial without secret leakage.
+    - [x] Step 1: Emit structured logs for sign-in, sign-out, failures, token acquisition failures, and access denial without secret leakage.
     - [ ] Step 2: Record the required auth audit events with correlation data and retention-aligned behavior.
     - [ ] Step 3: Verify that sensitive protocol data is excluded from logs, events, and UI surfaces.
   - [ ] Task 2: Complete automated test coverage for the delivered auth model
     - [ ] Step 1: Add unit tests for policy registration, claim mapping, and authenticated operator context behavior.
-    - [ ] Step 2: Add integration and functional tests for anonymous, authenticated, denied, and role-specific scenarios.
-    - [ ] Step 3: Add Aspire-driven end-to-end coverage where practical for AppHost, Keycloak, Web, and API interaction.
-  - [ ] Task 3: Harden local validation guidance and implementation documentation
-    - [ ] Step 1: Update the work-package docs with final local validation and operational guidance.
-    - [ ] Step 2: Update the relevant `docs/wiki/` pages for architecture, runtime behavior, local development, and testing.
-    - [ ] Step 3: Verify affected wiki links still resolve after documentation updates.
-  - [ ] Relevant `docs/wiki/` pages updated to reflect the implemented changes
-  - [ ] Build and test validation
+    - [x] Step 2: Add integration and functional tests for anonymous, authenticated, denied, and role-specific scenarios.
+    - [x] Step 3: Add Aspire-driven end-to-end coverage where practical for AppHost, Keycloak, Web, and API interaction.
+  - [x] Task 3: Harden local validation guidance and implementation documentation
+    - [x] Step 1: Update the work-package docs with final local validation and operational guidance.
+    - [x] Step 2: Update the relevant `docs/wiki/` pages for architecture, runtime behavior, local development, and testing.
+    - [x] Step 3: Verify affected wiki links still resolve after documentation updates.
+  - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
+  - [x] Build and test validation
 
   - **Files**:
     - `src/TNC.Trading.Platform.Web/`: add or extend auth logging, denial instrumentation, and token-acquisition telemetry.
@@ -188,3 +188,4 @@ The final plan may include one or more work items.
 - This initial draft has been updated to optimize for a single coordinated PR while still sequencing the implementation as incremental work items for review and validation.
 - Cross-cutting validation defaults to `dotnet build` and `dotnet test` at the repository root unless later delivery constraints require a narrower CI-compatible command set.
 - The plan keeps local Keycloak and Azure-aligned Microsoft Entra ID compatibility explicit, but local delivery remains the first validation path for this work package.
+- Automated build, integration, functional, and E2E validation now pass with the local test provider used when AppHost infrastructure containers are disabled; explicit auth audit-event persistence and dedicated unit coverage remain open under Work Item 4.

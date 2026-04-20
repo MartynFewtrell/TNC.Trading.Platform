@@ -1,17 +1,18 @@
-# Application overview
+﻿# Application overview
 
 This document explains the implemented application at a high level so a developer or reviewer can quickly understand its current purpose, boundaries, and major moving parts.
 
 ## Purpose
 
-TNC Trading Platform is currently a foundation for safe environment selection, operator-managed configuration, auth-state supervision, and operator visibility.
+TNC Trading Platform is currently a foundation for safe operator authentication, environment selection, operator-managed configuration, auth-state supervision, and operator visibility.
 
 The implemented application is focused on:
 
 - showing the active platform and broker environment
+- authenticating operators through standards-based web sign-in and shared role policies
 - storing operator-managed configuration durably
 - protecting IG credentials through write-only update flows
-- exposing current runtime and retry state through an API and Blazor UI
+- exposing current runtime and retry state through protected API and Blazor surfaces
 - recording operational and notification history
 - preparing the platform for later broker, market-data, and trading features
 
@@ -48,9 +49,9 @@ Instead, the current codebase models and exposes the operational control plane n
 
 | Project | Role |
 | --- | --- |
-| `src/TNC.Trading.Platform.AppHost` | Aspire composition root for local development. Starts the API and Blazor UI, and optionally SQL Server and Mailpit. |
-| `src/TNC.Trading.Platform.Api` | HTTP service that exposes platform status, configuration, event history, manual retry, and metadata endpoints. |
-| `src/TNC.Trading.Platform.Web` | Blazor Server operator UI for status and configuration management. |
+| `src/TNC.Trading.Platform.AppHost` | Aspire composition root for local development. Starts the API and Blazor UI, and optionally SQL Server, Mailpit, and Keycloak. |
+| `src/TNC.Trading.Platform.Api` | HTTP service that exposes protected platform status, configuration, event history, manual retry, and admin auth endpoints plus public metadata and health endpoints. |
+| `src/TNC.Trading.Platform.Web` | Blazor Server operator UI with a public landing page, protected operator routes, and authentication lifecycle endpoints. |
 | `src/TNC.Trading.Platform.Application` | Application-level models, feature handlers, runtime coordination, retry policy logic, and schedule evaluation. |
 | `src/TNC.Trading.Platform.Infrastructure` | Persistence, credential protection, notification providers, retention processing, and configuration storage. |
 | `src/TNC.Trading.Platform.ServiceDefaults` | Shared health, service discovery, resilience, and OpenTelemetry defaults. |
@@ -102,6 +103,16 @@ It includes:
 - bank-holiday exclusions
 - time zone
 
+### Operator access model
+
+The current implementation defines three named platform roles:
+
+- `Viewer`
+- `Operator`
+- `Administrator`
+
+The public landing page is anonymous. The `/status`, `/configuration`, and `/administration/authentication` surfaces then layer progressively stricter role and scope checks on top of the signed-in operator session.
+
 ### Auth state
 
 The auth state expresses the current platform operating condition for broker-connected features.
@@ -126,10 +137,12 @@ When the platform is degraded during an active schedule, it tracks:
 
 ## Current user experience
 
-The operator UI currently has two main pages:
+The operator UI currently has four main routes:
 
-- `/status` shows environment, trading schedule, auth state, retry state, and recent auth events
-- `/configuration` shows editable configuration, secret-presence indicators, and write-only credential update fields
+- `/` is the public landing page and signed-in operator home
+- `/status` shows environment, trading schedule, auth state, retry state, and recent auth events for viewer-capable operators
+- `/configuration` shows editable configuration, secret-presence indicators, and write-only credential update fields for operator-capable users
+- `/administration/authentication` shows the admin-only auth summary surface
 
 See [Operator guide](operator-guide.md) for full behavior details.
 

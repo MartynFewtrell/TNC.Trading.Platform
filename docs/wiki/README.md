@@ -19,12 +19,16 @@ If you are new to the repository, read these documents in order:
 At this stage the platform provides:
 
 - an Aspire AppHost that starts the API and Blazor operator UI
-- a Minimal API backend for status, configuration, events, and manual retry actions
-- a Blazor Server operator UI with status and configuration pages
+- an Aspire-managed Keycloak container for local operator sign-in when infrastructure containers are enabled
+- a Minimal API backend with protected status, configuration, event-history, manual-retry, and admin-auth endpoints
+- a Blazor Server operator UI with a public landing page plus protected status, configuration, and authentication-administration pages
+- sign-in, sign-out, and access-denied flows with shared role enforcement across the UI and API
+- delegated bearer-token propagation from the Blazor host to the protected API
 - SQL-backed operator-managed configuration when a SQL connection is available
 - an in-memory fallback for local runs without infrastructure containers
 - protected storage for IG credentials using ASP.NET Core Data Protection
 - auth-state supervision, retry scheduling, notification recording, and operational event history
+- automated test-provider support for integration, functional, and end-to-end auth coverage without Docker
 - health checks, OpenTelemetry wiring, and requirement-driven tests
 
 The platform does not yet execute real trading workflows, market-data ingestion, or live IG integration. The current implementation is the environment, configuration, and auth foundation that later work packages will build on.

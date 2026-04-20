@@ -1,6 +1,8 @@
-using Aspire.Hosting.ApplicationModel;
+﻿using Aspire.Hosting.ApplicationModel;
 
 var builder = DistributedApplication.CreateBuilder(args);
+const string keycloakRealmName = "tnc-trading-platform";
+const string keycloakAuthority = "http://localhost:8080/realms/tnc-trading-platform";
 
 var enableInfrastructureContainers = string.Equals(
     builder.Configuration["AppHost:EnableInfrastructureContainers"],
@@ -12,6 +14,7 @@ var acsConnectionString = builder.Configuration["NotificationTransports:AzureCom
 
 IResourceBuilder<IResourceWithConnectionString>? platformDatabase = null;
 IResourceBuilder<IResourceWithEndpoints>? mailpit = null;
+IResourceBuilder<IResourceWithEndpoints>? keycloak = null;
 
 if (enableInfrastructureContainers)
 {
@@ -29,6 +32,9 @@ if (enableInfrastructureContainers)
             Url = "/",
             DisplayText = "Mailpit UI"
         });
+
+    keycloak = builder.AddKeycloak("keycloak", port: 8080)
+        .WithRealmImport("./Realms");
 }
 
 var api = builder.AddProject<Projects.TNC_Trading_Platform_Api>("api")
@@ -71,7 +77,7 @@ if (!string.IsNullOrWhiteSpace(acsConnectionString))
     api.WithEnvironment("NotificationTransports__AzureCommunicationServices__ConnectionString", acsConnectionString);
 }
 
-builder.AddProject<Projects.TNC_Trading_Platform_Web>("web")
+var web = builder.AddProject<Projects.TNC_Trading_Platform_Web>("web")
     .WithReference(api)
     .WaitFor(api)
     .WithExternalHttpEndpoints()
@@ -80,5 +86,55 @@ builder.AddProject<Projects.TNC_Trading_Platform_Web>("web")
         Url = "/status",
         DisplayText = "Operator UI"
     });
+
+var webProject = web
+    .WithEnvironment("Authentication__CallbackPath", "/signin-oidc")
+    .WithEnvironment("Authentication__SignedOutRedirectPath", "/")
+    .WithEnvironment("Authentication__ApiAudience", "tnc-trading-platform-api")
+    .WithEnvironment("Authentication__RequiredScopes__0", "platform.viewer")
+    .WithEnvironment("Authentication__Keycloak__Realm", keycloakRealmName)
+    .WithEnvironment("Authentication__Keycloak__ClientId", "tnc-trading-platform-web")
+    .WithEnvironment("Authentication__Keycloak__ApiClientId", "tnc-trading-platform-api")
+    .WithEnvironment("Authentication__Keycloak__SeededUserPassword", "LocalAuth!123")
+    .WithEnvironment("Authentication__Authorization__DisplayNameClaimType", "name")
+    .WithEnvironment("Authentication__Authorization__DisplayNameFallbackClaimType", "preferred_username");
+
+var apiProject = api
+    .WithEnvironment("Authentication__ApiAudience", "tnc-trading-platform-api")
+    .WithEnvironment("Authentication__Keycloak__Realm", keycloakRealmName)
+    .WithEnvironment("Authentication__Keycloak__ApiClientId", "tnc-trading-platform-api")
+    .WithEnvironment("Authentication__Authorization__DisplayNameClaimType", "name")
+    .WithEnvironment("Authentication__Authorization__DisplayNameFallbackClaimType", "preferred_username");
+
+if (keycloak is not null)
+{
+    apiProject = apiProject
+        .WaitFor(keycloak)
+        .WithEnvironment("Authentication__Provider", "Keycloak")
+        .WithEnvironment("Authentication__Keycloak__Authority", keycloakAuthority)
+        .WithEnvironment("Authentication__Authorization__RoleClaimType", "role");
+
+    webProject = webProject
+        .WaitFor(keycloak)
+        .WithEnvironment("Authentication__Provider", "Keycloak")
+        .WithEnvironment("Authentication__Keycloak__Authority", keycloakAuthority)
+        .WithEnvironment("Authentication__Authorization__RoleClaimType", "role");
+}
+else
+{
+    apiProject = apiProject
+        .WithEnvironment("Authentication__Provider", "Test")
+        .WithEnvironment("Authentication__Test__Issuer", "https://test-auth.local")
+        .WithEnvironment("Authentication__Test__Audience", "tnc-trading-platform-api")
+        .WithEnvironment("Authentication__Test__SigningKey", "0123456789abcdef0123456789abcdef")
+        .WithEnvironment("Authentication__Authorization__RoleClaimType", "role");
+
+    webProject = webProject
+        .WithEnvironment("Authentication__Provider", "Test")
+        .WithEnvironment("Authentication__Test__Issuer", "https://test-auth.local")
+        .WithEnvironment("Authentication__Test__Audience", "tnc-trading-platform-api")
+        .WithEnvironment("Authentication__Test__SigningKey", "0123456789abcdef0123456789abcdef")
+        .WithEnvironment("Authentication__Authorization__RoleClaimType", "role");
+}
 
 builder.Build().Run();

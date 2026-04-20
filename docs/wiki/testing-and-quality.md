@@ -1,4 +1,4 @@
-# Testing and quality
+﻿# Testing and quality
 
 This document explains how the current solution is validated, what each test suite covers, and what kinds of regressions the repository is already protecting against.
 
@@ -46,21 +46,21 @@ The unit tests cover:
 The API tests cover:
 
 - health endpoints
-- status and configuration endpoints
+- anonymous `401` behavior for protected endpoints
+- viewer, operator, and administrator bearer-token access behavior
+- status, configuration, and administrator auth-summary endpoints
 - secret-safe responses
-- redacted event history
-- validation rules for configuration updates
+- role-boundary enforcement across protected API routes
 
 ### UI behavior
 
 The functional and end-to-end tests cover:
 
-- degraded-state visibility in the status page
-- blocked-live visibility and disabled actions
-- write-only secret handling in the configuration page
-- restart-required messaging
-- persisted configuration changes reflected in the UI
-- retry-state display and manual retry affordances
+- public landing-page behavior
+- local sign-in surface behavior in lightweight automated runs
+- protected configuration access after sign-in
+- no-role access-denied routing
+- administrator-only browser access to the auth-administration page
 
 ## Quality characteristics currently protected
 
@@ -105,11 +105,11 @@ To build first:
 
 Many integration, functional, and end-to-end tests run through the Aspire AppHost.
 
-The existing test setup commonly disables infrastructure containers by setting:
+The auth-focused test setup commonly disables infrastructure containers by setting:
 
 - `AppHost__EnableInfrastructureContainers=false`
 
-This keeps the suites lightweight while still exercising the distributed application shape.
+This keeps the suites lightweight while still exercising the distributed application shape. In this mode, AppHost switches the Web and API hosts to the local test authentication provider instead of starting Keycloak.
 
 ## Manual validation areas still worth checking
 

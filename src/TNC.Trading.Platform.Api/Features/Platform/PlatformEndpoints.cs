@@ -1,9 +1,12 @@
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Options;
 using TNC.Trading.Platform.Api.Features.GetPlatformConfiguration;
 using TNC.Trading.Platform.Api.Features.GetPlatformEvents;
 using TNC.Trading.Platform.Api.Features.GetPlatformStatus;
 using TNC.Trading.Platform.Api.Features.TriggerManualAuthRetry;
 using TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration;
 using TNC.Trading.Platform.Api.Infrastructure.Platform;
+using TNC.Trading.Platform.Application.Authentication;
 using AppGetPlatformConfiguration = TNC.Trading.Platform.Application.Features.GetPlatformConfiguration;
 using AppGetPlatformEvents = TNC.Trading.Platform.Application.Features.GetPlatformEvents;
 using AppGetPlatformStatus = TNC.Trading.Platform.Application.Features.GetPlatformStatus;
@@ -16,21 +19,30 @@ internal static class PlatformEndpoints
 {
     public static void MapPlatformEndpoints(this WebApplication app)
     {
-        app.MapGet("/", GetRootAsync);
+        app.MapGet("/", GetRootAsync)
+            .AllowAnonymous();
 
         var platform = app.MapGroup("/api/platform");
 
-        platform.MapGet("/status", GetPlatformStatusAsync);
-        platform.MapGet("/configuration", GetPlatformConfigurationAsync);
-        platform.MapPut("/configuration", UpdatePlatformConfigurationAsync);
-        platform.MapPost("/auth/manual-retry", TriggerManualAuthRetryAsync);
-        platform.MapGet("/events", GetPlatformEventsAsync);
+        platform.MapGet("/status", GetPlatformStatusAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Viewer);
+        platform.MapGet("/configuration", GetPlatformConfigurationAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
+        platform.MapPut("/configuration", UpdatePlatformConfigurationAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
+        platform.MapPost("/auth/manual-retry", TriggerManualAuthRetryAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
+        platform.MapGet("/events", GetPlatformEventsAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Viewer);
+        platform.MapGet("/auth/administration", GetAuthAdministration)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Administrator);
 
-        app.MapGet("/metadata", GetMetadata);
+        app.MapGet("/metadata", GetMetadata)
+            .AllowAnonymous();
     }
 
-    private static Task<IResult> GetRootAsync(AppGetPlatformStatus.GetPlatformStatusHandler handler, CancellationToken cancellationToken)
-        => GetPlatformStatusAsync(handler, cancellationToken);
+    private static IResult GetRootAsync(IHostEnvironment environment)
+        => GetMetadata(environment);
 
     private static async Task<IResult> GetPlatformStatusAsync(AppGetPlatformStatus.GetPlatformStatusHandler handler, CancellationToken cancellationToken)
     {
@@ -97,4 +109,10 @@ internal static class PlatformEndpoints
             service = environment.ApplicationName,
             environment = environment.EnvironmentName
         });
+
+    private static IResult GetAuthAdministration(IOptions<PlatformAuthenticationOptions> authenticationOptions)
+        => TypedResults.Ok(new AuthAdministrationResponse(
+            authenticationOptions.Value.Provider,
+            authenticationOptions.Value.Authorization.RoleClaimType,
+            authenticationOptions.Value.ApiAudience));
 }

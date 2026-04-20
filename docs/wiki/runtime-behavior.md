@@ -1,10 +1,18 @@
-# Runtime behavior
+﻿# Runtime behavior
 
 This document explains how the current application behaves at startup and while it is running. It focuses on schedule evaluation, auth state, retry handling, notifications, and record retention.
 
 ## Runtime model summary
 
 The current runtime model is a supervised control loop.
+
+Alongside the broker-auth supervision model, the platform now also applies a separate operator access model:
+
+- `/` stays public for anonymous users
+- signed-in operators receive role-based UI navigation
+- protected Web routes and API endpoints fail closed when authentication or authorization is missing
+- the Blazor host propagates delegated bearer tokens to the API
+- higher scopes are requested only when privileged areas are entered
 
 At startup and during background execution, the application:
 
@@ -77,6 +85,12 @@ The schedule gate returns:
 The current implementation does not yet perform real broker authentication.
 
 Instead, it models the auth state needed by the rest of the control plane. The coordinator uses environment rules, schedule rules, and credential presence to decide what the runtime auth state should be.
+
+This runtime auth-state model is distinct from the operator sign-in model:
+
+- operator sign-in uses standards-based OIDC/OAuth flows through Keycloak locally and Azure-aligned configuration for Microsoft Entra ID
+- automated tests use the lightweight local test provider when infrastructure containers are disabled
+- operator role boundaries are enforced independently of the simulated broker auth-state projection
 
 ## State transitions
 

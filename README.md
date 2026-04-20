@@ -4,13 +4,16 @@ TNC.Trading.Platform is a .NET 10 trading platform under active development for 
 
 ## Current status
 
-The repository currently provides the environment and auth foundation delivered by work package 002.
+The repository currently provides the operator authentication and authorization foundation delivered through work package 003.
 
 - .NET Aspire AppHost for local orchestration of the API, Blazor operator UI, and supporting services
-- Minimal API backend for platform status, configuration, events, and manual auth-retry actions
-- Blazor-based operator UI for status visibility, configuration management, and manual retry flows
+- Aspire-managed Keycloak local identity composition with seeded development users when infrastructure containers are enabled
+- Minimal API backend for protected platform status, configuration, events, manual auth-retry actions, and admin auth summary data
+- Blazor-based operator UI with a public landing page, protected status/configuration/admin surfaces, sign-in, sign-out, and access-denied flows
 - SQL-backed operator-managed configuration when infrastructure is available, with local fallback support for developer runs
 - Protected handling for `IG` credentials and environment-scoped operational records
+- Shared `Viewer`, `Operator`, and `Administrator` role policies across the Web UI and API
+- Delegated bearer-token propagation from the Blazor host to the protected API
 - Trading-schedule-aware auth-state supervision, retry scheduling, and notification recording
 - Shared service defaults for health checks, OpenTelemetry, and hosting concerns
 - Requirement-driven unit, integration, functional, and end-to-end automated test coverage
@@ -73,6 +76,12 @@ The current local implementation is started with the AppHost and exposes:
 - [Requirements](docs/002-environment-and-auth-foundation/requirements.md)
 - [Technical specification](docs/002-environment-and-auth-foundation/technical-specification.md)
 - [Delivery plan](docs/002-environment-and-auth-foundation/delivery-plan.md)
+
+### Work package 003: Authentication and authorisation
+
+- [Requirements](docs/003-authentication-and-authorisation/requirements.md)
+- [Technical specification](docs/003-authentication-and-authorisation/technical-specification.md)
+- [Delivery plan](docs/003-authentication-and-authorisation/plans/001-delivery-plan.md)
 
 ### Domain reference
 

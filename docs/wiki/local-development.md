@@ -1,4 +1,4 @@
-# Local development guide
+﻿# Local development guide
 
 This document explains how to build, run, validate, and troubleshoot the current application locally.
 
@@ -17,6 +17,7 @@ This is the default experience when infrastructure containers are not enabled.
 
 - AppHost starts the API and Blazor UI
 - the API uses the in-memory database provider
+- the Web and API use the local test authentication provider
 - external notification transports remain optional
 
 ### Container-assisted local mode
@@ -26,8 +27,9 @@ When `AppHost:EnableInfrastructureContainers=true` is set, AppHost can also star
 - SQL Server
 - the `platformdb` database
 - Mailpit for local SMTP capture
+- Keycloak with the imported local development realm
 
-Use this mode when you want durable local persistence and local notification validation.
+Use this mode when you want durable local persistence, local notification validation, and real local OIDC sign-in.
 
 ## Build
 
@@ -72,10 +74,11 @@ When the application is running, AppHost exposes links for:
 
 - the Blazor operator UI
 - the API service
+- Keycloak when infrastructure containers are enabled
 - Scalar UI in development
 - Mailpit UI when infrastructure containers are enabled
 
-The operator UI entry point is `/status` on the web application.
+The operator UI entry point is `/` on the web application.
 
 ## Validate
 
@@ -93,11 +96,30 @@ Verify these paths through the AppHost-exposed service URLs:
 
 - API liveness: `GET /health/live`
 - API readiness: `GET /health/ready`
-- API status: `GET /api/platform/status`
-- Web UI status page: `GET /status`
-- Web UI configuration page: `GET /configuration`
+- Web UI landing page: `GET /`
+- protected API status: `GET /api/platform/status`
+- protected Web status page: `GET /status`
+- protected Web configuration page: `GET /configuration`
 
 In development, also check the Scalar link from AppHost.
+
+### Local authentication validation
+
+When Keycloak is enabled through AppHost infrastructure containers, validate these seeded local accounts with the shared local-only password `LocalAuth!123`:
+
+- `local-admin`
+- `local-operator`
+- `local-viewer`
+- `local-norole`
+
+Expected behavior:
+
+1. `/` stays public when signed out.
+2. `local-viewer` can open `/status` but not operator or administrator-only areas.
+3. `local-operator` can open `/status` and `/configuration`.
+4. `local-admin` can open `/status`, `/configuration`, and `/administration/authentication`.
+5. `local-norole` authenticates successfully but is routed to `/authentication/access-denied`.
+6. signing out returns the operator to `/`.
 
 ## Useful local scenarios
 
@@ -105,14 +127,16 @@ In development, also check the Scalar link from AppHost.
 
 1. Run AppHost in lightweight mode.
 2. Open the web application link.
-3. Review `/status` and `/configuration`.
+3. Open `/authentication/sign-in` and select a local test user.
+4. Review `/status`, `/configuration`, or `/administration/authentication` based on the selected role.
 
 ### Validate durable configuration locally
 
 1. Enable infrastructure containers.
 2. Start AppHost.
-3. Save configuration changes in `/configuration`.
-4. Restart the application and verify the values persist.
+3. Sign in through Keycloak as `local-operator` or `local-admin`.
+4. Save configuration changes in `/configuration`.
+5. Restart the application and verify the values persist.
 
 ### Validate local SMTP capture
 

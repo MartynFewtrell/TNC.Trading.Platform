@@ -1,4 +1,4 @@
-# API reference
+﻿# API reference
 
 This document describes the current HTTP surface exposed by the platform API.
 
@@ -12,28 +12,29 @@ The Blazor UI talks to the API over service discovery using the internal `https+
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `GET` | `/` | Alias for platform status. |
+| `GET` | `/` | Basic service metadata alias. |
 | `GET` | `/metadata` | Basic service metadata. |
 | `GET` | `/health/live` | Liveness endpoint. |
 | `GET` | `/health/ready` | Readiness endpoint. |
-| `GET` | `/api/platform/status` | Current runtime status and retry state. |
-| `GET` | `/api/platform/configuration` | Current redacted configuration snapshot. |
-| `PUT` | `/api/platform/configuration` | Update operator-managed configuration. |
-| `POST` | `/api/platform/auth/manual-retry` | Trigger a manual retry cycle when allowed. |
-| `GET` | `/api/platform/events` | Return redacted operational events. |
+| `GET` | `/api/platform/status` | Current runtime status and retry state for viewer-capable operators. |
+| `GET` | `/api/platform/configuration` | Current redacted configuration snapshot for operator-capable users. |
+| `PUT` | `/api/platform/configuration` | Update operator-managed configuration for operator-capable users. |
+| `POST` | `/api/platform/auth/manual-retry` | Trigger a manual retry cycle when allowed for operator-capable users. |
+| `GET` | `/api/platform/events` | Return redacted operational events for viewer-capable operators. |
+| `GET` | `/api/platform/auth/administration` | Return the administrator-only auth summary surface. |
 
 ## General behavior
 
 - JSON uses web defaults and camel-case field names.
+- `/health/live`, `/health/ready`, `/`, and `/metadata` remain anonymous.
+- protected endpoints require a bearer token issued for the platform API and return `401 Unauthorized` or `403 Forbidden` without browser redirects.
 - Secret values are never returned by configuration or status endpoints.
 - Validation failures on configuration updates return a validation-problem payload.
 - Manual retry conflicts return `409 Conflict` when the current runtime state does not allow the action.
 
 ## GET /
 
-Returns the same payload as `GET /api/platform/status`.
-
-This gives a convenient default status route for quick inspection.
+Returns the same lightweight metadata payload as `GET /metadata`.
 
 ## GET /metadata
 
@@ -278,6 +279,20 @@ Returns redacted operational events.
 | --- | --- |
 | `category` | Optional category filter, such as `auth`. |
 | `environment` | Optional broker-environment filter, such as `Demo` or `Live`. |
+
+## GET /api/platform/auth/administration
+
+Returns the current auth-provider summary for administrator users.
+
+### Example response
+
+```json
+{
+  "provider": "Keycloak",
+  "roleClaimType": "role",
+  "apiAudience": "tnc-trading-platform-api"
+}
+```
 
 ### Example request
 

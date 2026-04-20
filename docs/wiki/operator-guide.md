@@ -1,22 +1,39 @@
-# Operator guide
+﻿# Operator guide
 
 This guide explains how the current Blazor operator UI works, what information each page shows, and how the existing workflows behave.
 
 ## Operator UI summary
 
-The current UI is a Blazor Server app with two primary pages:
+The current UI is a Blazor Server app with a public entry surface and three protected operator pages:
 
+- `/`
 - `/status`
 - `/configuration`
+- `/administration/authentication`
 
-The left navigation keeps both views available during normal and degraded operation.
+The left navigation changes based on the signed-in operator role.
 
 ## Navigation
 
 | Route | Purpose |
 | --- | --- |
+| `/` | Public landing page for anonymous users and signed-in home page for operators. |
 | `/status` | Runtime status, trading-schedule state, auth state, retry state, and recent auth events. |
 | `/configuration` | Operator-managed configuration, notification settings, trading-schedule values, and write-only IG credential updates. |
+| `/administration/authentication` | Administrator-only summary of the configured auth provider, role claim type, and protected API audience. |
+| `/authentication/sign-in` | Starts sign-in. In automated local tests this also lists the seeded local test users. |
+| `/authentication/sign-out` | Ends the platform session and returns to the landing page. |
+| `/authentication/access-denied` | Dedicated denied-access page for signed-in users who lack the required platform role. |
+
+## Sign-in and sign-out
+
+Anonymous users land on `/` and use the sign-in link to start authentication.
+
+- in lightweight local test runs, `/authentication/sign-in` lists the seeded local users used by automated tests
+- in container-assisted local runs, sign-in redirects the browser to Keycloak
+- sign-out ends the platform session only and returns the operator to `/`
+
+If a pre-provisioned user authenticates without a platform role, the UI routes the user to `/authentication/access-denied`.
 
 ## Status page
 
@@ -61,7 +78,7 @@ When the platform is degraded, the page also shows a warning banner.
 
 ### Manual retry button
 
-The manual retry button is visible on the status page.
+The manual retry button is visible only to `Operator` and `Administrator` users on the status page.
 
 It is enabled only when:
 
@@ -91,6 +108,19 @@ Only redacted event details are exposed.
 The configuration page is the main operator-edit surface.
 
 It is designed for safe review and update of configuration without exposing stored secrets.
+It is available only to `Operator` and `Administrator` users.
+
+## Authentication administration page
+
+The authentication administration page is an `Administrator`-only surface.
+
+It shows:
+
+- the active authentication provider
+- the role claim type used by the app
+- the protected API audience expected by bearer validation
+
+The current release does not manage users or roles in-app, so this page is informational rather than a full administration console.
 
 ## Configuration sections
 
@@ -210,6 +240,8 @@ flowchart TD
 
 The UI reflects these key guardrails:
 
+- anonymous users stay on public content until they sign in
+- signed-in users without a required role are sent to the dedicated access-denied page
 - stored secrets are never shown after capture
 - the live broker option is disabled in the Test platform environment
 - manual retry is unavailable until automatic retry exhaustion has occurred

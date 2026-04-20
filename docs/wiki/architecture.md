@@ -1,4 +1,4 @@
-# Architecture
+﻿# Architecture
 
 This document describes the implemented architecture of the current solution, including project boundaries, runtime topology, request flow, and persistence responsibilities.
 
@@ -55,11 +55,13 @@ When `AppHost:EnableInfrastructureContainers=true`:
 - AppHost starts SQL Server
 - AppHost creates the `platformdb` database
 - AppHost starts Mailpit for local SMTP capture
-- the API receives the SQL connection string and SMTP settings through environment variables
+- AppHost starts Keycloak on a stable local port with a repeatable realm import for seeded auth users, roles, scopes, and clients
+- the API and Web hosts receive their SQL, SMTP, and authentication settings through environment variables
 
 ```mermaid
 flowchart LR
     Operator[Browser] --> Web[Blazor UI]
+    Operator --> Keycloak[Keycloak optional local IdP]
     Web --> Api[Platform API]
     Api --> Sql[(platformdb)]
     Api --> Mailpit[Mailpit SMTP optional]
@@ -68,6 +70,7 @@ flowchart LR
     AppHost --> Api
     AppHost --> Sql
     AppHost --> Mailpit
+    AppHost --> Keycloak
 ```
 
 ## Request and interaction flow
@@ -76,8 +79,9 @@ flowchart LR
 
 The Blazor UI talks to the API through `PlatformApiClient`.
 
-- `/status` loads platform status and recent auth events
-- `/configuration` loads the active configuration and submits updates
+- `/status` loads protected platform status and recent auth events using a viewer-capable delegated token
+- `/configuration` loads the active configuration and submits updates using an operator-capable delegated token
+- `/administration/authentication` loads the admin-only auth summary using an administrator-capable delegated token
 - manual retry posts to the API and then refreshes status
 
 ```mermaid
@@ -91,7 +95,9 @@ sequenceDiagram
     participant Infra as Infrastructure
     participant Db as Persistence
 
-    Operator->>Web: Open /status or /configuration
+    Operator->>Web: Open /, /status, /configuration, or /administration/authentication
+    Web->>Keycloak: Challenge when sign-in or higher scopes are required
+    Keycloak-->>Web: Authenticated operator session and delegated tokens
     Web->>Client: Request data
     Client->>Api: HTTP request
     Api->>App: Invoke feature handler
@@ -109,14 +115,14 @@ sequenceDiagram
 
 The API entry point keeps startup thin:
 
-- registers service defaults, data protection, application services, infrastructure services, and validators
+- registers service defaults, authentication, authorization, data protection, application services, infrastructure services, and validators
 - ensures the database exists
 - applies startup configuration
 - applies retention processing
 - performs an initial coordinator tick
 - maps platform endpoints and health endpoints
 
-The endpoint group under `/api/platform` is the current backend surface for operator workflows.
+The endpoint group under `/api/platform` is the current backend surface for operator workflows and is protected by shared role policies.
 
 ## Application-layer responsibilities
 

@@ -22,4 +22,8 @@
     <ProjectReference Include="..\..\..\src\TNC.Trading.Platform.AppHost\TNC.Trading.Platform.AppHost.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="002-environment-and-auth-foundation\" />
+  </ItemGroup>
+
 </Project>
