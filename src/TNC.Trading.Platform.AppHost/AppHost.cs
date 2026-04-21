@@ -19,6 +19,12 @@ IResourceBuilder<IResourceWithEndpoints>? keycloak = null;
 if (enableInfrastructureContainers)
 {
     var sqlPassword = builder.AddParameter("sql-password", secret: true);
+    var keycloakAdminUsername = builder.AddParameter(
+        "keycloak-admin-username",
+        "keycloak-admin",
+        publishValueAsDefault: true,
+        secret: false);
+    var keycloakAdminPassword = builder.AddParameter("keycloak-admin-password", secret: true);
     var sql = builder.AddSqlServer("sql", sqlPassword)
         .WithDataVolume();
 
@@ -33,7 +39,11 @@ if (enableInfrastructureContainers)
             DisplayText = "Mailpit UI"
         });
 
-    keycloak = builder.AddKeycloak("keycloak", port: 8080)
+    keycloak = builder.AddKeycloak(
+            "keycloak",
+            port: 8080,
+            adminUsername: keycloakAdminUsername,
+            adminPassword: keycloakAdminPassword)
         .WithRealmImport("./Realms");
 }
 

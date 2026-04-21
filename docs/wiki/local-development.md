@@ -68,6 +68,20 @@ Clear the variable afterward if you want to return to the lightweight mode:
 Remove-Item Env:AppHost__EnableInfrastructureContainers
 ```
 
+## Keycloak admin console credentials
+
+When infrastructure containers are enabled, AppHost starts Keycloak with an explicit admin console account.
+
+- username: `keycloak-admin`
+- password source: AppHost user secrets key `Parameters:keycloak-admin-password`
+
+Set or replace the password from the repository root with:
+
+```powershell
+dotnet user-secrets --project src/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.csproj list
+dotnet user-secrets --project src/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.csproj set "Parameters:keycloak-admin-password" "<your-password>"
+```
+
 ## What AppHost exposes
 
 When the application is running, AppHost exposes links for:
