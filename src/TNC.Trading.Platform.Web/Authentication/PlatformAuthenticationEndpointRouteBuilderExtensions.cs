@@ -23,6 +23,7 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
         HttpContext httpContext,
         IOptions<PlatformAuthenticationOptions> authenticationOptions,
         TestAuthenticationTokenFactory testAuthenticationTokenFactory,
+        PlatformAuthAuditClient authAuditClient,
         ILoggerFactory loggerFactory,
         string? returnUrl,
         string? scope,
@@ -48,6 +49,12 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
                 PlatformAuthenticationDefaults.Schemes.Cookie,
                 principal,
                 properties);
+
+            await authAuditClient.RecordSignInCompletedAsync(
+                "/authentication/sign-in",
+                requestedScopes,
+                properties.GetTokenValue("access_token"),
+                httpContext.RequestAborted);
 
             logger.LogInformation(
                 "Local test sign-in completed for {UserName} with scopes {Scopes}",
@@ -85,9 +92,11 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
     private static async Task<IResult> SignOutAsync(
         HttpContext httpContext,
         IOptions<PlatformAuthenticationOptions> authenticationOptions,
+        PlatformAuthAuditClient authAuditClient,
         ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger(typeof(PlatformAuthenticationEndpointRouteBuilderExtensions));
+        await authAuditClient.RecordSignOutCompletedAsync("/authentication/sign-out", httpContext.RequestAborted);
         await httpContext.SignOutAsync(PlatformAuthenticationDefaults.Schemes.Cookie);
         logger.LogInformation("Platform sign-out completed.");
         return Results.LocalRedirect(NormalizeReturnUrl(authenticationOptions.Value.SignedOutRedirectPath));

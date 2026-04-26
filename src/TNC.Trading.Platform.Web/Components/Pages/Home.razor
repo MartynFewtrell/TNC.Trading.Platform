@@ -1,6 +1,7 @@
 ﻿@page "/"
 @attribute [AllowAnonymous]
 @inject NavigationManager NavigationManager
+@inject PlatformAuthAuditClient AuthAuditClient
 @inject PlatformOperatorContextAccessor OperatorContextAccessor
 
 <PageTitle>TNC Trading Platform</PageTitle>
@@ -50,6 +51,7 @@ else
         operatorContext = await OperatorContextAccessor.GetCurrentAsync();
         if (operatorContext.IsAuthenticated && !operatorContext.HasAnyPlatformRole)
         {
+            await AuthAuditClient.RecordAccessDeniedAsync("/", CancellationToken.None);
             NavigationManager.NavigateTo("/authentication/access-denied", forceLoad: true);
         }
     }

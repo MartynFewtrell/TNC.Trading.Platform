@@ -157,7 +157,7 @@ The `TNC.Trading.Platform.Infrastructure` project contains:
 - SQL-backed configuration storage
 - runtime-state storage
 - retry-cycle storage
-- operational-event storage
+- operational-event storage, including persisted operator auth audit history
 - notification providers
 - retention processing for operational records
 
@@ -208,6 +208,14 @@ The `ServiceDefaults` project provides shared cross-cutting behavior for the API
 - readiness endpoint at `/health/ready`
 
 Health endpoint paths are configurable, but the default paths are used by this solution.
+
+The operator auth audit path is implemented as a backend-for-frontend flow:
+
+- the Blazor Server host records sign-in, sign-out, access-denied, and delegated-token failure outcomes through `PlatformAuthAuditClient`
+- the client posts those events to the protected API route `POST /api/platform/auth/audit`
+- the API persists the resulting auth events through the shared operational event store with correlation data and redacted details
+
+This keeps audit persistence on the server side and avoids exposing secrets or delegated tokens to browser-delivered code.
 
 ## Current architectural trade-offs
 

@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authentication.Cookies;
+﻿using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using TNC.Trading.Platform.Application.Authentication;
@@ -39,6 +40,13 @@ internal static class PlatformWebAuthenticationServiceCollectionExtensions
         var authenticationOptions = builder.Configuration
             .GetSection(PlatformAuthenticationDefaults.ConfigurationSectionName)
             .Get<PlatformAuthenticationOptions>() ?? new PlatformAuthenticationOptions();
+
+        ValidateProviderSupported(authenticationOptions.Provider);
+
+        if (!string.Equals(authenticationOptions.Provider, PlatformAuthenticationDefaults.Providers.Test, StringComparison.Ordinal))
+        {
+            ValidateOpenIdConnectConfiguration(authenticationOptions);
+        }
 
         var authenticationBuilder = builder.Services.AddAuthentication(options =>
         {
@@ -146,19 +154,44 @@ internal static class PlatformWebAuthenticationServiceCollectionExtensions
                 }
 
                 return Task.CompletedTask;
+            },
+            OnTicketReceived = async context =>
+            {
+                var auditClient = context.HttpContext.RequestServices.GetRequiredService<PlatformAuthAuditClient>();
+                var accessToken = context.Properties?.GetTokenValue("access_token");
+                var scope = context.Properties?.GetTokenValue("scope");
+                var grantedScopes = string.IsNullOrWhiteSpace(scope)
+                    ? authenticationOptions.RequiredScopes
+                    : scope.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                await auditClient.RecordSignInCompletedAsync(
+                    authenticationOptions.CallbackPath,
+                    grantedScopes,
+                    accessToken,
+                    context.HttpContext.RequestAborted).ConfigureAwait(false);
             }
         };
     }
 
     private static string? ResolveAuthority(PlatformAuthenticationOptions authenticationOptions) =>
-        string.Equals(authenticationOptions.Provider, PlatformAuthenticationDefaults.Providers.Entra, StringComparison.Ordinal)
-            ? ResolveEntraAuthority(authenticationOptions.Entra)
-            : authenticationOptions.Keycloak.Authority;
+        authenticationOptions.Provider switch
+        {
+            PlatformAuthenticationDefaults.Providers.Entra => ResolveEntraAuthority(authenticationOptions.Entra),
+            PlatformAuthenticationDefaults.Providers.Keycloak => ResolveKeycloakAuthority(authenticationOptions.Keycloak),
+            _ => throw new InvalidOperationException($"The authentication provider '{authenticationOptions.Provider}' is not supported.")
+        };
 
     private static string ResolveClientId(PlatformAuthenticationOptions authenticationOptions) =>
-        string.Equals(authenticationOptions.Provider, PlatformAuthenticationDefaults.Providers.Entra, StringComparison.Ordinal)
-            ? authenticationOptions.Entra.ClientId ?? throw new InvalidOperationException("The Microsoft Entra Web client identifier is missing.")
-            : authenticationOptions.Keycloak.ClientId;
+        authenticationOptions.Provider switch
+        {
+            PlatformAuthenticationDefaults.Providers.Entra => !string.IsNullOrWhiteSpace(authenticationOptions.Entra.ClientId)
+                ? authenticationOptions.Entra.ClientId
+                : throw new InvalidOperationException("The configuration key 'Authentication:Entra:ClientId' is required when using the Entra provider."),
+            PlatformAuthenticationDefaults.Providers.Keycloak => !string.IsNullOrWhiteSpace(authenticationOptions.Keycloak.ClientId)
+                ? authenticationOptions.Keycloak.ClientId
+                : throw new InvalidOperationException("The configuration key 'Authentication:Keycloak:ClientId' is required when using the Keycloak provider."),
+            _ => throw new InvalidOperationException($"The authentication provider '{authenticationOptions.Provider}' is not supported.")
+        };
 
     private static string? ResolveClientSecret(PlatformAuthenticationOptions authenticationOptions) =>
         string.Equals(authenticationOptions.Provider, PlatformAuthenticationDefaults.Providers.Entra, StringComparison.Ordinal)
@@ -169,9 +202,32 @@ internal static class PlatformWebAuthenticationServiceCollectionExtensions
     {
         if (string.IsNullOrWhiteSpace(options.Instance) || string.IsNullOrWhiteSpace(options.TenantId))
         {
-            return null;
+            throw new InvalidOperationException("The configuration keys 'Authentication:Entra:Instance' and 'Authentication:Entra:TenantId' are required when using the Entra provider.");
         }
 
         return $"{options.Instance.TrimEnd('/')}/{options.TenantId}/v2.0";
+    }
+
+    private static string ResolveKeycloakAuthority(PlatformAuthenticationOptions.KeycloakOptions options) =>
+        !string.IsNullOrWhiteSpace(options.Authority)
+            ? options.Authority
+            : throw new InvalidOperationException("The configuration key 'Authentication:Keycloak:Authority' is required when using the Keycloak provider.");
+
+    private static void ValidateProviderSupported(string provider)
+    {
+        if (string.Equals(provider, PlatformAuthenticationDefaults.Providers.Keycloak, StringComparison.Ordinal)
+            || string.Equals(provider, PlatformAuthenticationDefaults.Providers.Entra, StringComparison.Ordinal)
+            || string.Equals(provider, PlatformAuthenticationDefaults.Providers.Test, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException($"The authentication provider '{provider}' is not supported.");
+    }
+
+    private static void ValidateOpenIdConnectConfiguration(PlatformAuthenticationOptions authenticationOptions)
+    {
+        _ = ResolveAuthority(authenticationOptions);
+        _ = ResolveClientId(authenticationOptions);
     }
 }

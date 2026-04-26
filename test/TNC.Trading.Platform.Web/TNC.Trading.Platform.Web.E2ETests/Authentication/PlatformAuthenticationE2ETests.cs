@@ -26,7 +26,9 @@ public class PlatformAuthenticationE2ETests : PageTest
         await using var app = await appHost.BuildAsync();
         await app.StartAsync();
 
-        await Page.GotoAsync(new Uri(app.GetEndpoint("web"), "/authentication/sign-in?returnUrl=%2Fstatus").ToString());
+        await Page.GotoAsync(
+            new Uri(app.GetEndpoint("web"), "/authentication/sign-in?returnUrl=%2Fstatus").ToString(),
+            new() { WaitUntil = WaitUntilState.DOMContentLoaded });
 
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Test sign-in" })).ToBeVisibleAsync();
         await Expect(Page.GetByText("local-viewer")).ToBeVisibleAsync();
@@ -47,7 +49,9 @@ public class PlatformAuthenticationE2ETests : PageTest
         await using var app = await appHost.BuildAsync();
         await app.StartAsync();
 
-        await Page.GotoAsync(new Uri(app.GetEndpoint("web"), "/authentication/sign-in?user=local-norole&returnUrl=%2F").ToString());
+        await Page.GotoAsync(
+            new Uri(app.GetEndpoint("web"), "/authentication/sign-in?user=local-norole&returnUrl=%2F").ToString(),
+            new() { WaitUntil = WaitUntilState.DOMContentLoaded });
 
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Access denied" })).ToBeVisibleAsync();
     }
@@ -67,7 +71,9 @@ public class PlatformAuthenticationE2ETests : PageTest
         await using var app = await appHost.BuildAsync();
         await app.StartAsync();
 
-        await Page.GotoAsync(new Uri(app.GetEndpoint("web"), "/authentication/sign-in?user=local-admin&returnUrl=%2Fadministration%2Fauthentication&scope=platform.admin").ToString());
+        await Page.GotoAsync(
+            new Uri(app.GetEndpoint("web"), "/authentication/sign-in?user=local-admin&returnUrl=%2Fadministration%2Fauthentication&scope=platform.admin").ToString(),
+            new() { WaitUntil = WaitUntilState.DOMContentLoaded });
 
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Authentication administration" })).ToBeVisibleAsync();
     }

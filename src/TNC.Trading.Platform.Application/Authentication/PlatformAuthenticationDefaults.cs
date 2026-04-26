@@ -155,4 +155,30 @@ public static class PlatformAuthenticationDefaults
         /// </summary>
         public const string Roles = "roles";
     }
+
+    /// <summary>
+    /// Defines persisted authentication audit event types.
+    /// </summary>
+    public static class AuditEvents
+    {
+        /// <summary>
+        /// Gets the sign-in audit event type.
+        /// </summary>
+        public const string SignInCompleted = "OperatorSignInCompleted";
+
+        /// <summary>
+        /// Gets the sign-out audit event type.
+        /// </summary>
+        public const string SignOutCompleted = "OperatorSignOutCompleted";
+
+        /// <summary>
+        /// Gets the access-denied audit event type.
+        /// </summary>
+        public const string AccessDenied = "OperatorAccessDenied";
+
+        /// <summary>
+        /// Gets the delegated-token acquisition failure audit event type.
+        /// </summary>
+        public const string TokenAcquisitionFailed = "OperatorTokenAcquisitionFailed";
+    }
 }

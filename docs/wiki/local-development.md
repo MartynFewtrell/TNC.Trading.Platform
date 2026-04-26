@@ -104,6 +104,8 @@ Run the test suite from the repository root:
 dotnet test
 ```
 
+The auth work package now also includes a dedicated Web unit test project for policy registration and operator-context mapping. It is included in the repository-wide `dotnet test` run.
+
 ### Manual validation
 
 Verify these paths through the AppHost-exposed service URLs:
@@ -134,6 +136,9 @@ Expected behavior:
 4. `local-admin` can open `/status`, `/configuration`, and `/administration/authentication`.
 5. `local-norole` authenticates successfully but is routed to `/authentication/access-denied`.
 6. signing out returns the operator to `/`.
+7. requesting `/status`, `/configuration`, or `/administration/authentication` while signed out redirects the operator to `/authentication/sign-in` with the intended `returnUrl` preserved.
+8. after sign-out, requesting a protected route returns the operator to the sign-in entry point before protected content is available again.
+9. the recent auth events view on `/status` shows redacted operator sign-in, sign-out, denial, and token-acquisition-failure audit events after those actions are exercised.
 
 ## Useful local scenarios
 

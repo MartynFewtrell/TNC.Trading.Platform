@@ -154,7 +154,7 @@ The current implementation persists or models the following record types:
 - protected credentials
 - auth runtime state
 - auth retry cycles
-- operational events
+- operational events, including operator authentication audit history
 - configuration audits
 - notification records
 

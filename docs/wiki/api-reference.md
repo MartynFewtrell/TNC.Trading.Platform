@@ -20,6 +20,7 @@ The Blazor UI talks to the API over service discovery using the internal `https+
 | `GET` | `/api/platform/configuration` | Current redacted configuration snapshot for operator-capable users. |
 | `PUT` | `/api/platform/configuration` | Update operator-managed configuration for operator-capable users. |
 | `POST` | `/api/platform/auth/manual-retry` | Trigger a manual retry cycle when allowed for operator-capable users. |
+| `POST` | `/api/platform/auth/audit` | Persist operator authentication audit events for authenticated callers. |
 | `GET` | `/api/platform/events` | Return redacted operational events for viewer-capable operators. |
 | `GET` | `/api/platform/auth/administration` | Return the administrator-only auth summary surface. |
 
@@ -48,6 +49,41 @@ Returns lightweight service metadata.
   "environment": "Development"
 }
 ```
+
+The auth event feed can include broker-auth supervision records and operator-session audit records. Operator audit examples include sign-in, sign-out, access-denied, and delegated-token acquisition failure events with redacted details.
+
+## POST /api/platform/auth/audit
+
+Persists an authenticated operator auth audit event through the API so the shared auth event history can retain Web sign-in lifecycle outcomes.
+
+### Request shape
+
+```json
+{
+  "eventType": "OperatorSignOutCompleted",
+  "path": "/authentication/sign-out",
+  "scope": null
+}
+```
+
+### Supported event types
+
+- `OperatorSignInCompleted`
+- `OperatorSignOutCompleted`
+- `OperatorAccessDenied`
+- `OperatorTokenAcquisitionFailed`
+
+### Success response
+
+- status: `202 Accepted`
+- location: `/api/platform/events?category=auth`
+
+### Behavior notes
+
+- the endpoint requires an authenticated bearer token
+- the API derives the operator identity from claims instead of trusting the request body
+- persisted details include correlation data, path, and scope context only after redaction
+- raw delegated tokens and other sensitive protocol values are not stored or returned
 
 ## GET /health/live
 

@@ -1,6 +1,7 @@
 ﻿@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.Extensions.Logging
 @inject NavigationManager NavigationManager
+@inject PlatformAuthAuditClient AuthAuditClient
 @inject ILogger<RedirectToAuthorizationOutcome> Logger
 
 <p>Redirecting...</p>
@@ -17,11 +18,15 @@
         }
 
         var authenticationState = await AuthenticationStateTask;
-        var relativePath = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
-        var returnUrl = string.IsNullOrWhiteSpace(relativePath) ? "/" : $"/{relativePath}";
-        var destination = authenticationState.User.Identity?.IsAuthenticated == true
-            ? $"/authentication/access-denied?returnUrl={Uri.EscapeDataString(returnUrl)}"
-            : $"/authentication/sign-in?returnUrl={Uri.EscapeDataString(returnUrl)}";
+        var (returnUrl, destination, shouldRecordAccessDenied) = PlatformAuthorizationRedirectResolver.CreateDecision(
+            NavigationManager.Uri,
+            NavigationManager.BaseUri,
+            authenticationState.User);
+
+        if (shouldRecordAccessDenied)
+        {
+            await AuthAuditClient.RecordAccessDeniedAsync(returnUrl, CancellationToken.None);
+        }
 
         Logger.LogWarning(
             "Protected route redirecting operator to {Destination} because authenticated={IsAuthenticated}",

@@ -10,10 +10,10 @@ public sealed class PlatformDashboardAuthenticationE2ETests : PageTest
     private static readonly string AppHostProjectPath = Path.Combine("src", "TNC.Trading.Platform.AppHost", "TNC.Trading.Platform.AppHost.csproj");
 
     /// <summary>
-    /// Trace: local authentication diagnostics.
-    /// Verifies: the Aspire dashboard can be opened during an end-to-end test and its Operator UI link can complete a real local Keycloak sign-in using a seeded viewer account.
-    /// Expected: opening the Operator UI from the dashboard and signing in as the seeded local-viewer user reaches the protected platform status page.
-    /// Why: local authentication must work through the same Aspire dashboard entry point developers use manually, not only through in-memory test authentication.
+    /// Trace: FR1, FR5, IR1, TR3, NF2.
+    /// Verifies: the Aspire dashboard starts and the AppHost-started Web UI runtime endpoint can be discovered before a seeded viewer completes one real local Keycloak sign-in journey.
+    /// Expected: after the dashboard opens successfully, the runtime-discovered Web sign-in entry point is reachable and signing in as local-viewer reaches the protected platform status page.
+    /// Why: the retained smoke must prove the real AppHost plus Keycloak path without falling back to brittle launch-settings ports, and it must fail clearly if endpoint discovery or Web readiness breaks.
     /// </summary>
     [Fact]
     public async Task OperatorUi_ShouldRenderPlatformStatus_WhenSeededViewerSignsInFromAspireDashboard()
@@ -21,34 +21,23 @@ public sealed class PlatformDashboardAuthenticationE2ETests : PageTest
         await using var appHostProcess = StartAppHostProcess();
 
         var dashboardLoginUri = await WaitForDashboardLoginUriAsync(appHostProcess.Process);
+        var authenticationEntryUri = await appHostProcess.WaitForWebSignInUriAsync(TimeSpan.FromSeconds(60));
+        var webBaseUri = new Uri(authenticationEntryUri.GetLeftPart(UriPartial.Authority));
 
-        await Page.GotoAsync(dashboardLoginUri.ToString());
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await Page.GotoAsync(dashboardLoginUri.ToString(), new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+        await Expect(Page.Locator("body")).ToBeVisibleAsync(new() { Timeout = 30_000 });
 
-        var href = await WaitForWebUiUrlAsync();
+        await Page.GotoAsync(authenticationEntryUri.ToString(), new() { WaitUntil = WaitUntilState.DOMContentLoaded });
 
-        await Page.GotoAsync(href!);
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-
-        await Expect(Page.Locator("#username")).ToBeVisibleAsync();
+        await Expect(Page.Locator("#username")).ToBeVisibleAsync(new() { Timeout = 60_000 });
         await Page.Locator("#username").FillAsync("local-viewer");
         await Page.Locator("#password").FillAsync("LocalAuth!123");
         await Page.Locator("#kc-login").ClickAsync();
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
-        var currentUrl = Page.Url;
-        var title = await Page.TitleAsync();
-        var bodyText = await Page.EvaluateAsync<string>("""
-            () => document.body.innerText
-            """);
-
-        if (bodyText.Contains("Platform status", StringComparison.Ordinal))
-        {
-            await Expect(Page).ToHaveURLAsync(new Regex(@"^https://localhost:7281/status$"));
-            return;
-        }
-
-        throw new Xunit.Sdk.XunitException($"Seeded viewer sign-in did not reach the platform status page. URL: {currentUrl}. Title: {title}. Body: {bodyText}");
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Platform status" })).ToBeVisibleAsync(new() { Timeout = 30_000 });
+        await Expect(Page).ToHaveURLAsync(
+            new Regex($"^{Regex.Escape(webBaseUri.GetLeftPart(UriPartial.Authority))}/status$"),
+            new() { Timeout = 30_000 });
     }
 
     private static AppHostProcessHandle StartAppHostProcess()
@@ -103,62 +92,6 @@ public sealed class PlatformDashboardAuthenticationE2ETests : PageTest
         throw new TimeoutException("The Aspire dashboard login URL was not emitted before the timeout expired.");
     }
 
-    private async Task<string> WaitForWebUiUrlAsync()
-    {
-        await Page.WaitForFunctionAsync("""
-            () => {
-                const pageText = document.body.innerText || '';
-                if (!pageText.includes('web') || !pageText.includes('Running')) {
-                    return false;
-                }
-
-                return Array.from(document.querySelectorAll('a[href]')).some(anchor => {
-                    const href = anchor.href || '';
-                    return href.includes('localhost:7281') || href.includes('localhost:5281') || href.includes('/status');
-                });
-            }
-            """,
-            null,
-            new() { Timeout = 120_000 });
-
-        var href = await Page.EvaluateAsync<string?>("""
-            () => {
-                const anchors = Array.from(document.querySelectorAll('a[href]'));
-                const statusMatch = anchors.find(anchor => {
-                    const href = anchor.href || '';
-                    return href.includes('/status');
-                });
-
-                if (statusMatch) {
-                    return statusMatch.href;
-                }
-
-                const match = anchors.find(anchor => {
-                    const href = anchor.href || '';
-                    return href.includes('localhost:7281') || href.includes('localhost:5281');
-                });
-
-                return match ? match.href : null;
-            }
-            """);
-
-        if (!string.IsNullOrWhiteSpace(href))
-        {
-            return href;
-        }
-
-        var availableLinks = await Page.EvaluateAsync<string[]>("""
-            () => Array.from(document.querySelectorAll('a[href]'))
-                .map(anchor => `${(anchor.textContent || '').trim()} -> ${anchor.href}`)
-            """);
-
-        var pageText = await Page.EvaluateAsync<string>("""
-            () => document.body.innerText
-            """);
-
-        throw new Xunit.Sdk.XunitException($"Could not find the dashboard Web UI link after the web resource reached Running. Available links: {string.Join(" | ", availableLinks)}. Page text: {pageText}");
-    }
-
     private static string GetRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
@@ -174,4 +107,7 @@ public sealed class PlatformDashboardAuthenticationE2ETests : PageTest
 
         throw new InvalidOperationException("Could not locate the repository root for the dashboard authentication diagnostic test.");
     }
+
+    private static string GetRepositoryPath(string relativePath) =>
+        Path.Combine(GetRepositoryRoot(), relativePath);
 }

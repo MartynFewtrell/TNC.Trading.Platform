@@ -14,6 +14,7 @@ The repository uses multiple test levels so the current control-plane behavior i
 | `test/TNC.Trading.Platform.Infrastructure/TNC.Trading.Platform.Infrastructure.UnitTests` | Unit | Configuration persistence, secret protection, notification providers, redaction, and retention behavior. |
 | `test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.UnitTests` | Unit | API-level validation behavior. |
 | `test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.IntegrationTests` | Integration | API contracts and AppHost-backed service behavior. |
+| `test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.UnitTests` | Unit | Web authentication policy registration, claim mapping, and authenticated operator context behavior. |
 | `test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.FunctionalTests` | Functional | Requirement-driven UI behavior and rendered HTML outcomes. |
 | `test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.E2ETests` | End-to-end | Browser-based flows across the Blazor UI and API. |
 
@@ -47,20 +48,30 @@ The API tests cover:
 
 - health endpoints
 - anonymous `401` behavior for protected endpoints
-- viewer, operator, and administrator bearer-token access behavior
-- status, configuration, and administrator auth-summary endpoints
+- invalid issuer, invalid audience, invalid signature, expired, and no-role bearer-token fail-closed behavior
+- viewer, operator, and administrator bearer-token access behavior across status, configuration, manual-retry, events, and administrator auth-summary endpoints
+- persisted operator auth audit-event recording through the protected API boundary for sign-in, sign-out, access-denied, and token-acquisition-failure outcomes
 - secret-safe responses
 - role-boundary enforcement across protected API routes
 
 ### UI behavior
 
-The functional and end-to-end tests cover:
+The Web unit, functional, and end-to-end tests cover:
 
+- shared authorization policy registration for viewer, operator, and administrator routes
+- anonymous, no-role, and elevated-role operator-context mapping
+- delegated-scope token evaluation and navigation recovery decisions for protected UI flows
+- lower-level protected-route redirect decisions and auth-audit helper behavior
 - public landing-page behavior
 - local sign-in surface behavior in lightweight automated runs
+- route-first anonymous challenge behavior for protected status, configuration, and administrator surfaces
+- compact functional role-matrix coverage for `local-viewer`, `local-operator`, `local-admin`, and `local-norole` across `/status`, `/configuration`, and `/administration/authentication`
+- sign-out, post-sign-out denial, and deterministic session-loss recovery through the Blazor host
+- delegated-scope recovery redirects for higher-privilege UI areas
 - protected configuration access after sign-in
 - no-role access-denied routing
 - administrator-only browser access to the auth-administration page
+- one retained Aspire dashboard plus real Keycloak smoke that verifies dashboard startup and the protected `/status` path without fixed-port assumptions
 
 ## Quality characteristics currently protected
 
@@ -69,6 +80,7 @@ The automated suite already checks important non-functional expectations:
 - environment safety for Test versus Live selection
 - write-only secret handling
 - redaction of sensitive values from records and responses
+- persisted auth audit history for sign-in, sign-out, denied access, and token-acquisition failures without exposing tokens
 - stable health endpoints for orchestration
 - restart-required behavior for startup-fixed configuration changes
 - durable operational history when SQL-backed persistence is used
@@ -110,6 +122,10 @@ The auth-focused test setup commonly disables infrastructure containers by setti
 - `AppHost__EnableInfrastructureContainers=false`
 
 This keeps the suites lightweight while still exercising the distributed application shape. In this mode, AppHost switches the Web and API hosts to the local test authentication provider instead of starting Keycloak.
+
+For protected-route and sign-out functional coverage, the test suites now prefer deterministic cookie-container control and redirect assertions instead of adding arbitrary waits or broader browser-only scenarios.
+
+The retained real-infrastructure auth smoke stays intentionally narrow. It verifies that the Aspire dashboard starts, discovers the AppHost-started Web UI endpoint from the runtime listener set instead of `launchSettings.json`, and then exercises one real Keycloak sign-in journey to the protected `/status` surface.
 
 ## Manual validation areas still worth checking
 

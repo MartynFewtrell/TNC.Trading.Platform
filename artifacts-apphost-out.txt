@@ -1,0 +1,14 @@
+Using launch settings from src\TNC.Trading.Platform.AppHost\Properties\launchSettings.json...
+Building...
+info: Aspire.Hosting.DistributedApplication[0]
+      Aspire version: 13.2.3+0838645cc4f7fc27e46200ac14cbe5c751637593
+info: Aspire.Hosting.DistributedApplication[0]
+      Distributed application starting.
+info: Aspire.Hosting.DistributedApplication[0]
+      Application host directory is: D:\Repos\TNC.Trading\TNC.Trading.Platform\src\TNC.Trading.Platform.AppHost
+info: Aspire.Hosting.DistributedApplication[0]
+      Now listening on: https://localhost:17257
+info: Aspire.Hosting.DistributedApplication[0]
+      Login to the dashboard at https://localhost:17257/login?t=b90590546513ca6ef478769b0d4c1c46
+info: Aspire.Hosting.DistributedApplication[0]
+      Distributed application started. Press Ctrl+C to shut down.

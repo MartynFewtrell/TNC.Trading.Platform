@@ -12,6 +12,10 @@ builder.Services.AddHttpClient<PlatformApiClient>(client =>
 {
     client.BaseAddress = new Uri("https+http://api");
 });
+builder.Services.AddHttpClient<PlatformAuthAuditClient>(client =>
+{
+    client.BaseAddress = new Uri("https+http://api");
+});
 
 var app = builder.Build();
 

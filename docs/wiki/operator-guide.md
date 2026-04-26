@@ -103,6 +103,8 @@ Each row includes:
 
 Only redacted event details are exposed.
 
+This table can now show both broker-auth supervision events and operator-session audit events, including sign-in, sign-out, access-denied, and delegated-scope acquisition failures.
+
 ## Configuration page
 
 The configuration page is the main operator-edit surface.

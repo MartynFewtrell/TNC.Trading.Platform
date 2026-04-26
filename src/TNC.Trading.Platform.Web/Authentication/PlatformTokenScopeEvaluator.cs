@@ -14,6 +14,12 @@ internal static class PlatformTokenScopeEvaluator
         }
 
         var token = handler.ReadJwtToken(accessToken);
+        var utcNow = DateTime.UtcNow;
+        if (token.ValidFrom > utcNow || token.ValidTo <= utcNow)
+        {
+            return [];
+        }
+
         var scopes = token.Claims
             .Where(claim => string.Equals(claim.Type, PlatformAuthenticationDefaults.Claims.Scope, StringComparison.Ordinal)
                 || string.Equals(claim.Type, PlatformAuthenticationDefaults.Claims.Scp, StringComparison.Ordinal))

@@ -221,9 +221,21 @@ Operational events are stored for later review.
 - `AuthAttempted`
 - `ManualRetryRequested`
 - `BlockedLiveAttempt`
+- operator session audit events such as `OperatorSignInCompleted`, `OperatorSignOutCompleted`, `OperatorAccessDenied`, and `OperatorTokenAcquisitionFailed`
 - notification-related event types such as `AuthFailure`, `AuthRecovered`, and `RetryLimitReached`
 
 Event details are redacted before storage and before they are returned through the API.
+
+### Operator authentication audit history
+
+The auth event history now includes persisted operator-session audit events alongside broker-auth supervision events.
+
+- successful sign-in writes an auth event with correlation data and redacted scope metadata
+- successful sign-out writes an auth event before the platform cookie is cleared
+- authenticated access-denied redirects write an auth event for the rejected protected surface
+- missing delegated scopes during Web-to-API token use write an auth event without exposing the raw access token
+
+This keeps the auth event stream aligned with the 90-day operational retention model while still excluding tokens, secrets, and raw protocol payloads.
 
 ## Notification behavior
 

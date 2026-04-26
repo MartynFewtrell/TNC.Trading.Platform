@@ -21,5 +21,6 @@
   <Folder Name="/test/TNC.Trading.Platform.Web/">
     <Project Path="test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.FunctionalTests/TNC.Trading.Platform.Web.FunctionalTests.csproj" />
     <Project Path="test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.E2ETests/TNC.Trading.Platform.Web.E2ETests.csproj" />
+    <Project Path="test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.UnitTests/TNC.Trading.Platform.Web.UnitTests.csproj" />
   </Folder>
 </Solution>

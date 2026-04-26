@@ -5,7 +5,7 @@
 ## Summary
 
 - **Source**: See `../requirements.md` for canonical work metadata (work item, owner, dates, links) and scope. See `../../business-requirements.md` for project-level business context.
-- **Status**: in-progress
+- **Status**: complete
 - **Inputs**:
   - `../../business-requirements.md`
   - `../requirements.md`
@@ -130,14 +130,14 @@ The final plan may include one or more work items.
 
 ### Work Item 4 details
 
-- [ ] Work Item 4: Add auth observability, automated coverage, and documentation hardening
+- [x] Work Item 4: Add auth observability, automated coverage, and documentation hardening
   - [x] Build and test baseline established
-  - [ ] Task 1: Add secret-safe auth observability and audit/event recording
+  - [x] Task 1: Add secret-safe auth observability and audit/event recording
     - [x] Step 1: Emit structured logs for sign-in, sign-out, failures, token acquisition failures, and access denial without secret leakage.
-    - [ ] Step 2: Record the required auth audit events with correlation data and retention-aligned behavior.
-    - [ ] Step 3: Verify that sensitive protocol data is excluded from logs, events, and UI surfaces.
-  - [ ] Task 2: Complete automated test coverage for the delivered auth model
-    - [ ] Step 1: Add unit tests for policy registration, claim mapping, and authenticated operator context behavior.
+    - [x] Step 2: Record the required auth audit events with correlation data and retention-aligned behavior.
+    - [x] Step 3: Verify that sensitive protocol data is excluded from logs, events, and UI surfaces.
+  - [x] Task 2: Complete automated test coverage for the delivered auth model
+    - [x] Step 1: Add unit tests for policy registration, claim mapping, and authenticated operator context behavior.
     - [x] Step 2: Add integration and functional tests for anonymous, authenticated, denied, and role-specific scenarios.
     - [x] Step 3: Add Aspire-driven end-to-end coverage where practical for AppHost, Keycloak, Web, and API interaction.
   - [x] Task 3: Harden local validation guidance and implementation documentation
@@ -175,17 +175,17 @@ The final plan may include one or more work items.
 
 ## Acceptance checklist
 
-- [ ] Work item aligns with `../business-requirements.md`.
-- [ ] All referenced `FRx` requirements are implemented and validated.
-- [ ] All referenced `NFx` requirements have measurements or checks.
-- [ ] All referenced `SRx` security requirements are implemented and validated.
-- [ ] Relevant `docs/wiki/` pages are updated to reflect the delivered implementation.
-- [ ] Affected wiki links resolve after documentation updates.
-- [ ] Rollback/backout plan documented for each work item.
+- [x] Work item aligns with `../business-requirements.md`.
+- [x] All referenced `FRx` requirements are implemented and validated.
+- [x] All referenced `NFx` requirements have measurements or checks.
+- [x] All referenced `SRx` security requirements are implemented and validated.
+- [x] Relevant `docs/wiki/` pages are updated to reflect the delivered implementation.
+- [x] Affected wiki links resolve after documentation updates.
+- [x] Rollback/backout plan documented for each work item.
 
 ## Notes
 
 - This initial draft has been updated to optimize for a single coordinated PR while still sequencing the implementation as incremental work items for review and validation.
 - Cross-cutting validation defaults to `dotnet build` and `dotnet test` at the repository root unless later delivery constraints require a narrower CI-compatible command set.
 - The plan keeps local Keycloak and Azure-aligned Microsoft Entra ID compatibility explicit, but local delivery remains the first validation path for this work package.
-- Automated build, integration, functional, and E2E validation now pass with the local test provider used when AppHost infrastructure containers are disabled; explicit auth audit-event persistence and dedicated unit coverage remain open under Work Item 4.
+- Automated build, unit, integration, functional, and E2E validation now pass with the local test provider used when AppHost infrastructure containers are disabled, including persisted operator auth audit coverage and dedicated Web auth unit tests.

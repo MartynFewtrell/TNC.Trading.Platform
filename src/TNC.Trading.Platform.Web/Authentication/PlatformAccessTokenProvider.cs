@@ -6,6 +6,7 @@ namespace TNC.Trading.Platform.Web.Authentication;
 
 internal sealed class PlatformAccessTokenProvider(
     IHttpContextAccessor httpContextAccessor,
+    PlatformAuthAuditClient authAuditClient,
     ILogger<PlatformAccessTokenProvider> logger)
 {
     public async Task<string> GetAccessTokenAsync(IReadOnlyCollection<string> requiredScopes, CancellationToken cancellationToken)
@@ -27,6 +28,12 @@ internal sealed class PlatformAccessTokenProvider(
 
         if (missingScopes.Length > 0)
         {
+            await authAuditClient.RecordTokenAcquisitionFailedAsync(
+                httpContext.Request.Path.Value,
+                missingScopes,
+                accessToken,
+                cancellationToken);
+
             logger.LogWarning(
                 "The current operator session is missing delegated scopes {MissingScopes}",
                 missingScopes);

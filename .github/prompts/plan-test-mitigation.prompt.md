@@ -51,6 +51,8 @@ ${PLAN_DEPTH="standard"} <!-- quick | standard | deep: controls how much detail 
 - MUST: Prefer the provided work-package artifacts and explicitly supplied paths before discovering additional repository files.
 - MUST: Trace planned mitigation actions back to the findings in the review report.
 - MUST: Preserve and reuse any stable finding identifiers from the review report, such as `F1`, `F2`, throughout the plan.
+- MUST: Preserve all existing numbered plan files in the target work package `plans/` folder unless the user explicitly requests an update to a specific existing plan file.
+- MUST: When writing to the default work-package `plans/` folder, create a new numbered mitigation plan file using the next available sequence number instead of modifying an existing numbered plan.
 - MUST: Prefer strengthening or adding lower-level automated tests before recommending higher-level tests when the behavior can be validated without additional infrastructure.
 - MUST: Identify when supporting implementation or documentation changes are needed to enable stronger tests.
 - MUST: Prioritize high-risk missing or weak coverage before lower-priority hardening work.
@@ -63,6 +65,7 @@ ${PLAN_DEPTH="standard"} <!-- quick | standard | deep: controls how much detail 
 - MUST: Separate confirmed evidence from assumptions or missing-information notes.
 - MUST NOT: Invent findings that are not present in the review report or supported by repository evidence.
 - MUST NOT: Recommend flaky mitigation patterns such as arbitrary time-based waits as a primary testing strategy.
+- MUST NOT: Overwrite, revise, or repurpose an existing numbered mitigation or delivery plan file when the task is to create a new mitigation plan, unless the user explicitly instructs you to update that specific existing file.
 - SHOULD: Limit repository scanning to the files needed to size the mitigation work, identify likely touch points, and define validation.
 - SHOULD: Keep each work item small enough to validate as one coherent unit while still reducing repeated setup and validation overhead.
 - SHOULD: Use repository conventions for requirement traceability, including work package and `FRx` references, when mapping work items.
@@ -91,7 +94,9 @@ ${PLAN_DEPTH="standard"} <!-- quick | standard | deep: controls how much detail 
    - Use the same command set in **Cross-cutting validation** that the execution prompt can rerun before and after each work item.
 8. Write the final markdown mitigation plan to a physical markdown file in the target work package.
    - Default path: `./docs/00x-work/plans/00n-work-package-test-mitigation-plan.md`
+   - Determine the next available numbered file name in the target `plans/` folder and create a new file using that sequence number.
    - If the user provided a plan path, use that path instead.
+   - If the provided path already exists, update it only when the user explicitly requested that specific file to be revised; otherwise choose the next available numbered plan path and leave existing plan files unchanged.
    - Ensure the file content exactly matches the final output.
 
 ## Output format
@@ -100,11 +105,12 @@ Return a single markdown mitigation plan that follows `.github/templates/test-mi
 
 Make the result directly executable: include explicit work item checklists, stable finding references, likely files when known, and reusable validation commands.
 
-Also create or update a physical markdown file for the plan inside the target work package `plans/` folder.
+Also create a physical markdown file for the plan inside the target work package `plans/` folder.
 
 - Default file name: `00n-work-package-test-mitigation-plan.md`
 - Default location: the target `./docs/00x-work/plans/` folder being reviewed
-- If a plan file path is provided, use that path instead
+- Use the next available sequence number so existing numbered plan files remain unchanged
+- If a plan file path is provided, use that path instead only when the user explicitly wants that exact file created or revised
 
 The physical markdown file content must exactly match the final output.
 
