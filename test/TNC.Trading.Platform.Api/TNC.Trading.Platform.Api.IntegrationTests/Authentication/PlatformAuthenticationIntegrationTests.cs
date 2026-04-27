@@ -15,7 +15,7 @@ public class PlatformAuthenticationIntegrationTests
 
     static PlatformAuthenticationIntegrationTests()
     {
-        Environment.SetEnvironmentVariable("AppHost__EnableInfrastructureContainers", bool.FalseString);
+        Environment.SetEnvironmentVariable("AppHost__UseSyntheticRuntime", bool.TrueString);
     }
 
     /// <summary>

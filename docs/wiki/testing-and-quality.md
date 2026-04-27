@@ -117,11 +117,14 @@ To build first:
 
 Many integration, functional, and end-to-end tests run through the Aspire AppHost.
 
-The auth-focused test setup commonly disables infrastructure containers by setting:
+The auth-focused test setup currently opts into a synthetic test-only runtime by setting:
 
-- `AppHost__EnableInfrastructureContainers=false`
+- `AppHost__UseSyntheticRuntime=true`
+- `Authentication__Test__EnableInteractiveSignIn=true` only in the Web auth suites that need the synthetic interactive sign-in surface
 
-This keeps the suites lightweight while still exercising the distributed application shape. In this mode, AppHost switches the Web and API hosts to the local test authentication provider instead of starting Keycloak.
+This keeps the suites lightweight while still exercising the distributed application shape. In this mode, AppHost switches the Web and API hosts to the synthetic test authentication provider and explicit in-memory persistence instead of starting the supported Docker plus Keycloak local runtime.
+
+For Web auth scenarios, the synthetic interactive sign-in surface is enabled only as explicit test-harness composition when the synthetic runtime is selected. API integration tests continue to use signed synthetic bearer tokens directly without enabling that interactive Web harness.
 
 For protected-route and sign-out functional coverage, the test suites now prefer deterministic cookie-container control and redirect assertions instead of adding arbitrary waits or broader browser-only scenarios.
 

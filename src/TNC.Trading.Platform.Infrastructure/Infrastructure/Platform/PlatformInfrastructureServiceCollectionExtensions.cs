@@ -18,15 +18,22 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
             var connectionString = configuration.GetConnectionString("platformdb");
             if (string.IsNullOrWhiteSpace(connectionString))
             {
-                if (hostEnvironment.IsDevelopment())
+                if (configuration.GetValue<bool>("Persistence:UseInMemoryDatabase"))
                 {
+                    if (!string.Equals(configuration["Authentication:Provider"], "Test", StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException(
+                            "The in-memory persistence mode is reserved for isolated automated tests and requires 'Authentication:Provider' to be set to 'Test'.");
+                    }
+
                     options.UseInMemoryDatabase("tnc-trading-platform");
                     return;
                 }
 
                 throw new InvalidOperationException(
                     "The 'platformdb' connection string is required but has not been configured. " +
-                    "Ensure the connection string is provided via application configuration before starting the application.");
+                    "Ensure the connection string is provided via application configuration before starting the application, " +
+                    "or explicitly enable the in-memory persistence mode for isolated automated tests.");
             }
 
             options.UseSqlServer(connectionString);

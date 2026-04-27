@@ -40,28 +40,21 @@ flowchart TD
 
 ## Runtime topology
 
-### Local default topology
+### Local development topology
 
-When infrastructure containers are not enabled:
-
-- AppHost starts the API and Blazor UI
-- the API uses the in-memory Entity Framework provider
-- notification transports that need external configuration are skipped
-
-### Container-assisted topology
-
-When `AppHost:EnableInfrastructureContainers=true`:
+For supported local development:
 
 - AppHost starts SQL Server
 - AppHost creates the `platformdb` database
 - AppHost starts Mailpit for local SMTP capture
 - AppHost starts Keycloak on a stable local port with a repeatable realm import for seeded auth users, roles, scopes, and clients
 - the API and Web hosts receive their SQL, SMTP, and authentication settings through environment variables
+- Docker is required because Keycloak is part of the local authentication boundary and the in-memory SQL mode is not a supported application runtime
 
 ```mermaid
 flowchart LR
     Operator[Browser] --> Web[Blazor UI]
-    Operator --> Keycloak[Keycloak optional local IdP]
+    Operator --> Keycloak[Keycloak local IdP]
     Web --> Api[Platform API]
     Api --> Sql[(platformdb)]
     Api --> Mailpit[Mailpit SMTP optional]
@@ -124,11 +117,18 @@ The API entry point keeps startup thin:
 
 The endpoint group under `/api/platform` is the current backend surface for operator workflows and is protected by shared role policies.
 
+The Web and API hosts now share authentication registration building blocks from the Application layer:
+
+- `PlatformAuthorizationPolicyRegistration` centralizes the Viewer, Operator, and Administrator role-policy matrix
+- `PlatformAuthenticationConfigurationResolver` centralizes provider validation plus shared authority, audience, and client-resolution rules
+- host-specific registration code stays responsible only for cookie, OpenID Connect, or JWT bearer wiring
+
 ## Application-layer responsibilities
 
 The `TNC.Trading.Platform.Application` project contains:
 
 - configuration and runtime models
+- shared authentication registration helpers for provider validation and role-policy definition
 - feature request and response types
 - feature handlers for status, configuration, events, and manual retry
 - `TradingScheduleGate` for in-schedule evaluation
@@ -160,6 +160,15 @@ The `TNC.Trading.Platform.Infrastructure` project contains:
 - operational-event storage, including persisted operator auth audit history
 - notification providers
 - retention processing for operational records
+
+## AppHost composition responsibilities
+
+The Aspire AppHost remains a composition root only.
+
+- infrastructure resource creation is isolated from project registration
+- API project wiring is isolated from Web project wiring
+- authentication environment selection is isolated from infrastructure setup
+- the supported local runtime remains Docker-backed SQL Server, Mailpit, and Keycloak, while synthetic auth and in-memory persistence stay limited to explicit automated-test composition
 
 ## Persistence model
 
@@ -224,11 +233,11 @@ This keeps audit persistence on the server side and avoids exposing secrets or d
 - the auth control plane lives in the API instead of a dedicated worker service
 - the operator UI uses Blazor Server to keep implementation simpler at this stage
 - a single current configuration row is used rather than a more complex versioned configuration model
-- in-memory persistence is allowed for lightweight local execution when SQL is not configured
+- synthetic auth and in-memory persistence are retained only for isolated automated tests, not for the supported local runtime
 
 ### Consequences
 
-- the current application is easy to run and test locally
+- the current application has one supported local runtime topology for manual development and validation
 - control-plane behavior is well covered before broker integrations are added
 - some responsibilities are intentionally centralized in the coordinator until more domain features exist
 - later work may split background supervision or broker integration into dedicated services

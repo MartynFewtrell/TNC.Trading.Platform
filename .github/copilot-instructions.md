@@ -16,6 +16,8 @@ Applies to: `**/*`
 ## General Guidelines
 
 - Encourage established refactoring and design principles such as SOLID, DRY, separation of concerns, and explicit dependencies.
+- For this repository's local development environment, Docker is now required because Keycloak is part of the local auth stack, and the local in-memory SQL option is considered redundant.
+- To speed up local validation and test runs, prefer keeping Docker-backed infrastructure such as SQL Server and Keycloak running between application runs when supported by Aspire.
 
 ## Instructions
 
@@ -35,7 +37,7 @@ Applies to: `**/*`
 - Do not draft `docs/00x-work/` work packages unless explicitly requested.
 - Use automated test method names in the MethodName_StateUnderTest_ExpectedResult style, e.g., `CalculateTotal_ShouldReturnZero_WhenCartIsEmpty`, because it reads naturally and enhances clarity.
 - Fully document automated tests with comments that capture requirement traceability, explain what each test verifies, the expected outcome, and why the behavior matters.
-- Store plans in a `plans` subfolder within each work package, using `plans/001-delivery-plan.md` for the initial delivery plan and prefixes like `001-`, `002-`, `003-` for all subsequent plan files to show application order.
+- Store plans in a `plans` subfolder within each work package, using `plans/001-delivery-plan.md` for the initial delivery plan and prefixes like `001-`, `002-`, `003-` for all subsequent plan files to show application order. For additional work package plans, number them in the sequence they are applied in the work package; for this auth package, the refactoring mitigation plan should be 004 rather than 002.
 - Treat `docs/wiki/` as the implementation documentation source of truth. Before any numbered plan is considered complete, update the affected wiki pages to reflect implemented changes in behavior, architecture, API surface, runtime behavior, operator guidance, local development, or testing approach. When plan work is completed, the wiki documentation under `docs/wiki` should be updated as needed to reflect the implemented changes before the work is considered complete.
 - When generating review reports in this repository, create a new report file instead of updating the existing report so prior report history remains visible.
 

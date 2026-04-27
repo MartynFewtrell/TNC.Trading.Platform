@@ -22,7 +22,7 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
     private static async Task<IResult> SignInAsync(
         HttpContext httpContext,
         IOptions<PlatformAuthenticationOptions> authenticationOptions,
-        TestAuthenticationTokenFactory testAuthenticationTokenFactory,
+        PlatformTestAuthenticationSignInHandler testAuthenticationSignInHandler,
         PlatformAuthAuditClient authAuditClient,
         ILoggerFactory loggerFactory,
         string? returnUrl,
@@ -33,35 +33,15 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
         var logger = loggerFactory.CreateLogger(typeof(PlatformAuthenticationEndpointRouteBuilderExtensions));
         var safeReturnUrl = NormalizeReturnUrl(returnUrl);
 
+        if (testAuthenticationSignInHandler.IsEnabled)
+        {
+            return await testAuthenticationSignInHandler.SignInAsync(httpContext, authAuditClient, safeReturnUrl, scope, user);
+        }
+
         if (string.Equals(options.Provider, PlatformAuthenticationDefaults.Providers.Test, StringComparison.Ordinal))
         {
-            if (string.IsNullOrWhiteSpace(user))
-            {
-                return Results.Content(BuildTestSignInMarkup(safeReturnUrl, scope), "text/html");
-            }
-
-            var requestedScopes = string.IsNullOrWhiteSpace(scope)
-                ? options.RequiredScopes
-                : scope.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            var (principal, properties) = testAuthenticationTokenFactory.Create(user, requestedScopes);
-
-            await httpContext.SignInAsync(
-                PlatformAuthenticationDefaults.Schemes.Cookie,
-                principal,
-                properties);
-
-            await authAuditClient.RecordSignInCompletedAsync(
-                "/authentication/sign-in",
-                requestedScopes,
-                properties.GetTokenValue("access_token"),
-                httpContext.RequestAborted);
-
-            logger.LogInformation(
-                "Local test sign-in completed for {UserName} with scopes {Scopes}",
-                user,
-                string.Join(", ", requestedScopes));
-
-            return Results.LocalRedirect(safeReturnUrl);
+            logger.LogWarning("Synthetic test sign-in was requested without enabling the explicit Web test harness sign-in surface.");
+            return Results.NotFound();
         }
 
         var authenticationProperties = new AuthenticationProperties
@@ -114,37 +94,4 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
             : "/";
     }
 
-    private static string BuildTestSignInMarkup(string returnUrl, string? scope)
-    {
-        static string CreateLink(string user, string label, string returnUrl, string? scope)
-        {
-            var url = $"/authentication/sign-in?user={Uri.EscapeDataString(user)}&returnUrl={Uri.EscapeDataString(returnUrl)}";
-            if (!string.IsNullOrWhiteSpace(scope))
-            {
-                url += $"&scope={Uri.EscapeDataString(scope)}";
-            }
-
-            return $"<li><a href=\"{url}\">{label}</a></li>";
-        }
-
-        return $$"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8" />
-    <title>Test sign-in</title>
-</head>
-<body>
-    <h1>Test sign-in</h1>
-    <p>Select a local development user to continue.</p>
-    <ul>
-        {{CreateLink("local-admin", "Sign in as local-admin", returnUrl, scope)}}
-        {{CreateLink("local-operator", "Sign in as local-operator", returnUrl, scope)}}
-        {{CreateLink("local-viewer", "Sign in as local-viewer", returnUrl, scope)}}
-        {{CreateLink("local-norole", "Sign in as local-norole", returnUrl, scope)}}
-    </ul>
-</body>
-</html>
-""";
-    }
 }

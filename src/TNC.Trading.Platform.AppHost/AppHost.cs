@@ -1,51 +1,26 @@
 ﻿using Aspire.Hosting.ApplicationModel;
 
-var builder = DistributedApplication.CreateBuilder(args);
 const string keycloakRealmName = "tnc-trading-platform";
 const string keycloakAuthority = "http://localhost:8080/realms/tnc-trading-platform";
+const string testIssuer = "https://test-auth.local";
+const string apiAudience = "tnc-trading-platform-api";
+const string testSigningKey = "0123456789abcdef0123456789abcdef";
 
-var enableInfrastructureContainers = string.Equals(
-    builder.Configuration["AppHost:EnableInfrastructureContainers"],
+var builder = DistributedApplication.CreateBuilder(args);
+
+var useSyntheticRuntimeForTests = string.Equals(
+    builder.Configuration["AppHost:UseSyntheticRuntime"],
+    bool.TrueString,
+    StringComparison.OrdinalIgnoreCase);
+var enableInteractiveTestSignIn = string.Equals(
+    builder.Configuration["Authentication:Test:EnableInteractiveSignIn"],
     bool.TrueString,
     StringComparison.OrdinalIgnoreCase);
 var acsEndpoint = builder.Configuration["NotificationTransports:AzureCommunicationServices:Endpoint"];
 var acsSenderAddress = builder.Configuration["NotificationTransports:AzureCommunicationServices:SenderAddress"];
 var acsConnectionString = builder.Configuration["NotificationTransports:AzureCommunicationServices:ConnectionString"];
 
-IResourceBuilder<IResourceWithConnectionString>? platformDatabase = null;
-IResourceBuilder<IResourceWithEndpoints>? mailpit = null;
-IResourceBuilder<IResourceWithEndpoints>? keycloak = null;
-
-if (enableInfrastructureContainers)
-{
-    var sqlPassword = builder.AddParameter("sql-password", secret: true);
-    var keycloakAdminUsername = builder.AddParameter(
-        "keycloak-admin-username",
-        "keycloak-admin",
-        publishValueAsDefault: true,
-        secret: false);
-    var keycloakAdminPassword = builder.AddParameter("keycloak-admin-password", secret: true);
-    var sql = builder.AddSqlServer("sql", sqlPassword)
-        .WithDataVolume();
-
-    platformDatabase = sql.AddDatabase("platformdb");
-
-    mailpit = builder.AddContainer("mailpit", "axllent/mailpit", "v1.27")
-        .WithHttpEndpoint(targetPort: 8025, name: "http")
-        .WithEndpoint(targetPort: 1025, name: "smtp")
-        .WithUrlForEndpoint("http", _ => new()
-        {
-            Url = "/",
-            DisplayText = "Mailpit UI"
-        });
-
-    keycloak = builder.AddKeycloak(
-            "keycloak",
-            port: 8080,
-            adminUsername: keycloakAdminUsername,
-            adminPassword: keycloakAdminPassword)
-        .WithRealmImport("./Realms");
-}
+var infrastructure = ConfigureInfrastructureResources(builder, useSyntheticRuntimeForTests);
 
 var api = builder.AddProject<Projects.TNC_Trading_Platform_Api>("api")
     .WithExternalHttpEndpoints()
@@ -55,37 +30,7 @@ var api = builder.AddProject<Projects.TNC_Trading_Platform_Api>("api")
         DisplayText = "Scalar UI"
     });
 
-if (platformDatabase is not null)
-{
-    api.WithReference(platformDatabase)
-        .WaitFor(platformDatabase);
-}
-
-if (mailpit is not null)
-{
-    var mailpitSmtpEndpoint = mailpit.Resource.GetEndpoint("smtp");
-
-    api.WaitFor(mailpit)
-        .WithEnvironment("NotificationTransports__Smtp__Host", mailpitSmtpEndpoint.Property(EndpointProperty.IPV4Host))
-        .WithEnvironment("NotificationTransports__Smtp__Port", mailpitSmtpEndpoint.Property(EndpointProperty.Port))
-        .WithEnvironment("NotificationTransports__Smtp__SenderAddress", "platform@local.test")
-        .WithEnvironment("NotificationTransports__Smtp__EnableSsl", bool.FalseString);
-}
-
-if (!string.IsNullOrWhiteSpace(acsEndpoint))
-{
-    api.WithEnvironment("NotificationTransports__AzureCommunicationServices__Endpoint", acsEndpoint);
-}
-
-if (!string.IsNullOrWhiteSpace(acsSenderAddress))
-{
-    api.WithEnvironment("NotificationTransports__AzureCommunicationServices__SenderAddress", acsSenderAddress);
-}
-
-if (!string.IsNullOrWhiteSpace(acsConnectionString))
-{
-    api.WithEnvironment("NotificationTransports__AzureCommunicationServices__ConnectionString", acsConnectionString);
-}
+var apiProject = ConfigureApiProject(api, infrastructure, acsEndpoint, acsSenderAddress, acsConnectionString);
 
 var web = builder.AddProject<Projects.TNC_Trading_Platform_Web>("web")
     .WithReference(api)
@@ -97,54 +42,163 @@ var web = builder.AddProject<Projects.TNC_Trading_Platform_Web>("web")
         DisplayText = "Operator UI"
     });
 
-var webProject = web
+var webProject = ConfigureWebProject(web);
+
+ConfigureAuthenticationEnvironment(apiProject, webProject, infrastructure.Keycloak, enableInteractiveTestSignIn);
+
+builder.Build().Run();
+
+static (IResourceBuilder<IResourceWithConnectionString>? PlatformDatabase, IResourceBuilder<IResourceWithEndpoints>? Mailpit, IResourceBuilder<IResourceWithEndpoints>? Keycloak)
+    ConfigureInfrastructureResources(IDistributedApplicationBuilder builder, bool useSyntheticRuntimeForTests)
+{
+    ArgumentNullException.ThrowIfNull(builder);
+
+    if (useSyntheticRuntimeForTests)
+    {
+        return (null, null, null);
+    }
+
+    var sqlPassword = builder.AddParameter("sql-password", secret: true);
+    var keycloakAdminUsername = builder.AddParameter(
+        "keycloak-admin-username",
+        "keycloak-admin",
+        publishValueAsDefault: true,
+        secret: false);
+    var keycloakAdminPassword = builder.AddParameter("keycloak-admin-password", secret: true);
+    var sql = builder.AddSqlServer("sql", sqlPassword)
+        .WithDataVolume()
+        .WithLifetime(ContainerLifetime.Persistent);
+    var platformDatabase = sql.AddDatabase("platformdb");
+    var mailpit = builder.AddContainer("mailpit", "axllent/mailpit", "v1.27")
+        .WithLifetime(ContainerLifetime.Persistent)
+        .WithHttpEndpoint(targetPort: 8025, name: "http")
+        .WithEndpoint(targetPort: 1025, name: "smtp")
+        .WithUrlForEndpoint("http", _ => new()
+        {
+            Url = "/",
+            DisplayText = "Mailpit UI"
+        });
+    var keycloak = builder.AddKeycloak(
+            "keycloak",
+            port: 8080,
+            adminUsername: keycloakAdminUsername,
+            adminPassword: keycloakAdminPassword)
+        .WithLifetime(ContainerLifetime.Persistent)
+        .WithRealmImport("./Realms");
+
+    return (platformDatabase, mailpit, keycloak);
+}
+
+static IResourceBuilder<ProjectResource> ConfigureApiProject(
+    IResourceBuilder<ProjectResource> apiProject,
+    (IResourceBuilder<IResourceWithConnectionString>? PlatformDatabase, IResourceBuilder<IResourceWithEndpoints>? Mailpit, IResourceBuilder<IResourceWithEndpoints>? Keycloak) infrastructure,
+    string? acsEndpoint,
+    string? acsSenderAddress,
+    string? acsConnectionString)
+{
+    ArgumentNullException.ThrowIfNull(apiProject);
+
+    var configuredApi = apiProject
+        .WithEnvironment("Authentication__ApiAudience", apiAudience)
+        .WithEnvironment("Authentication__Keycloak__Realm", keycloakRealmName)
+        .WithEnvironment("Authentication__Keycloak__ApiClientId", apiAudience)
+        .WithEnvironment("Authentication__Authorization__DisplayNameClaimType", "name")
+        .WithEnvironment("Authentication__Authorization__DisplayNameFallbackClaimType", "preferred_username");
+
+    if (infrastructure.PlatformDatabase is not null)
+    {
+        configuredApi = configuredApi
+            .WithReference(infrastructure.PlatformDatabase)
+            .WaitFor(infrastructure.PlatformDatabase);
+    }
+
+    if (infrastructure.Mailpit is not null)
+    {
+        var mailpitSmtpEndpoint = infrastructure.Mailpit.Resource.GetEndpoint("smtp");
+        configuredApi = configuredApi
+            .WaitFor(infrastructure.Mailpit)
+            .WithEnvironment("NotificationTransports__Smtp__Host", mailpitSmtpEndpoint.Property(EndpointProperty.IPV4Host))
+            .WithEnvironment("NotificationTransports__Smtp__Port", mailpitSmtpEndpoint.Property(EndpointProperty.Port))
+            .WithEnvironment("NotificationTransports__Smtp__SenderAddress", "platform@local.test")
+            .WithEnvironment("NotificationTransports__Smtp__EnableSsl", bool.FalseString);
+    }
+
+    if (!string.IsNullOrWhiteSpace(acsEndpoint))
+    {
+        configuredApi = configuredApi.WithEnvironment("NotificationTransports__AzureCommunicationServices__Endpoint", acsEndpoint);
+    }
+
+    if (!string.IsNullOrWhiteSpace(acsSenderAddress))
+    {
+        configuredApi = configuredApi.WithEnvironment("NotificationTransports__AzureCommunicationServices__SenderAddress", acsSenderAddress);
+    }
+
+    if (!string.IsNullOrWhiteSpace(acsConnectionString))
+    {
+        configuredApi = configuredApi.WithEnvironment("NotificationTransports__AzureCommunicationServices__ConnectionString", acsConnectionString);
+    }
+
+    return configuredApi;
+}
+
+static IResourceBuilder<ProjectResource> ConfigureWebProject(IResourceBuilder<ProjectResource> webProject)
+{
+    ArgumentNullException.ThrowIfNull(webProject);
+
+    return webProject
     .WithEnvironment("Authentication__CallbackPath", "/signin-oidc")
     .WithEnvironment("Authentication__SignedOutRedirectPath", "/")
-    .WithEnvironment("Authentication__ApiAudience", "tnc-trading-platform-api")
+        .WithEnvironment("Authentication__ApiAudience", apiAudience)
     .WithEnvironment("Authentication__RequiredScopes__0", "platform.viewer")
     .WithEnvironment("Authentication__Keycloak__Realm", keycloakRealmName)
     .WithEnvironment("Authentication__Keycloak__ClientId", "tnc-trading-platform-web")
-    .WithEnvironment("Authentication__Keycloak__ApiClientId", "tnc-trading-platform-api")
+        .WithEnvironment("Authentication__Keycloak__ApiClientId", apiAudience)
     .WithEnvironment("Authentication__Keycloak__SeededUserPassword", "LocalAuth!123")
     .WithEnvironment("Authentication__Authorization__DisplayNameClaimType", "name")
     .WithEnvironment("Authentication__Authorization__DisplayNameFallbackClaimType", "preferred_username");
-
-var apiProject = api
-    .WithEnvironment("Authentication__ApiAudience", "tnc-trading-platform-api")
-    .WithEnvironment("Authentication__Keycloak__Realm", keycloakRealmName)
-    .WithEnvironment("Authentication__Keycloak__ApiClientId", "tnc-trading-platform-api")
-    .WithEnvironment("Authentication__Authorization__DisplayNameClaimType", "name")
-    .WithEnvironment("Authentication__Authorization__DisplayNameFallbackClaimType", "preferred_username");
-
-if (keycloak is not null)
-{
-    apiProject = apiProject
-        .WaitFor(keycloak)
-        .WithEnvironment("Authentication__Provider", "Keycloak")
-        .WithEnvironment("Authentication__Keycloak__Authority", keycloakAuthority)
-        .WithEnvironment("Authentication__Authorization__RoleClaimType", "role");
-
-    webProject = webProject
-        .WaitFor(keycloak)
-        .WithEnvironment("Authentication__Provider", "Keycloak")
-        .WithEnvironment("Authentication__Keycloak__Authority", keycloakAuthority)
-        .WithEnvironment("Authentication__Authorization__RoleClaimType", "role");
-}
-else
-{
-    apiProject = apiProject
-        .WithEnvironment("Authentication__Provider", "Test")
-        .WithEnvironment("Authentication__Test__Issuer", "https://test-auth.local")
-        .WithEnvironment("Authentication__Test__Audience", "tnc-trading-platform-api")
-        .WithEnvironment("Authentication__Test__SigningKey", "0123456789abcdef0123456789abcdef")
-        .WithEnvironment("Authentication__Authorization__RoleClaimType", "role");
-
-    webProject = webProject
-        .WithEnvironment("Authentication__Provider", "Test")
-        .WithEnvironment("Authentication__Test__Issuer", "https://test-auth.local")
-        .WithEnvironment("Authentication__Test__Audience", "tnc-trading-platform-api")
-        .WithEnvironment("Authentication__Test__SigningKey", "0123456789abcdef0123456789abcdef")
-        .WithEnvironment("Authentication__Authorization__RoleClaimType", "role");
 }
 
-builder.Build().Run();
+static void ConfigureAuthenticationEnvironment(
+    IResourceBuilder<ProjectResource> apiProject,
+    IResourceBuilder<ProjectResource> webProject,
+    IResourceBuilder<IResourceWithEndpoints>? keycloak,
+    bool enableInteractiveTestSignIn)
+{
+    ArgumentNullException.ThrowIfNull(apiProject);
+    ArgumentNullException.ThrowIfNull(webProject);
+
+    if (keycloak is not null)
+    {
+        _ = apiProject
+            .WaitFor(keycloak)
+            .WithEnvironment("Authentication__Provider", "Keycloak")
+            .WithEnvironment("Authentication__Keycloak__Authority", keycloakAuthority)
+            .WithEnvironment("Authentication__Authorization__RoleClaimType", "role");
+        _ = webProject
+            .WaitFor(keycloak)
+            .WithEnvironment("Authentication__Provider", "Keycloak")
+            .WithEnvironment("Authentication__Keycloak__Authority", keycloakAuthority)
+            .WithEnvironment("Authentication__Authorization__RoleClaimType", "role");
+        return;
+    }
+
+    _ = apiProject
+        .WithEnvironment("Authentication__Provider", "Test")
+        .WithEnvironment("Authentication__Test__Issuer", testIssuer)
+        .WithEnvironment("Authentication__Test__Audience", apiAudience)
+        .WithEnvironment("Authentication__Test__SigningKey", testSigningKey)
+        .WithEnvironment("Persistence__UseInMemoryDatabase", bool.TrueString)
+        .WithEnvironment("Authentication__Authorization__RoleClaimType", "role");
+
+    var configuredWeb = webProject
+        .WithEnvironment("Authentication__Provider", "Test")
+        .WithEnvironment("Authentication__Test__Issuer", testIssuer)
+        .WithEnvironment("Authentication__Test__Audience", apiAudience)
+        .WithEnvironment("Authentication__Test__SigningKey", testSigningKey)
+        .WithEnvironment("Authentication__Authorization__RoleClaimType", "role");
+
+    if (enableInteractiveTestSignIn)
+    {
+        _ = configuredWeb.WithEnvironment("Authentication__Test__EnableInteractiveSignIn", bool.TrueString);
+    }
+}

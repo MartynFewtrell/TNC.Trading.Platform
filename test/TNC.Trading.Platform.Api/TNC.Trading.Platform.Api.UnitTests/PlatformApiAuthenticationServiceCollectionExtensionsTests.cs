@@ -1,5 +1,8 @@
-﻿using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Infrastructure;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using TNC.Trading.Platform.Application.Authentication;
 
 namespace TNC.Trading.Platform.Api.UnitTests;
@@ -7,6 +10,45 @@ namespace TNC.Trading.Platform.Api.UnitTests;
 public class PlatformApiAuthenticationServiceCollectionExtensionsTests
 {
     private const string AuthenticationExtensionsType = "TNC.Trading.Platform.Api.Authentication.PlatformApiAuthenticationServiceCollectionExtensions";
+
+    /// <summary>
+    /// Trace: FR7, TR2.
+    /// Verifies: the API authentication registration applies the shared viewer, operator, and administrator role-policy matrix.
+    /// Expected: each named API policy exists and contains the documented allowed roles after host registration completes.
+    /// Why: shared policy extraction must not change the API host's authorization behavior while removing duplicated registration logic.
+    /// </summary>
+    [Fact]
+    public async Task AddPlatformApiAuthentication_ShouldRegisterExpectedRolePolicies_WhenConfiguredForTests()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Authentication:Provider"] = PlatformAuthenticationDefaults.Providers.Test,
+            ["Authentication:Authorization:RoleClaimType"] = PlatformAuthenticationDefaults.Claims.Role,
+            ["Authentication:Authorization:DisplayNameClaimType"] = PlatformAuthenticationDefaults.Claims.Name,
+            ["Authentication:Authorization:DisplayNameFallbackClaimType"] = PlatformAuthenticationDefaults.Claims.PreferredUserName
+        });
+
+        _ = ApiReflection.InvokeStatic(AuthenticationExtensionsType, "AddPlatformApiAuthentication", builder);
+
+        await using var app = builder.Build();
+        await using var scope = app.Services.CreateAsyncScope();
+        var policyProvider = scope.ServiceProvider.GetRequiredService<IAuthorizationPolicyProvider>();
+
+        var viewerPolicy = await policyProvider.GetPolicyAsync(PlatformAuthenticationDefaults.Policies.Viewer);
+        var operatorPolicy = await policyProvider.GetPolicyAsync(PlatformAuthenticationDefaults.Policies.Operator);
+        var administratorPolicy = await policyProvider.GetPolicyAsync(PlatformAuthenticationDefaults.Policies.Administrator);
+
+        Assert.Equal(
+            [PlatformAuthenticationDefaults.Roles.Viewer, PlatformAuthenticationDefaults.Roles.Operator, PlatformAuthenticationDefaults.Roles.Administrator],
+            Assert.IsType<RolesAuthorizationRequirement>(Assert.Single(viewerPolicy!.Requirements)).AllowedRoles);
+        Assert.Equal(
+            [PlatformAuthenticationDefaults.Roles.Operator, PlatformAuthenticationDefaults.Roles.Administrator],
+            Assert.IsType<RolesAuthorizationRequirement>(Assert.Single(operatorPolicy!.Requirements)).AllowedRoles);
+        Assert.Equal(
+            [PlatformAuthenticationDefaults.Roles.Administrator],
+            Assert.IsType<RolesAuthorizationRequirement>(Assert.Single(administratorPolicy!.Requirements)).AllowedRoles);
+    }
 
     /// <summary>
     /// Trace: NF1, NF3, OR1, SR3, SR4.
@@ -49,7 +91,7 @@ public class PlatformApiAuthenticationServiceCollectionExtensionsTests
         };
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            ApiReflection.InvokeStatic(AuthenticationExtensionsType, "ResolveAuthority", options));
+            PlatformAuthenticationConfigurationResolver.ResolveAuthority(options));
 
         Assert.Equal(
             "The configuration key 'Authentication:Keycloak:Authority' is required when using the Keycloak provider.",
@@ -77,7 +119,7 @@ public class PlatformApiAuthenticationServiceCollectionExtensionsTests
         };
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            ApiReflection.InvokeStatic(AuthenticationExtensionsType, "ResolveAudience", options));
+            PlatformAuthenticationConfigurationResolver.ResolveAudience(options));
 
         Assert.Equal(
             "The configuration key 'Authentication:ApiAudience' or 'Authentication:Keycloak:ApiClientId' is required when using the Keycloak provider.",
@@ -105,7 +147,7 @@ public class PlatformApiAuthenticationServiceCollectionExtensionsTests
         };
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            ApiReflection.InvokeStatic(AuthenticationExtensionsType, "ResolveAuthority", options));
+            PlatformAuthenticationConfigurationResolver.ResolveAuthority(options));
 
         Assert.Equal(
             "The configuration keys 'Authentication:Entra:Instance' and 'Authentication:Entra:TenantId' are required when using the Entra provider.",
@@ -134,7 +176,7 @@ public class PlatformApiAuthenticationServiceCollectionExtensionsTests
         };
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            ApiReflection.InvokeStatic(AuthenticationExtensionsType, "ResolveAudience", options));
+            PlatformAuthenticationConfigurationResolver.ResolveAudience(options));
 
         Assert.Equal(
             "The configuration key 'Authentication:ApiAudience' or 'Authentication:Entra:ApiClientId' is required when using the Entra provider.",
@@ -161,8 +203,8 @@ public class PlatformApiAuthenticationServiceCollectionExtensionsTests
             }
         };
 
-        var audience = Assert.IsType<string>(ApiReflection.InvokeStatic(AuthenticationExtensionsType, "ResolveAudience", options));
-        var authority = Assert.IsType<string>(ApiReflection.InvokeStatic(AuthenticationExtensionsType, "ResolveAuthority", options));
+        var audience = PlatformAuthenticationConfigurationResolver.ResolveAudience(options);
+        var authority = PlatformAuthenticationConfigurationResolver.ResolveAuthority(options);
 
         Assert.Equal("tnc-trading-platform-api", audience);
         Assert.Equal("https://test-auth.local", authority);

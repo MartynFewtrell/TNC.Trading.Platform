@@ -52,7 +52,8 @@ ${PLAN_DEPTH="standard"} <!-- quick | standard | deep: controls how much detail 
 - MUST: Trace planned mitigation actions back to the findings in the review report.
 - MUST: Preserve and reuse any stable finding identifiers from the review report, such as `F1`, `F2`, throughout the plan.
 - MUST: Preserve all existing numbered plan files in the target work package `plans/` folder unless the user explicitly requests an update to a specific existing plan file.
-- MUST: When writing to the default work-package `plans/` folder, create a new numbered mitigation plan file using the next available sequence number instead of modifying an existing numbered plan.
+- MUST: When writing to the default work-package `plans/` folder, create a new numbered mitigation plan file using the next available sequence number across all numbered plan files in that folder so plan numbering reflects the order plans are applied in the work package, instead of modifying an existing numbered plan.
+  - Example: if the folder already contains `001-delivery-plan.md`, `002-work-package-test-mitigation-plan.md`, and `003-work-package-test-mitigation-plan.md`, the next new refactoring mitigation plan MUST use the `004-` prefix.
 - MUST: Prefer the smallest safe refactoring that resolves each confirmed issue.
 - MUST: Identify when supporting tests, implementation updates, or documentation changes are needed to make a refactor safe and reviewable.
 - MUST: Prioritize high-risk maintainability and change-safety issues before lower-priority cleanup.
@@ -99,7 +100,7 @@ ${PLAN_DEPTH="standard"} <!-- quick | standard | deep: controls how much detail 
    - Use the same command set in **Cross-cutting validation** that the execution prompt can rerun before and after each work item.
 8. Write the final markdown mitigation plan to a physical markdown file in the target work package.
    - Default path: `./docs/00x-work/plans/00n-work-package-refactoring-mitigation-plan.md`
-   - Determine the next available numbered file name in the target `plans/` folder and create a new file using that sequence number.
+   - Determine the next available numbered file name across all numbered plan files in the target `plans/` folder and create a new file using that sequence number so numbering matches work-package application order.
    - If the user provided a plan path, use that path instead.
    - If the provided path already exists, update it only when the user explicitly requested that specific file to be revised; otherwise choose the next available numbered plan path and leave existing plan files unchanged.
    - Ensure the file content exactly matches the final output.
@@ -114,7 +115,7 @@ Also create a physical markdown file for the plan inside the target work package
 
 - Default file name: `00n-work-package-refactoring-mitigation-plan.md`
 - Default location: the target `./docs/00x-work/plans/` folder being reviewed
-- Use the next available sequence number so existing numbered plan files remain unchanged
+- Use the next available sequence number across all numbered plan files in that folder so existing plan numbers continue to reflect work-package application order and existing numbered plan files remain unchanged
 - If a plan file path is provided, use that path instead only when the user explicitly wants that exact file created or revised
 
 The physical markdown file content must exactly match the final output.

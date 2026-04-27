@@ -46,6 +46,7 @@ internal sealed class PlatformNavigationAccessCoordinator(
         var scope = string.Join(' ', requiredScopes.Distinct(StringComparer.Ordinal));
         var destination = $"/authentication/sign-in?returnUrl={Uri.EscapeDataString(returnUrl)}&scope={Uri.EscapeDataString(scope)}";
         if (string.Equals(authenticationOptions.Value.Provider, PlatformAuthenticationDefaults.Providers.Test, StringComparison.Ordinal)
+            && authenticationOptions.Value.Test.EnableInteractiveSignIn
             && !string.IsNullOrWhiteSpace(userName))
         {
             destination += $"&user={Uri.EscapeDataString(userName)}";

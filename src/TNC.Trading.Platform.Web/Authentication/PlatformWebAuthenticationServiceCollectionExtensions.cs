@@ -18,34 +18,19 @@ internal static class PlatformWebAuthenticationServiceCollectionExtensions
         builder.Services.AddScoped<PlatformNavigationAccessCoordinator>();
         builder.Services.AddScoped<PlatformAccessTokenProvider>();
         builder.Services.AddScoped<TestAuthenticationTokenFactory>();
+        builder.Services.AddScoped<PlatformTestAuthenticationSignInHandler>();
 
-        builder.Services.AddAuthorization(options =>
-        {
-            options.AddPolicy(
-                PlatformAuthenticationDefaults.Policies.Viewer,
-                policy => policy.RequireRole(
-                    PlatformAuthenticationDefaults.Roles.Viewer,
-                    PlatformAuthenticationDefaults.Roles.Operator,
-                    PlatformAuthenticationDefaults.Roles.Administrator));
-            options.AddPolicy(
-                PlatformAuthenticationDefaults.Policies.Operator,
-                policy => policy.RequireRole(
-                    PlatformAuthenticationDefaults.Roles.Operator,
-                    PlatformAuthenticationDefaults.Roles.Administrator));
-            options.AddPolicy(
-                PlatformAuthenticationDefaults.Policies.Administrator,
-                policy => policy.RequireRole(PlatformAuthenticationDefaults.Roles.Administrator));
-        });
+        builder.Services.AddAuthorization(PlatformAuthorizationPolicyRegistration.AddPlatformRolePolicies);
 
         var authenticationOptions = builder.Configuration
             .GetSection(PlatformAuthenticationDefaults.ConfigurationSectionName)
             .Get<PlatformAuthenticationOptions>() ?? new PlatformAuthenticationOptions();
 
-        ValidateProviderSupported(authenticationOptions.Provider);
+        PlatformAuthenticationConfigurationResolver.ValidateProviderSupported(authenticationOptions.Provider);
 
         if (!string.Equals(authenticationOptions.Provider, PlatformAuthenticationDefaults.Providers.Test, StringComparison.Ordinal))
         {
-            ValidateOpenIdConnectConfiguration(authenticationOptions);
+            PlatformAuthenticationConfigurationResolver.ValidateOpenIdConnectConfiguration(authenticationOptions);
         }
 
         var authenticationBuilder = builder.Services.AddAuthentication(options =>
@@ -80,15 +65,15 @@ internal static class PlatformWebAuthenticationServiceCollectionExtensions
         PlatformAuthenticationOptions authenticationOptions,
         IHostEnvironment hostEnvironment)
     {
-        var authority = ResolveAuthority(authenticationOptions);
+        var authority = PlatformAuthenticationConfigurationResolver.ResolveAuthority(authenticationOptions);
         if (string.IsNullOrWhiteSpace(authority))
         {
             throw new InvalidOperationException("The configured authentication provider authority is missing.");
         }
 
         options.Authority = authority;
-        options.ClientId = ResolveClientId(authenticationOptions);
-        options.ClientSecret = ResolveClientSecret(authenticationOptions);
+        options.ClientId = PlatformAuthenticationConfigurationResolver.ResolveClientId(authenticationOptions);
+        options.ClientSecret = PlatformAuthenticationConfigurationResolver.ResolveClientSecret(authenticationOptions);
         options.CallbackPath = authenticationOptions.CallbackPath;
         options.ResponseType = "code";
         options.UsePkce = true;
@@ -173,61 +158,4 @@ internal static class PlatformWebAuthenticationServiceCollectionExtensions
         };
     }
 
-    private static string? ResolveAuthority(PlatformAuthenticationOptions authenticationOptions) =>
-        authenticationOptions.Provider switch
-        {
-            PlatformAuthenticationDefaults.Providers.Entra => ResolveEntraAuthority(authenticationOptions.Entra),
-            PlatformAuthenticationDefaults.Providers.Keycloak => ResolveKeycloakAuthority(authenticationOptions.Keycloak),
-            _ => throw new InvalidOperationException($"The authentication provider '{authenticationOptions.Provider}' is not supported.")
-        };
-
-    private static string ResolveClientId(PlatformAuthenticationOptions authenticationOptions) =>
-        authenticationOptions.Provider switch
-        {
-            PlatformAuthenticationDefaults.Providers.Entra => !string.IsNullOrWhiteSpace(authenticationOptions.Entra.ClientId)
-                ? authenticationOptions.Entra.ClientId
-                : throw new InvalidOperationException("The configuration key 'Authentication:Entra:ClientId' is required when using the Entra provider."),
-            PlatformAuthenticationDefaults.Providers.Keycloak => !string.IsNullOrWhiteSpace(authenticationOptions.Keycloak.ClientId)
-                ? authenticationOptions.Keycloak.ClientId
-                : throw new InvalidOperationException("The configuration key 'Authentication:Keycloak:ClientId' is required when using the Keycloak provider."),
-            _ => throw new InvalidOperationException($"The authentication provider '{authenticationOptions.Provider}' is not supported.")
-        };
-
-    private static string? ResolveClientSecret(PlatformAuthenticationOptions authenticationOptions) =>
-        string.Equals(authenticationOptions.Provider, PlatformAuthenticationDefaults.Providers.Entra, StringComparison.Ordinal)
-            ? authenticationOptions.Entra.ClientSecret
-            : authenticationOptions.Keycloak.ClientSecret;
-
-    private static string? ResolveEntraAuthority(PlatformAuthenticationOptions.EntraOptions options)
-    {
-        if (string.IsNullOrWhiteSpace(options.Instance) || string.IsNullOrWhiteSpace(options.TenantId))
-        {
-            throw new InvalidOperationException("The configuration keys 'Authentication:Entra:Instance' and 'Authentication:Entra:TenantId' are required when using the Entra provider.");
-        }
-
-        return $"{options.Instance.TrimEnd('/')}/{options.TenantId}/v2.0";
-    }
-
-    private static string ResolveKeycloakAuthority(PlatformAuthenticationOptions.KeycloakOptions options) =>
-        !string.IsNullOrWhiteSpace(options.Authority)
-            ? options.Authority
-            : throw new InvalidOperationException("The configuration key 'Authentication:Keycloak:Authority' is required when using the Keycloak provider.");
-
-    private static void ValidateProviderSupported(string provider)
-    {
-        if (string.Equals(provider, PlatformAuthenticationDefaults.Providers.Keycloak, StringComparison.Ordinal)
-            || string.Equals(provider, PlatformAuthenticationDefaults.Providers.Entra, StringComparison.Ordinal)
-            || string.Equals(provider, PlatformAuthenticationDefaults.Providers.Test, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        throw new InvalidOperationException($"The authentication provider '{provider}' is not supported.");
-    }
-
-    private static void ValidateOpenIdConnectConfiguration(PlatformAuthenticationOptions authenticationOptions)
-    {
-        _ = ResolveAuthority(authenticationOptions);
-        _ = ResolveClientId(authenticationOptions);
-    }
 }

@@ -14,7 +14,8 @@ public class PlatformProtectedRouteFunctionalTests
 
     static PlatformProtectedRouteFunctionalTests()
     {
-        Environment.SetEnvironmentVariable("AppHost__EnableInfrastructureContainers", bool.FalseString);
+        Environment.SetEnvironmentVariable("AppHost__UseSyntheticRuntime", bool.TrueString);
+        Environment.SetEnvironmentVariable("Authentication__Test__EnableInteractiveSignIn", bool.TrueString);
     }
 
     public static TheoryData<string, string, string?, string, string> ProtectedRouteRoleMatrix =>

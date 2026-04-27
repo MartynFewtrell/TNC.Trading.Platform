@@ -37,7 +37,7 @@ public class PlatformNavigationAccessCoordinatorTests
 
     /// <summary>
     /// Trace: NF2, NF4, IR2.
-    /// Verifies: the navigation access coordinator redirects an authenticated operator back through sign-in when the session lacks a required elevated scope.
+    /// Verifies: the navigation access coordinator redirects an authenticated operator back through the explicit synthetic sign-in harness when the session lacks a required elevated scope.
     /// Expected: the method returns false and the redirect preserves the return URL, requested scope, and username for the test provider.
     /// Why: delegated-scope recovery must remain deterministic and observable when the current session needs elevation.
     /// </summary>
@@ -58,6 +58,41 @@ public class PlatformNavigationAccessCoordinatorTests
         Assert.False(allowed);
         Assert.Equal(
             "https://localhost/authentication/sign-in?returnUrl=%2Fadministration%2Fauthentication&scope=platform.admin&user=local-viewer",
+            navigationManager.LastNavigationUri);
+        Assert.True(navigationManager.LastForceLoad);
+    }
+
+    /// <summary>
+    /// Trace: NF2, NF4, TR3.
+    /// Verifies: the navigation access coordinator omits the synthetic user hint when the explicit Web test harness sign-in surface is disabled.
+    /// Expected: the method returns false and the redirect preserves the return URL and requested scope without appending the `user` query value.
+    /// Why: test-only user-hint behavior must remain isolated to the explicit Web harness instead of leaking into general product sign-in redirects.
+    /// </summary>
+    [Fact]
+    public async Task EnsureRequiredScopesAsync_ShouldOmitUserHint_WhenInteractiveHarnessIsDisabled()
+    {
+        var options = Options.Create(new PlatformAuthenticationOptions());
+        var tokenFactory = new TestAuthenticationTokenFactory(options);
+        var (principal, properties) = tokenFactory.Create("local-viewer", [PlatformAuthenticationDefaults.Scopes.Viewer]);
+        var navigationManager = new TestNavigationManager();
+        var coordinator = new PlatformNavigationAccessCoordinator(
+            navigationManager,
+            CreateAccessTokenProvider(properties.GetTokenValue("access_token")),
+            CreateOperatorContextAccessor(principal),
+            Options.Create(new PlatformAuthenticationOptions
+            {
+                Provider = PlatformAuthenticationDefaults.Providers.Test,
+                Test = new PlatformAuthenticationOptions.TestOptions
+                {
+                    EnableInteractiveSignIn = false
+                }
+            }));
+
+        var allowed = await coordinator.EnsureRequiredScopesAsync("/administration/authentication", PlatformAuthenticationDefaults.Scopes.Administrator);
+
+        Assert.False(allowed);
+        Assert.Equal(
+            "https://localhost/authentication/sign-in?returnUrl=%2Fadministration%2Fauthentication&scope=platform.admin",
             navigationManager.LastNavigationUri);
         Assert.True(navigationManager.LastForceLoad);
     }
@@ -99,7 +134,11 @@ public class PlatformNavigationAccessCoordinatorTests
             operatorContextAccessor,
             Options.Create(new PlatformAuthenticationOptions
             {
-                Provider = PlatformAuthenticationDefaults.Providers.Test
+                Provider = PlatformAuthenticationDefaults.Providers.Test,
+                Test = new PlatformAuthenticationOptions.TestOptions
+                {
+                    EnableInteractiveSignIn = true
+                }
             }));
     }
 

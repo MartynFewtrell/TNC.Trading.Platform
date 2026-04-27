@@ -7,7 +7,8 @@ public class PlatformAuthenticationFunctionalTests
 {
     static PlatformAuthenticationFunctionalTests()
     {
-        Environment.SetEnvironmentVariable("AppHost__EnableInfrastructureContainers", bool.FalseString);
+        Environment.SetEnvironmentVariable("AppHost__UseSyntheticRuntime", bool.TrueString);
+        Environment.SetEnvironmentVariable("Authentication__Test__EnableInteractiveSignIn", bool.TrueString);
     }
 
     /// <summary>
@@ -34,12 +35,12 @@ public class PlatformAuthenticationFunctionalTests
 
     /// <summary>
     /// Trace: FR1, FR2, TR3, OR2.
-    /// Verifies: the local automated-test sign-in surface offers the seeded development identities used for auth validation.
+    /// Verifies: the explicit synthetic Web test harness sign-in surface offers the seeded development identities used for auth validation.
     /// Expected: the sign-in page returns HTTP 200 OK and lists the local admin, operator, viewer, and no-role accounts.
     /// Why: automated auth coverage needs a stable local sign-in entry that mirrors the documented seeded identities.
     /// </summary>
     [Fact]
-    public async Task SignInPage_ShouldListSeededLocalUsers_WhenTestProviderIsActive()
+    public async Task SignInPage_ShouldListSeededLocalUsers_WhenSyntheticTestRuntimeIsActive()
     {
         await using var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
@@ -60,7 +61,7 @@ public class PlatformAuthenticationFunctionalTests
 
     /// <summary>
     /// Trace: FR4, FR5, FR7, TR1, TR2.
-    /// Verifies: an operator can sign in and reach the protected configuration page through the Blazor host.
+    /// Verifies: an operator can sign in through the explicit synthetic Web test harness and reach the protected configuration page through the Blazor host.
     /// Expected: the sign-in endpoint issues a session cookie and the subsequent configuration page request returns HTTP 200 OK with the configuration heading.
     /// Why: the protected operator UI must become reachable only after a successful authenticated session is established.
     /// </summary>

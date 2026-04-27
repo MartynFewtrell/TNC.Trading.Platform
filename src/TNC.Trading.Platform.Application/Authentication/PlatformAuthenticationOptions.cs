@@ -136,6 +136,11 @@ public sealed class PlatformAuthenticationOptions
     public sealed class TestOptions
     {
         /// <summary>
+        /// Gets or sets a value indicating whether the Web host exposes the synthetic interactive sign-in surface for the explicit test harness.
+        /// </summary>
+        public bool EnableInteractiveSignIn { get; set; }
+
+        /// <summary>
         /// Gets or sets the JWT issuer used by automated tests.
         /// </summary>
         public string Issuer { get; set; } = "https://test-auth.local";

@@ -4,21 +4,28 @@ using Microsoft.Playwright.Xunit;
 
 namespace TNC.Trading.Platform.Web.E2ETests.Authentication;
 
+[Collection(AuthenticationE2ETestCollection.Name)]
 public class PlatformAuthenticationE2ETests : PageTest
 {
+    public override BrowserNewContextOptions ContextOptions() => new()
+    {
+        IgnoreHTTPSErrors = true
+    };
+
     static PlatformAuthenticationE2ETests()
     {
-        Environment.SetEnvironmentVariable("AppHost__EnableInfrastructureContainers", bool.FalseString);
+        Environment.SetEnvironmentVariable("AppHost__UseSyntheticRuntime", bool.TrueString);
+        Environment.SetEnvironmentVariable("Authentication__Test__EnableInteractiveSignIn", bool.TrueString);
     }
 
     /// <summary>
     /// Trace: FR1, FR2, TR3, OR2.
-    /// Verifies: the browser can reach the local sign-in entry surface used for automated authentication flows.
+    /// Verifies: the browser can reach the explicit synthetic Web test harness sign-in entry surface used for automated authentication flows.
     /// Expected: navigating to the sign-in route shows the local test sign-in choices.
     /// Why: the end-to-end suite needs a stable auth entry surface before it can validate later signed-in flows.
     /// </summary>
     [Fact]
-    public async Task SignInPage_ShouldShowTestUserChoices_WhenAnonymousBrowserRequestsSignIn()
+    public async Task SignInPage_ShouldShowSyntheticUserChoices_WhenAnonymousBrowserRequestsSignIn()
     {
         await using var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();

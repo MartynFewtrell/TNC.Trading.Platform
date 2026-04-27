@@ -89,7 +89,7 @@ Instead, it models the auth state needed by the rest of the control plane. The c
 This runtime auth-state model is distinct from the operator sign-in model:
 
 - operator sign-in uses standards-based OIDC/OAuth flows through Keycloak locally and Azure-aligned configuration for Microsoft Entra ID
-- automated tests use the lightweight local test provider when infrastructure containers are disabled
+- automated tests may opt into the synthetic test provider through explicit test-harness composition
 - operator role boundaries are enforced independently of the simulated broker auth-state projection
 
 ## State transitions

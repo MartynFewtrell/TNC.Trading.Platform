@@ -5,9 +5,15 @@ using Microsoft.Playwright.Xunit;
 
 namespace TNC.Trading.Platform.Web.E2ETests.Authentication;
 
+[Collection(AuthenticationE2ETestCollection.Name)]
 public sealed class PlatformDashboardAuthenticationE2ETests : PageTest
 {
     private static readonly string AppHostProjectPath = Path.Combine("src", "TNC.Trading.Platform.AppHost", "TNC.Trading.Platform.AppHost.csproj");
+
+    public override BrowserNewContextOptions ContextOptions() => new()
+    {
+        IgnoreHTTPSErrors = true
+    };
 
     /// <summary>
     /// Trace: FR1, FR5, IR1, TR3, NF2.
@@ -21,11 +27,12 @@ public sealed class PlatformDashboardAuthenticationE2ETests : PageTest
         await using var appHostProcess = StartAppHostProcess();
 
         var dashboardLoginUri = await WaitForDashboardLoginUriAsync(appHostProcess.Process);
-        var authenticationEntryUri = await appHostProcess.WaitForWebSignInUriAsync(TimeSpan.FromSeconds(60));
-        var webBaseUri = new Uri(authenticationEntryUri.GetLeftPart(UriPartial.Authority));
 
         await Page.GotoAsync(dashboardLoginUri.ToString(), new() { WaitUntil = WaitUntilState.DOMContentLoaded });
         await Expect(Page.Locator("body")).ToBeVisibleAsync(new() { Timeout = 30_000 });
+
+        var authenticationEntryUri = await appHostProcess.WaitForWebSignInUriAsync(TimeSpan.FromSeconds(60));
+        var webBaseUri = new Uri(authenticationEntryUri.GetLeftPart(UriPartial.Authority));
 
         await Page.GotoAsync(authenticationEntryUri.ToString(), new() { WaitUntil = WaitUntilState.DOMContentLoaded });
 
@@ -42,6 +49,9 @@ public sealed class PlatformDashboardAuthenticationE2ETests : PageTest
 
     private static AppHostProcessHandle StartAppHostProcess()
     {
+        var existingPlatformProcessIds = AppHostProcessHandle.CapturePlatformProcessIds();
+        var existingListeningPorts = AppHostProcessHandle.CaptureListeningPorts();
+
         var startInfo = new ProcessStartInfo
         {
             FileName = "dotnet",
@@ -53,11 +63,12 @@ public sealed class PlatformDashboardAuthenticationE2ETests : PageTest
         };
 
         startInfo.Environment["AppHost__EnableInfrastructureContainers"] = bool.TrueString;
+        startInfo.Environment["AppHost__UseSyntheticRuntime"] = bool.FalseString;
 
         var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("Failed to start the AppHost process for the dashboard authentication diagnostic test.");
 
-        return new AppHostProcessHandle(process);
+        return new AppHostProcessHandle(process, existingPlatformProcessIds, existingListeningPorts);
     }
 
     private static async Task<Uri> WaitForDashboardLoginUriAsync(Process appHostProcess)

@@ -5,31 +5,22 @@ This document explains how to build, run, validate, and troubleshoot the current
 ## Prerequisites
 
 - .NET SDK installed from the version pinned by `global.json`
-- Docker Desktop only if you want AppHost to start SQL Server and Mailpit containers
+- Docker Desktop because AppHost now requires Docker-managed infrastructure for the supported local runtime, including Keycloak for operator authentication
 
-## Current local runtime modes
+## Current local runtime mode
 
-The application supports two useful local modes.
+The supported local runtime uses Docker-managed infrastructure.
 
-### Lightweight local mode
-
-This is the default experience when infrastructure containers are not enabled.
-
-- AppHost starts the API and Blazor UI
-- the API uses the in-memory database provider
-- the Web and API use the local test authentication provider
-- external notification transports remain optional
-
-### Container-assisted local mode
-
-When `AppHost:EnableInfrastructureContainers=true` is set, AppHost can also start:
+AppHost starts:
 
 - SQL Server
 - the `platformdb` database
 - Mailpit for local SMTP capture
 - Keycloak with the imported local development realm
 
-Use this mode when you want durable local persistence, local notification validation, and real local OIDC sign-in.
+This mode is required because Keycloak is part of the local authentication stack and the in-memory SQL option is no longer a supported application runtime.
+
+Synthetic authentication and in-memory persistence remain available only for isolated automated tests. They are not a supported local application runtime. The synthetic interactive Web sign-in surface is enabled only by explicit test-harness configuration in the automated Web auth suites that require it.
 
 ## Build
 
@@ -53,24 +44,9 @@ Optional alternative when the Aspire CLI is installed:
 aspire run
 ```
 
-## Run with infrastructure containers
-
-In PowerShell, enable the AppHost infrastructure switch before starting the application:
-
-```powershell
-$env:AppHost__EnableInfrastructureContainers = 'true'
-dotnet run --project src/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.csproj
-```
-
-Clear the variable afterward if you want to return to the lightweight mode:
-
-```powershell
-Remove-Item Env:AppHost__EnableInfrastructureContainers
-```
-
 ## Keycloak admin console credentials
 
-When infrastructure containers are enabled, AppHost starts Keycloak with an explicit admin console account.
+AppHost starts Keycloak with an explicit admin console account for the supported local runtime.
 
 - username: `keycloak-admin`
 - password source: AppHost user secrets key `Parameters:keycloak-admin-password`
@@ -88,9 +64,9 @@ When the application is running, AppHost exposes links for:
 
 - the Blazor operator UI
 - the API service
-- Keycloak when infrastructure containers are enabled
+- Keycloak
 - Scalar UI in development
-- Mailpit UI when infrastructure containers are enabled
+- Mailpit UI
 
 The operator UI entry point is `/` on the web application.
 
@@ -121,7 +97,7 @@ In development, also check the Scalar link from AppHost.
 
 ### Local authentication validation
 
-When Keycloak is enabled through AppHost infrastructure containers, validate these seeded local accounts with the shared local-only password `LocalAuth!123`:
+For the supported local runtime, validate these seeded local accounts with the shared local-only password `LocalAuth!123`:
 
 - `local-admin`
 - `local-operator`
@@ -142,25 +118,16 @@ Expected behavior:
 
 ## Useful local scenarios
 
-### Explore the operator UI without Docker
-
-1. Run AppHost in lightweight mode.
-2. Open the web application link.
-3. Open `/authentication/sign-in` and select a local test user.
-4. Review `/status`, `/configuration`, or `/administration/authentication` based on the selected role.
-
 ### Validate durable configuration locally
 
-1. Enable infrastructure containers.
-2. Start AppHost.
+1. Start AppHost.
 3. Sign in through Keycloak as `local-operator` or `local-admin`.
 4. Save configuration changes in `/configuration`.
 5. Restart the application and verify the values persist.
 
 ### Validate local SMTP capture
 
-1. Enable infrastructure containers.
-2. Start AppHost.
+1. Start AppHost.
 3. Open the Mailpit UI from the AppHost link.
 4. Exercise a notification-producing scenario and inspect captured mail.
 
@@ -170,12 +137,12 @@ Expected behavior:
 
 - inspect AppHost, API, and web logs
 - confirm the API completed startup configuration and initial runtime tick
-- if SQL mode is enabled, confirm the SQL container started successfully
+- confirm the SQL container started successfully
 
 ### Configuration does not persist across restarts
 
-- confirm infrastructure containers are enabled or an external SQL connection string is configured
-- remember that lightweight mode uses the in-memory provider only
+- confirm Docker is running and AppHost started SQL Server successfully
+- confirm an external `platformdb` connection string is configured if you are not using the default AppHost-managed local runtime
 
 ### The UI shows degraded status
 
