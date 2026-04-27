@@ -1,4 +1,4 @@
----
+﻿---
 description: 'Standardize the repository test approach (unit-first with xUnit, plus Aspire closed-box integration/E2E and requirement-driven functional tests) so test projects are consistent, resilient, and CI-friendly.'
 applyTo: 'test/**/*.cs, test/**/*.csproj'
 ---
@@ -62,18 +62,16 @@ Applies to: `test/**/*.cs, test/**/*.csproj`
 
 #### Requirement traceability (functional tests)
 
-- Functional tests MUST be organized per iterative work package.
-  - The source of truth for work packages is `docs/<00x-work>/` as defined in `/.github/instructions/work-packages.instructions.md`.
-  - Functional tests for a work package SHOULD be placed under a matching folder name under the functional test project:
-    - `test/<Service>/<Service>.FunctionalTests/<00x-work>/...`
-    - Example work package folder: `001-add-order-endpoint`
+- Functional tests MUST be organized by the feature area, behavior, or surface they validate rather than by iterative work package identifier.
+  - Prefer folders under the functional test project that describe the tested capability or surface area.
+  - Functional test folders SHOULD use stable names that remain valid across multiple work packages.
+  - Recommended structure:
+    - `test/<Service>/<Service>.FunctionalTests/<feature-or-surface>/...`
+    - Examples: `Authentication`, `Orders`, `OperatorNavigation`, `Configuration`
 
 - Functional test method names MUST use the same `MethodName_StateUnderTest_ExpectedResult` convention as the rest of the suite.
   - Example: `RetryStatus_ShouldShowBlockedReason_WhenAuthenticationIsDegraded`
   - Functional test method names MUST NOT use numeric-only traceability names such as `<001>_<FR1>_point_of_test`
-
-- Work package traceability MUST remain explicit through the work package folder name (`<00x-work>`).
-  - Example: `001` from `001-add-order-endpoint`
 
 - Requirement traceability MUST remain explicit by referencing the requirement identifier from the work package requirements document (`docs/<00x-work>/requirements.md`) in the test method comments.
   - The comments SHOULD explain how the test scenario proves the requirement and why the requirement is important.

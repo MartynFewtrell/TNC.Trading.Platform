@@ -1,4 +1,4 @@
-# Systems Analysis
+﻿# Systems Analysis
 
 This document captures project-level systems analysis for the Algorithmic Trading Platform. It refines `./docs/business-requirements.md` into a clear system boundary, external interactions, core use cases, business rules, analysis-level requirements, and quality attributes. It is intended to be implementation-agnostic and to guide decomposition into `./docs/00x-work/` work packages.
 
@@ -12,7 +12,7 @@ This document captures project-level systems analysis for the Algorithmic Tradin
 - **Inputs**:
   - `./docs/business-requirements.md`
 - **Outputs**:
-  - Work packages under `./docs/00x-work/` with `requirements.md`, `technical-specification.md`, and `delivery-plan.md`
+  - Work packages under `./docs/00x-work/` with `requirements.md`, `technical-specification.md`, and numbered plan files under `plans/`
 
 ### 1.1 Links
 
@@ -376,18 +376,19 @@ List candidate work packages suggested by this analysis. Keep these as outcomes/
 | --- | --- | --- | --- | --- | --- | --- |
 | 001-project-scaffolding-and-devex | Establish a baseline solution structure and local run harness with consistent logging, configuration, and health checks suitable for iterative delivery. | BR12, BR13 | UC9 |  | NFR1, NFR2, NFR3 | Candidate only; intended to reduce delivery risk and support consistent implementation across packages. |
 | 002-environment-and-auth-foundation | Establish safe environment selection (demo/live) and authenticated session continuity with observable state. | BR1, BR2, BR12 | UC1, UC2 | SAR1, SAR2 | NFR1, NFR2 | Candidate only; final scope to be confirmed during work package requirements. |
-| 003-audit-ledger-and-record-retention | Provide durable event-style recording for traceability, auditability, and retention, including export capability. | BR10, BR13 | UC9 | SAR4 | NFR3 | Prefer recording notable state transitions (see `AD3`). |
-| 004-notifications-and-alerting | Provide project-owner notifications for configured notable operational conditions. | BR11, BR12 | UC10 | SAR6 | NFR1, NFR2 | Candidate only; initial delivery style is immediate for every event. Confirm noise tolerance and delivery expectations in requirements. |
-| 005-instrument-discovery-and-tracked-set | Provide instrument discovery and tracked-instrument management with persisted tracked sets and observable status. | BR4 | UC3 |  | NFR2 | Initial release scope: `FX` and `Indices` via `IG`. |
-| 006-market-data-and-freshness-gating | Provide resilient pricing for tracked instruments (streaming preferred) with freshness status and enforcement of trading prevention when stale/unavailable. | BR5, BR8 | UC4, UC6 | SAR3 | NFR2 | Default freshness tolerance: 5 seconds (configurable). |
-| 007-run-controls-and-safety-stops | Implement platform run state (running/paused/stopped) and safety stop behavior that prevents automated trading actions when unsafe. | BR8 | UC8, UC6 | SAR5 | NFR2 | Unsafe includes stale market data, risk stops, and session/auth failures (see `AD1`). |
-| 008-strategy-lifecycle-and-runtime | Enable strategy definition, activation, and observable running status, producing trade intents from market data without prescribing specific strategy algorithms. | BR6, BR8 | UC5 |  | NFR2 | Treat strategy execution as gated by run state, market data freshness, and risk controls. |
-| 009-rate-limits-and-throttling-resilience | Implement local rate limiting, safe handling of provider throttling, exponential backoff, and prevention of unsafe trading actions until recovery. | BR3, BR8 | UC4, UC6 | SAR10 | NFR2 | Notify on state transitions only (first throttled; recovered) per `SAR6` notes. |
-| 010-order-execution-and-traceability | Implement order placement and management (submit then confirm) with correlation keys, de-duplication, and traceability to resulting order/position state. | BR9, BR10 | UC6, UC9 | SAR4 | NFR2, NFR3 | Aligns with `AD2` (two-step lifecycle) and reconciliation needs. |
-| 011-risk-controls-max-daily-loss | Enforce max daily loss control with stop semantics, automatic reset at midnight UTC, and closing-only allowance during stop, plus configurable flatten-on-stop behavior. | BR7, BR8, BR11 | UC7, UC8, UC10, UC11 | SAR9 | NFR2 | Implements `RULE8` through `RULE12`. |
-| 012-monitoring-reporting-and-reconciliation | Provide operational monitoring views and reporting (activity history, summaries, and reconciliation support against `IG` statements). | BR10, BR11, BR13 | UC9 |  | NFR3 | Supports success measure `SM1` via reconciliation tolerance and reporting needs. |
-| 013-operator-ui-and-ops-console | Provide an operator interface to select environment, manage tracked instruments, view operational status, and apply pause/resume/stop controls. | BR1, BR4, BR8, BR11 | UC1, UC3, UC8, UC9 |  | NFR2 | Initial scope is personal/internal use; no manual trading UX required. |
-| 014-end-of-day-flattening | Implement intraday-only end-of-day behavior to flatten positions, record outcomes, and stop and notify if flattening cannot be completed. | BR8, BR9, BR10, BR11 | UC11, UC10 | SAR7 | NFR2, NFR3 | End-of-day cut-off is fixed daily and configurable. |
+| 003-authentication-and-authorisation | Establish local authentication and authorisation for the API and Blazor UI, including operator sign-in, protected routes/endpoints, and compatibility with the repository's local identity approach. | BR12 | UC9 |  | NFR1, NFR2 | Local authentication only; distinct from `IG` session/authentication. |
+| 004-audit-ledger-and-record-retention | Provide durable event-style recording for traceability, auditability, and retention, including export capability. | BR10, BR13 | UC9 | SAR4 | NFR3 | Prefer recording notable state transitions (see `AD3`). |
+| 005-notifications-and-alerting | Provide project-owner notifications for configured notable operational conditions. | BR11, BR12 | UC10 | SAR6 | NFR1, NFR2 | Candidate only; initial delivery style is immediate for every event. Confirm noise tolerance and delivery expectations in requirements. |
+| 006-instrument-discovery-and-tracked-set | Provide instrument discovery and tracked-instrument management with persisted tracked sets and observable status. | BR4 | UC3 |  | NFR2 | Initial release scope: `FX` and `Indices` via `IG`. |
+| 007-market-data-and-freshness-gating | Provide resilient pricing for tracked instruments (streaming preferred) with freshness status and enforcement of trading prevention when stale/unavailable. | BR5, BR8 | UC4, UC6 | SAR3 | NFR2 | Default freshness tolerance: 5 seconds (configurable). |
+| 008-run-controls-and-safety-stops | Implement platform run state (running/paused/stopped) and safety stop behavior that prevents automated trading actions when unsafe. | BR8 | UC8, UC6 | SAR5 | NFR2 | Unsafe includes stale market data, risk stops, and session/auth failures (see `AD1`). |
+| 009-strategy-lifecycle-and-runtime | Enable strategy definition, activation, and observable running status, producing trade intents from market data without prescribing specific strategy algorithms. | BR6, BR8 | UC5 |  | NFR2 | Treat strategy execution as gated by run state, market data freshness, and risk controls. |
+| 010-rate-limits-and-throttling-resilience | Implement local rate limiting, safe handling of provider throttling, exponential backoff, and prevention of unsafe trading actions until recovery. | BR3, BR8 | UC4, UC6 | SAR10 | NFR2 | Notify on state transitions only (first throttled; recovered) per `SAR6` notes. |
+| 011-order-execution-and-traceability | Implement order placement and management (submit then confirm) with correlation keys, de-duplication, and traceability to resulting order/position state. | BR9, BR10 | UC6, UC9 | SAR4 | NFR2, NFR3 | Aligns with `AD2` (two-step lifecycle) and reconciliation needs. |
+| 012-risk-controls-max-daily-loss | Enforce max daily loss control with stop semantics, automatic reset at midnight UTC, and closing-only allowance during stop, plus configurable flatten-on-stop behavior. | BR7, BR8, BR11 | UC7, UC8, UC10, UC11 | SAR9 | NFR2 | Implements `RULE8` through `RULE12`. |
+| 013-monitoring-reporting-and-reconciliation | Provide operational monitoring views and reporting (activity history, summaries, and reconciliation support against `IG` statements). | BR10, BR11, BR13 | UC9 |  | NFR3 | Supports success measure `SM1` via reconciliation tolerance and reporting needs. |
+| 014-operator-ui-and-ops-console | Provide an operator interface to select environment, manage tracked instruments, view operational status, and apply pause/resume/stop controls. | BR1, BR4, BR8, BR11 | UC1, UC3, UC8, UC9 |  | NFR2 | Initial scope is personal/internal use; no manual trading UX required. |
+| 015-end-of-day-flattening | Implement intraday-only end-of-day behavior to flatten positions, record outcomes, and stop and notify if flattening cannot be completed. | BR8, BR9, BR10, BR11 | UC11, UC10 | SAR7 | NFR2, NFR3 | End-of-day cut-off is fixed daily and configurable. |
 
 ### 12.1 Suggested sequencing
 
@@ -395,12 +396,13 @@ The following sequencing is informative only and is intended to reduce delivery 
 
 1. Establish project scaffolding and baseline operational patterns.
 2. Establish environment selection and authentication foundation.
-3. Establish audit/event recording and notification plumbing early to support safe iteration.
-4. Implement tracked instruments and market data with freshness gating.
-5. Implement run controls and safety stops.
-6. Implement strategy lifecycle and trade intent generation.
-7. Implement rate limit resilience for safe operation under provider constraints.
-8. Implement order execution lifecycle and traceability.
-9. Implement risk controls.
-10. Implement reporting and operator UI.
-11. Implement end-of-day flattening.
+3. Establish local authentication and authorisation for the API and UI.
+4. Establish audit/event recording and notification plumbing early to support safe iteration.
+5. Implement tracked instruments and market data with freshness gating.
+6. Implement run controls and safety stops.
+7. Implement strategy lifecycle and trade intent generation.
+8. Implement rate limit resilience for safe operation under provider constraints.
+9. Implement order execution lifecycle and traceability.
+10. Implement risk controls.
+11. Implement reporting and operator UI.
+12. Implement end-of-day flattening.

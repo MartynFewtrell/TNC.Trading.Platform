@@ -1,11 +1,17 @@
-@page "/configuration"
+﻿@page "/configuration"
+@attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Operator)]
 @inject PlatformApiClient PlatformApiClient
+@inject PlatformNavigationAccessCoordinator NavigationAccessCoordinator
 
 <PageTitle>Platform configuration</PageTitle>
 
 <h1>Platform configuration</h1>
 
-@if (!string.IsNullOrWhiteSpace(loadError))
+@if (!hasRequiredScope)
+{
+    <p>Redirecting...</p>
+}
+else if (!string.IsNullOrWhiteSpace(loadError))
 {
     <p class="error">@loadError</p>
 }
@@ -145,12 +151,21 @@ else
 
 @code {
     private ConfigurationFormModel? form;
+    private bool hasRequiredScope;
     private bool saveInProgress;
     private string? loadError;
     private string? saveMessage;
 
     protected override async Task OnInitializedAsync()
     {
+        hasRequiredScope = await NavigationAccessCoordinator.EnsureRequiredScopesAsync(
+            "/configuration",
+            PlatformAuthenticationDefaults.Scopes.Operator);
+        if (!hasRequiredScope)
+        {
+            return;
+        }
+
         await LoadAsync();
     }
 
@@ -187,7 +202,7 @@ else
                 ? "Configuration saved. Startup-fixed changes apply on the next platform start."
                 : "Configuration saved.";
         }
-        catch (Exception exception) when (exception is FormatException or HttpRequestException)
+        catch (Exception exception) when (exception is FormatException or HttpRequestException or PlatformScopeChallengeRequiredException)
         {
             saveMessage = $"Configuration save failed: {exception.Message}";
         }

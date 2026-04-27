@@ -1,4 +1,4 @@
-# 001 Project scaffolding and DevEx technical specification
+﻿# 001 Project scaffolding and DevEx technical specification
 
 This document describes how work package 001 will be implemented, based on `requirements.md` in this folder and aligned to the project-level `../business-requirements.md` and `../systems-analysis.md`.
 
@@ -7,7 +7,7 @@ This document describes how work package 001 will be implemented, based on `requ
 - **Source**: See [Requirements](requirements.md) for canonical work metadata (work item, owner, dates, links) and identifiers (`FRx/NFx/SRx/TRx/ORx`). See [Business requirements](../business-requirements.md) and [Systems analysis](../systems-analysis.md) for project context.
 - **Status**: draft
 - **Input**: [Requirements](requirements.md)
-- **Output**: [Delivery plan](delivery-plan.md)
+- **Output**: [Initial delivery plan](plans/001-delivery-plan.md)
 
 ## 2. Problem and Context
 
@@ -95,7 +95,7 @@ This approach keeps the work package focused on scaffolding outcomes while enabl
 | SR4 | Reduce unsafe operation via misconfiguration | Ensure the local harness makes “local development” context explicit (environment name, app name in logs). Provide safe defaults. | Verify logs clearly indicate environment/context; ensure documentation discourages copying secrets into tracked files.
 | TR1 | Baseline test structure + naming | Create a test project skeleton under `test/`; apply functional test naming convention when functional tests are added. | `dotnet test` from repo root; verify any functional tests follow `<001>_<FRx>_point_of_test`.
 | TR2 | Build correctness quality gate | Provide a documented build command used in validation steps (and suitable for future CI). | Execute documented build; confirm success.
-| OR1 | Build/start/validate documentation | Document prerequisites, build/start commands, health endpoints, log locations, and basic troubleshooting within `./docs/001-project-scaffolding-and-devex/` (for example as a quick-start section in `delivery-plan.md`). | Verify the documentation can be followed without leaving `./docs/001-project-scaffolding-and-devex/`.
+| OR1 | Build/start/validate documentation | Document prerequisites, build/start commands, health endpoints, log locations, and basic troubleshooting within `./docs/001-project-scaffolding-and-devex/` (for example as a quick-start section in `plans/001-delivery-plan.md`). | Verify the documentation can be followed without leaving `./docs/001-project-scaffolding-and-devex/`.
 
 ## 5. Detailed Design
 
@@ -120,7 +120,7 @@ No data model is introduced in this work package.
 | 4 | Implement structured logging conventions | `src/*/Program.cs`, `src/*/ServiceDefaults/*` | Include component name and environment in logs; ensure no secrets are logged.
 | 5 | Implement health endpoints | `src/*/Program.cs` | Add liveness and readiness endpoints; keep responses minimal.
 | 6 | Add test skeleton and smoke test | `test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.IntegrationTests/*` | Add an Aspire closed-box smoke test (via `Aspire.Hosting.Testing`) that launches the AppHost and verifies health endpoints.
-| 7 | Document local build/run/validate guidance | `docs/001-project-scaffolding-and-devex/delivery-plan.md` | Provide a work-package-local quick-start that satisfies `OR1`.
+| 7 | Document local build/run/validate guidance | `docs/001-project-scaffolding-and-devex/plans/001-delivery-plan.md` | Provide a work-package-local quick-start that satisfies `OR1`.
 
 ### 5.4 Error Handling
 
@@ -143,7 +143,7 @@ No data model is introduced in this work package.
 ## 6. Security Design
 
 - **AuthN/AuthZ**: Not implemented in this work package. If/when local authentication is added, it must follow repo standards (Keycloak running in a container orchestrated by Aspire) and remain compatible with OIDC/OAuth 2.0.
-- **Secrets**: No secrets are committed. Local secrets are supplied via developer-local mechanisms (environment variables and/or a developer-local secrets store) documented in the work package documentation (see `delivery-plan.md`).
+- **Secrets**: No secrets are committed. Local secrets are supplied via developer-local mechanisms (environment variables and/or a developer-local secrets store) documented in the work package documentation (see `plans/001-delivery-plan.md`).
 - **Data protection**: No sensitive data is persisted. Health responses and logs must not contain secret values.
 - **Threat model notes**:
   - Accidental exposure of secrets via logs/config dumps: mitigated by never logging raw configuration and by reviewing log enrichment.

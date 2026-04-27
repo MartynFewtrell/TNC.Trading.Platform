@@ -1,0 +1,58 @@
+﻿@page "/"
+@attribute [AllowAnonymous]
+@inject NavigationManager NavigationManager
+@inject PlatformAuthAuditClient AuthAuditClient
+@inject PlatformOperatorContextAccessor OperatorContextAccessor
+
+<PageTitle>TNC Trading Platform</PageTitle>
+
+<h1>TNC Trading Platform</h1>
+
+@if (operatorContext is null)
+{
+    <p>Loading operator context...</p>
+}
+else if (!operatorContext.IsAuthenticated)
+{
+    <p>Sign in to reach the protected operator surfaces for platform status, configuration, and administration.</p>
+    <p>
+        <a href="/authentication/sign-in?returnUrl=%2F" data-enhance-nav="false">Sign in</a>
+    </p>
+    <p>Health and readiness endpoints remain public.</p>
+}
+else
+{
+    <p>Welcome, @operatorContext.DisplayName.</p>
+    <p>
+        <a href="/authentication/sign-out" data-enhance-nav="false">Sign out</a>
+    </p>
+
+    <ul>
+        @if (operatorContext.IsViewer)
+        {
+            <li><a href="/status">Platform status</a></li>
+        }
+        @if (operatorContext.IsOperator)
+        {
+            <li><a href="/configuration">Platform configuration</a></li>
+        }
+        @if (operatorContext.IsAdministrator)
+        {
+            <li><a href="/administration/authentication">Authentication administration</a></li>
+        }
+    </ul>
+}
+
+@code {
+    private PlatformOperatorContext? operatorContext;
+
+    protected override async Task OnInitializedAsync()
+    {
+        operatorContext = await OperatorContextAccessor.GetCurrentAsync();
+        if (operatorContext.IsAuthenticated && !operatorContext.HasAnyPlatformRole)
+        {
+            await AuthAuditClient.RecordAccessDeniedAsync("/", CancellationToken.None);
+            NavigationManager.NavigateTo("/authentication/access-denied", forceLoad: true);
+        }
+    }
+}

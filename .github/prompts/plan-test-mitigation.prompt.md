@@ -1,4 +1,4 @@
----
+﻿---
 agent: 'agent'
 description: 'Creates a detailed mitigation plan from a work-package test review so the identified testing issues can be resolved in a traceable physical markdown plan.'
 name: plan-test-mitigation
@@ -47,21 +47,26 @@ ${PLAN_DEPTH="standard"} <!-- quick | standard | deep: controls how much detail 
 - MUST: Review the work-package test review report.
 - MUST: Review `requirements.md` in the target work package.
 - MUST: Review `technical-specification.md` when it exists in the target work package.
-- SHOULD: Review `delivery-plan.md` when it exists in the target work package.
+- SHOULD: Review the existing numbered plan files in the target work package `plans/` folder when they exist.
 - MUST: Prefer the provided work-package artifacts and explicitly supplied paths before discovering additional repository files.
 - MUST: Trace planned mitigation actions back to the findings in the review report.
 - MUST: Preserve and reuse any stable finding identifiers from the review report, such as `F1`, `F2`, throughout the plan.
+- MUST: Preserve all existing numbered plan files in the target work package `plans/` folder unless the user explicitly requests an update to a specific existing plan file.
+- MUST: When writing to the default work-package `plans/` folder, create a new numbered mitigation plan file using the next available sequence number across all numbered plan files in that folder so plan numbering reflects the order plans are applied in the work package, instead of modifying an existing numbered plan.
+  - Example: if the folder already contains `001-delivery-plan.md`, `002-work-package-test-mitigation-plan.md`, and `003-work-package-refactoring-mitigation-plan.md`, the next new plan MUST use the `004-` prefix regardless of plan type.
 - MUST: Prefer strengthening or adding lower-level automated tests before recommending higher-level tests when the behavior can be validated without additional infrastructure.
 - MUST: Identify when supporting implementation or documentation changes are needed to enable stronger tests.
 - MUST: Prioritize high-risk missing or weak coverage before lower-priority hardening work.
 - MUST: Include validation and rollback/backout guidance for each planned work item.
 - MUST: Produce work items and checklist entries that can be executed sequentially and checked off directly by the execution prompt.
 - MUST: When planned work creates or updates tests, include any required test-comment updates so requirement traceability and the explanation of what is being tested and why remain explicit in code.
+- MUST: Include wiki-update tasks whenever the mitigation work changes implementation behavior, operator guidance, local development guidance, or the testing approach described in `./docs/wiki/`.
 - MUST: Populate **Cross-cutting validation** with explicit commands whenever they can be inferred from the repository or work-package context.
 - MUST: If exact validation commands cannot be inferred, define repo-root `dotnet build` and `dotnet test` as the minimum default commands and record any assumptions.
 - MUST: Separate confirmed evidence from assumptions or missing-information notes.
 - MUST NOT: Invent findings that are not present in the review report or supported by repository evidence.
 - MUST NOT: Recommend flaky mitigation patterns such as arbitrary time-based waits as a primary testing strategy.
+- MUST NOT: Overwrite, revise, or repurpose an existing numbered mitigation or delivery plan file when the task is to create a new mitigation plan, unless the user explicitly instructs you to update that specific existing file.
 - SHOULD: Limit repository scanning to the files needed to size the mitigation work, identify likely touch points, and define validation.
 - SHOULD: Keep each work item small enough to validate as one coherent unit while still reducing repeated setup and validation overhead.
 - SHOULD: Use repository conventions for requirement traceability, including work package and `FRx` references, when mapping work items.
@@ -75,7 +80,7 @@ ${PLAN_DEPTH="standard"} <!-- quick | standard | deep: controls how much detail 
 2. Read the target work-package test review report and extract the findings, risks, priorities, and recommendations that need mitigation.
 3. Review the target work-package documents and relevant repository code/tests to confirm the context needed for planning.
    - Start with `requirements.md`.
-   - Then read `technical-specification.md` and `delivery-plan.md` when present or explicitly supplied.
+   - Then read `technical-specification.md` and any existing numbered plan files under `plans/` when present or explicitly supplied.
    - Inspect only the repository files needed to confirm scope, likely touch points, and validation commands.
 4. Group the findings into coherent mitigation themes such as strengthening weak tests, adding missing coverage, improving determinism, or making supporting implementation changes.
 5. Prioritize the mitigation themes by impact, risk, and dependency order.
@@ -83,13 +88,16 @@ ${PLAN_DEPTH="standard"} <!-- quick | standard | deep: controls how much detail 
    - Reuse the review finding identifiers in the findings table, planned work items, and detailed checklists.
    - Structure each work item so it can be executed in order and tracked via checklist completion.
    - Include test-comment updates whenever new or revised tests would otherwise lose requirement traceability or rationale in code.
+   - Include `./docs/wiki/` update steps whenever the mitigation changes testing guidance or any user-visible implemented behavior described by the wiki.
 7. Define validation gates, test commands, manual checks, and rollback/backout guidance for each work item.
    - Prefer explicit repository commands over placeholders whenever they can be inferred.
    - If exact commands cannot be inferred, fall back to repo-root `dotnet build` and `dotnet test` and note the assumption.
    - Use the same command set in **Cross-cutting validation** that the execution prompt can rerun before and after each work item.
 8. Write the final markdown mitigation plan to a physical markdown file in the target work package.
-   - Default path: `./docs/00x-work/work-package-test-mitigation-plan.md`
+   - Default path: `./docs/00x-work/plans/00n-work-package-test-mitigation-plan.md`
+   - Determine the next available numbered file name across all numbered plan files in the target `plans/` folder and create a new file using that sequence number so numbering matches work-package application order.
    - If the user provided a plan path, use that path instead.
+   - If the provided path already exists, update it only when the user explicitly requested that specific file to be revised; otherwise choose the next available numbered plan path and leave existing plan files unchanged.
    - Ensure the file content exactly matches the final output.
 
 ## Output format
@@ -98,11 +106,12 @@ Return a single markdown mitigation plan that follows `.github/templates/test-mi
 
 Make the result directly executable: include explicit work item checklists, stable finding references, likely files when known, and reusable validation commands.
 
-Also create or update a physical markdown file for the plan inside the target work package.
+Also create a physical markdown file for the plan inside the target work package `plans/` folder.
 
-- Default file name: `work-package-test-mitigation-plan.md`
-- Default location: the target `./docs/00x-work/` folder being reviewed
-- If a plan file path is provided, use that path instead
+- Default file name: `00n-work-package-test-mitigation-plan.md`
+- Default location: the target `./docs/00x-work/plans/` folder being reviewed
+- Use the next available sequence number across all numbered plan files in that folder so existing plan numbers continue to reflect work-package application order and existing numbered plan files remain unchanged
+- If a plan file path is provided, use that path instead only when the user explicitly wants that exact file created or revised
 
 The physical markdown file content must exactly match the final output.
 
@@ -110,8 +119,8 @@ The physical markdown file content must exactly match the final output.
 
 ### Example request
 
-Use `./docs/002-environment-and-auth-foundation/work-package-test-review-report.md` to create a mitigation plan for the test issues it identifies and write the plan into the work package folder.
+Use `./docs/002-environment-and-auth-foundation/work-package-test-review-report.md` to create a mitigation plan for the test issues it identifies and write the plan into the work package `plans/` folder with the next available sequence number.
 
 ### Example response (optional)
 
-A markdown mitigation plan that maps review findings to prioritized work items, validation steps, and rollback guidance, and is saved under the work package folder.
+A markdown mitigation plan that maps review findings to prioritized work items, validation steps, and rollback guidance, and is saved under the work package `plans/` folder.

@@ -1,0 +1,63 @@
+﻿@page "/administration/authentication"
+@attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Administrator)]
+@inject PlatformApiClient PlatformApiClient
+@inject PlatformNavigationAccessCoordinator NavigationAccessCoordinator
+
+<PageTitle>Authentication administration</PageTitle>
+
+<h1>Authentication administration</h1>
+
+@if (!hasRequiredScope)
+{
+    <p>Redirecting...</p>
+}
+else if (!string.IsNullOrWhiteSpace(loadError))
+{
+    <p class="error">@loadError</p>
+}
+else if (details is null)
+{
+    <p>Loading authentication administration details...</p>
+}
+else
+{
+    <section class="panel">
+        <h2>Provider</h2>
+        <dl>
+            <dt>Active provider</dt>
+            <dd>@details.Provider</dd>
+            <dt>Role claim type</dt>
+            <dd>@details.RoleClaimType</dd>
+            <dt>Protected API audience</dt>
+            <dd>@(details.ApiAudience ?? "Not configured")</dd>
+        </dl>
+    </section>
+
+    <p>Authentication and authorization administration remains external to the application in this release.</p>
+}
+
+@code {
+    private AuthAdministrationViewModel? details;
+    private bool hasRequiredScope;
+    private string? loadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        hasRequiredScope = await NavigationAccessCoordinator.EnsureRequiredScopesAsync(
+            "/administration/authentication",
+            PlatformAuthenticationDefaults.Scopes.Administrator);
+        if (!hasRequiredScope)
+        {
+            return;
+        }
+
+        try
+        {
+            details = await PlatformApiClient.GetAuthAdministrationAsync(CancellationToken.None);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or PlatformScopeChallengeRequiredException)
+        {
+            loadError = $"Unable to load authentication administration details: {exception.Message}";
+        }
+    }
+}

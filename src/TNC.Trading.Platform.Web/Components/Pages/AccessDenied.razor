@@ -1,0 +1,30 @@
+﻿@page "/authentication/access-denied"
+@attribute [AllowAnonymous]
+@using Microsoft.AspNetCore.WebUtilities
+@inject NavigationManager NavigationManager
+@inject PlatformAuthAuditClient AuthAuditClient
+
+<PageTitle>Access denied</PageTitle>
+
+<h1>Access denied</h1>
+
+<p>You are signed in, but you don't have the required platform role for this area.</p>
+<p>Contact a platform administrator outside the application if you need additional access.</p>
+<p>
+    <a href="/">Return to the landing page</a>
+</p>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        var deniedPath = query.TryGetValue("returnUrl", out var returnUrl)
+            ? returnUrl.ToString()
+            : query.TryGetValue("ReturnUrl", out returnUrl)
+                ? returnUrl.ToString()
+                : uri.AbsolutePath;
+
+        await AuthAuditClient.RecordAccessDeniedAsync(deniedPath, CancellationToken.None);
+    }
+}
