@@ -44,19 +44,34 @@ Optional alternative when the Aspire CLI is installed:
 aspire run
 ```
 
-## Keycloak admin console credentials
+New developers should not be prompted for SQL Server or Keycloak passwords in the Aspire Dashboard during normal first-run startup. AppHost now relies on Aspire-managed local credentials for those infrastructure resources.
 
-AppHost starts Keycloak with an explicit admin console account for the supported local runtime.
+## Infrastructure credential handling
 
-- username: `keycloak-admin`
-- password source: AppHost user secrets key `Parameters:keycloak-admin-password`
+AppHost manages the local SQL Server and Keycloak infrastructure credentials through Aspire's local secret handling.
 
-Set or replace the password from the repository root with:
+- You do not need to set a SQL Server or Keycloak admin password manually for normal local startup.
+- The seeded Keycloak user password `LocalAuth!123` is unchanged and is used only for local operator sign-in validation.
+- Infrastructure admin credentials and seeded local operator credentials are separate concerns.
+
+## Reset previously persisted local state
+
+If you already ran an older AppHost configuration that required explicit SQL Server or Keycloak passwords and local startup now fails, reset the persisted local infrastructure for the `sql` and `keycloak` AppHost resources, then start AppHost again.
+
+Recommended reset sequence:
+
+1. Stop the running AppHost.
+2. Delete the persisted Docker resources created for the local `sql` and `keycloak` AppHost resources.
+3. Start AppHost again so Aspire can recreate the resources with its default local credential handling.
+
+You may also remove stale AppHost user-secrets entries for the old explicit password parameters if you previously created them:
 
 ```powershell
-dotnet user-secrets --project src/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.csproj list
-dotnet user-secrets --project src/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.csproj set "Parameters:keycloak-admin-password" "<your-password>"
+dotnet user-secrets --project src/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.csproj remove "Parameters:keycloak-admin-password"
+dotnet user-secrets --project src/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.csproj remove "Parameters:sql-password"
 ```
+
+Removing those user-secrets entries is optional because AppHost no longer reads them for normal local startup.
 
 ## What AppHost exposes
 
@@ -143,6 +158,7 @@ Expected behavior:
 
 - confirm Docker is running and AppHost started SQL Server successfully
 - confirm an external `platformdb` connection string is configured if you are not using the default AppHost-managed local runtime
+- if this started after switching from an older branch or setup, reset the persisted local `sql` and `keycloak` resources and retry
 
 ### The UI shows degraded status
 

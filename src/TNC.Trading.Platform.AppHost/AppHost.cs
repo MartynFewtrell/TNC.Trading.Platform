@@ -58,14 +58,7 @@ static (IResourceBuilder<IResourceWithConnectionString>? PlatformDatabase, IReso
         return (null, null, null);
     }
 
-    var sqlPassword = builder.AddParameter("sql-password", secret: true);
-    var keycloakAdminUsername = builder.AddParameter(
-        "keycloak-admin-username",
-        "keycloak-admin",
-        publishValueAsDefault: true,
-        secret: false);
-    var keycloakAdminPassword = builder.AddParameter("keycloak-admin-password", secret: true);
-    var sql = builder.AddSqlServer("sql", sqlPassword)
+    var sql = builder.AddSqlServer("sql")
         .WithDataVolume()
         .WithLifetime(ContainerLifetime.Persistent);
     var platformDatabase = sql.AddDatabase("platformdb");
@@ -80,9 +73,7 @@ static (IResourceBuilder<IResourceWithConnectionString>? PlatformDatabase, IReso
         });
     var keycloak = builder.AddKeycloak(
             "keycloak",
-            port: 8080,
-            adminUsername: keycloakAdminUsername,
-            adminPassword: keycloakAdminPassword)
+            port: 8080)
         .WithLifetime(ContainerLifetime.Persistent)
         .WithRealmImport("./Realms");
 

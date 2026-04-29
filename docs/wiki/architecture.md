@@ -168,6 +168,7 @@ The Aspire AppHost remains a composition root only.
 - infrastructure resource creation is isolated from project registration
 - API project wiring is isolated from Web project wiring
 - authentication environment selection is isolated from infrastructure setup
+- local SQL Server and Keycloak admin credentials use Aspire-managed default local secret handling instead of requiring manual dashboard input
 - the supported local runtime remains Docker-backed SQL Server, Mailpit, and Keycloak, while synthetic auth and in-memory persistence stay limited to explicit automated-test composition
 
 ## Persistence model

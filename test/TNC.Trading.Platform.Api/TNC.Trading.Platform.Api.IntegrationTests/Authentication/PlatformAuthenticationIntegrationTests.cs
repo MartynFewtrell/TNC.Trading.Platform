@@ -34,6 +34,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var livenessResponse = await httpClient.GetAsync("/health/live");
         using var readinessResponse = await httpClient.GetAsync("/health/ready");
 
@@ -57,6 +58,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var response = await httpClient.GetAsync("/api/platform/status");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -78,6 +80,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Get,
             "/api/platform/status",
@@ -105,6 +108,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Get,
             "/api/platform/configuration",
@@ -132,6 +136,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Get,
             "/api/platform/auth/administration",
@@ -159,6 +164,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var auditRequest = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Post,
             "/api/platform/auth/audit",
@@ -207,6 +213,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Get,
             "/api/platform/status",
@@ -235,6 +242,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Get,
             "/api/platform/status",
@@ -263,6 +271,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Get,
             "/api/platform/status",
@@ -291,6 +300,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Get,
             "/api/platform/status",
@@ -319,6 +329,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Get,
             "/api/platform/status",
@@ -346,6 +357,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Put,
             "/api/platform/configuration",
@@ -375,6 +387,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Post,
             "/api/platform/auth/manual-retry",
@@ -402,6 +415,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Get,
             "/api/platform/events?category=auth",
@@ -429,6 +443,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Get,
             "/api/platform/auth/administration",
@@ -456,6 +471,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var auditRequest = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Post,
             "/api/platform/auth/audit",
@@ -505,6 +521,7 @@ public class PlatformAuthenticationIntegrationTests
         await app.StartAsync();
 
         using var httpClient = app.CreateHttpClient("api");
+        await WaitForApiReadinessAsync(httpClient);
         using var auditRequest = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Post,
             "/api/platform/auth/audit",
@@ -622,4 +639,34 @@ public class PlatformAuthenticationIntegrationTests
         },
         ChangedBy = "integration-test"
     };
+
+    private static async Task WaitForApiReadinessAsync(HttpClient httpClient, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(httpClient);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
+
+        while (!timeoutCts.IsCancellationRequested)
+        {
+            try
+            {
+                using var readinessResponse = await httpClient.GetAsync("/health/ready", timeoutCts.Token);
+                if (readinessResponse.StatusCode == HttpStatusCode.OK)
+                {
+                    return;
+                }
+            }
+            catch (HttpRequestException) when (!timeoutCts.IsCancellationRequested)
+            {
+            }
+            catch (TaskCanceledException) when (!timeoutCts.IsCancellationRequested)
+            {
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(200), timeoutCts.Token);
+        }
+
+        throw new TimeoutException("The API did not become ready within the expected time for the authentication integration tests.");
+    }
 }
