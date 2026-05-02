@@ -1,5 +1,5 @@
----
-description: 'Standardize iterative work documentation under `./docs/00x-work/` so each increment has requirements, a technical specification, and a delivery plan.'
+﻿---
+description: 'Standardize iterative work documentation under `./docs/00x-work/` so each increment has requirements, a technical specification, and one or more numbered plan files under a plans subfolder.'
 applyTo: 'docs/**/*.md'
 ---
 
@@ -30,11 +30,14 @@ These rules apply when adding or updating documentation for a unit of work. They
 - You MUST include a `requirements.md` in each `./docs/00x-work/` folder.
 - You MUST ensure each work package `requirements.md` aligns with and links to `../business-requirements.md`.
 - You MUST produce a technical specification from the requirements and store it as `technical-specification.md` in the same `./docs/00x-work/` folder.
-- You MUST create a delivery plan based on both the requirements and technical specification and store it as `delivery-plan.md` in the same `./docs/00x-work/` folder.
+- You MUST create a `plans/` subfolder inside each `./docs/00x-work/` folder when that work package needs one or more plans.
+- You MUST create the initial delivery plan based on both the requirements and technical specification and store it as `plans/001-delivery-plan.md` in the same work-package folder.
+- You MUST store any additional work-package plan documents in that same `plans/` subfolder and name them with the next zero-padded sequence prefix (for example `plans/002-some-refactor-plan.md`).
 - Work package `requirements.md` documents MUST remain implementation-agnostic.
   - Refer to a data store for configuration rather than naming SQL Server directly in requirements-level documents.
 - You MUST keep the `00x` number monotonically increasing (do not reuse a prior number for a different work item).
-- You MUST keep each work item's documentation self-contained within its `./docs/00x-work/` folder.
+- You MUST keep each work item's documentation self-contained within its `./docs/00x-work/` folder and its `plans/` subfolder.
+- You MUST update the relevant documentation under `./docs/wiki/` before marking any numbered plan complete when the implemented behavior, architecture, API surface, runtime behavior, operator workflow, local development guidance, or testing approach has changed.
 - When asked to review a work package, you MUST create the review report as a physical markdown file within that work package, not only as chat output.
 - When creating a delivery plan from refactoring advice, you MUST scope the plan to that refactor objective rather than to existing work-package docs unless explicitly instructed to reuse them.
 
@@ -47,18 +50,21 @@ These rules apply when adding or updating documentation for a unit of work. They
 ### MUST NOT
 
 - You MUST NOT store requirements/spec/plan for a unit of work outside its `./docs/00x-work/` folder.
+- You MUST NOT store work-package plan files at the root of a `./docs/00x-work/` folder once the `plans/` subfolder convention applies.
 - You MUST NOT combine multiple unrelated units of work into a single `00x-work` folder.
 - You MUST NOT place project-level business requirements inside a `./docs/00x-work/` folder.
 - You MUST NOT place project-level systems analysis inside a `./docs/00x-work/` folder.
 
 ## Output and Validation (optional)
 
-- Expected artifacts: project-level `./docs/business-requirements.md` and `./docs/systems-analysis.md` plus one or more `./docs/00x-work/` folders containing `requirements.md`, `technical-specification.md`, and `delivery-plan.md`.
+- Expected artifacts: project-level `./docs/business-requirements.md` and `./docs/systems-analysis.md` plus one or more `./docs/00x-work/` folders containing `requirements.md`, `technical-specification.md`, and one or more numbered plan files under `plans/`.
 - Validate success by confirming that:
   - `./docs/business-requirements.md` exists at the project level.
   - `./docs/systems-analysis.md` exists at the project level before any new `./docs/00x-work/` packages are created.
   - each `./docs/00x-work/requirements.md` file links to `../business-requirements.md` and aligns with the project-level requirements.
   - each `./docs/00x-work/` folder exists, is correctly numbered/named, and contains the required documents.
+  - each work-package `plans/` subfolder contains numbered plan files in the intended sequence starting with `001-delivery-plan.md`.
+  - any completed plan that changed the implemented solution also updated the affected `./docs/wiki/` pages and kept their links working.
 
 ## Notes (optional)
 

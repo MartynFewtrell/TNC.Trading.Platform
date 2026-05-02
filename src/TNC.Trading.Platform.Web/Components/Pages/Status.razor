@@ -1,6 +1,7 @@
-@page "/"
-@page "/status"
+﻿@page "/status"
+@attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Viewer)]
 @inject PlatformApiClient PlatformApiClient
+@inject PlatformOperatorContextAccessor OperatorContextAccessor
 
 <PageTitle>Platform status</PageTitle>
 
@@ -68,9 +69,12 @@ else
             <p class="warning" role="alert" data-testid="auth-degraded-warning">Auth-dependent actions are blocked until the platform can restore an IG demo session.</p>
         }
 
-        <button data-testid="manual-retry-button" @onclick="TriggerManualRetryAsync" disabled="@(!status.RetryState.ManualRetryAvailable || manualRetryInProgress)">
-            @(manualRetryInProgress ? "Retrying..." : "Trigger manual retry")
-        </button>
+        @if (operatorContext?.IsOperator == true)
+        {
+            <button data-testid="manual-retry-button" @onclick="TriggerManualRetryAsync" disabled="@(!status.RetryState.ManualRetryAvailable || manualRetryInProgress)">
+                @(manualRetryInProgress ? "Retrying..." : "Trigger manual retry")
+            </button>
+        }
 
         @if (!string.IsNullOrWhiteSpace(manualRetryMessage))
         {
@@ -112,12 +116,14 @@ else
 @code {
     private PlatformStatusViewModel? status;
     private PlatformEventsViewModel? events;
+    private PlatformOperatorContext? operatorContext;
     private bool manualRetryInProgress;
     private string? loadError;
     private string? manualRetryMessage;
 
     protected override async Task OnInitializedAsync()
     {
+        operatorContext = await OperatorContextAccessor.GetCurrentAsync();
         await LoadAsync();
     }
 

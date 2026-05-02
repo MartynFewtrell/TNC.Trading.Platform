@@ -1,15 +1,15 @@
-# Delivery Plan Template
+﻿# Delivery Plan Template
 
-> Use this template to plan *when* and *in what increments* the technical specification will be delivered. Each work item should reference relevant `FRx/NFx/SRx/...` and the sections in `technical-specification.md` that implement them.
+> Use this template to plan *when* and *in what increments* the technical specification will be delivered. Store the initial delivery plan as `plans/001-delivery-plan.md`. Each work item should reference relevant `FRx/NFx/SRx/...` and the sections in `../technical-specification.md` that implement them.
 
 ## Summary
 
-- **Source**: See `requirements.md` for canonical work metadata (work item, owner, dates, links) and scope. See `../business-requirements.md` for project-level business context.
+- **Source**: See `../requirements.md` for canonical work metadata (work item, owner, dates, links) and scope. See `../../business-requirements.md` for project-level business context.
 - **Status**: <draft|review|approved|in-progress|done>
 - **Inputs**:
-  - `../business-requirements.md`
-  - `requirements.md`
-  - `technical-specification.md`
+  - `../../business-requirements.md`
+  - `../requirements.md`
+  - `../technical-specification.md`
 
 ## Description of work
 
@@ -54,6 +54,7 @@ The final plan may include one or more work items.
     - [ ] Step 2: [Description]
     - [ ] Step N: [Description]
   - [ ] Task N: [Detailed explanation...]
+  - [ ] Relevant `docs/wiki/` pages updated to reflect the implemented changes
   - [ ] Build and test validation
   
   - **Files**:
@@ -79,7 +80,8 @@ Copy the **Work Item 1 details** section for each additional work item.
 - [ ] All referenced `FRx` requirements are implemented and validated.
 - [ ] All referenced `NFx` requirements have measurements or checks.
 - [ ] All referenced `SRx` security requirements are implemented and validated.
-- [ ] Docs updated under `./docs/00x-work/`.
+- [ ] Relevant `docs/wiki/` pages are updated to reflect the delivered implementation.
+- [ ] Affected wiki links resolve after documentation updates.
 - [ ] Rollback/backout plan documented for each work item.
 
 ## Notes

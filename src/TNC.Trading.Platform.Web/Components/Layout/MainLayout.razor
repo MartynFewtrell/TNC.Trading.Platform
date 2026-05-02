@@ -1,10 +1,31 @@
-@inherits LayoutComponentBase
+﻿@inherits LayoutComponentBase
 
 <div class="shell">
     <nav class="sidebar">
-        <div class="brand">TNC Trading Platform</div>
-        <NavLink href="/status" Match="NavLinkMatch.All">Status</NavLink>
-        <NavLink href="/configuration">Configuration</NavLink>
+        <div class="brand"><a href="/">TNC Trading Platform</a></div>
+        <NavLink href="/" Match="NavLinkMatch.All">Home</NavLink>
+
+        <AuthorizeView Roles="Viewer,Operator,Administrator">
+            <NavLink href="/status">Status</NavLink>
+        </AuthorizeView>
+
+        <AuthorizeView Roles="Operator,Administrator">
+            <NavLink href="/configuration">Configuration</NavLink>
+        </AuthorizeView>
+
+        <AuthorizeView Roles="Administrator">
+            <NavLink href="/administration/authentication">Authentication administration</NavLink>
+        </AuthorizeView>
+
+        <AuthorizeView>
+            <Authorized Context="authenticationState">
+                <div class="brand">@((authenticationState.User.FindFirst("name")?.Value ?? authenticationState.User.FindFirst("preferred_username")?.Value ?? authenticationState.User.Identity?.Name) ?? "Operator")</div>
+                <a href="/authentication/sign-out" data-enhance-nav="false">Sign out</a>
+            </Authorized>
+            <NotAuthorized>
+                <a href="/authentication/sign-in?returnUrl=%2F" data-enhance-nav="false">Sign in</a>
+            </NotAuthorized>
+        </AuthorizeView>
     </nav>
 
     <main class="content">

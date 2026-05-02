@@ -1,4 +1,4 @@
----
+﻿---
 agent: 'agent'
 description: 'Interactive requirements-document generator that asks one question at a time to produce a new `requirements.md` using the repo requirements template.'
 name: generate-requirements
@@ -17,7 +17,7 @@ The output MUST follow `.github/templates/requirements.template.md`.
 ## When to use
 
 - You are starting a new unit of work and need a clear, reviewable set of `FRx`/`NFx`/`SRx` requirements.
-- You are documenting an existing idea so it can be implemented via `technical-specification.md` and delivered via `delivery-plan.md`.
+- You are documenting an existing idea so it can be implemented via `technical-specification.md` and delivered via numbered plan files under `plans/`, starting with `plans/001-delivery-plan.md`.
 
 ## Inputs
 
@@ -43,13 +43,13 @@ The output MUST follow `.github/templates/requirements.template.md`.
 - MUST: Follow `.github/instructions/work-packages.instructions.md` conventions:
   - `requirements.md` belongs under a dedicated `./docs/00x-work/` folder for the unit of work.
   - The `00x` prefix is zero-padded and monotonically increasing.
-  - The work item docs set is `requirements.md`, `technical-specification.md`, `delivery-plan.md` in the same folder.
+  - The work item keeps `requirements.md` and `technical-specification.md` at the work-package root and stores numbered plan files under `plans/`, starting with `plans/001-delivery-plan.md`.
 - MUST: If `./docs/business-requirements.md` is provided (or exists in the repo), ensure the work package requirements align with it and include a link to it (typically `../business-requirements.md`).
 - MUST: Ask only one question at a time.
 - MUST: For each question, provide numbered suggested answers and include `Other: <free text>`.
 - MUST: Keep a single evolving draft of `requirements.md` visible after each user answer.
 - MUST: Use this stage to resolve ambiguity early.
-  - Prefer asking clarifying questions in this prompt rather than deferring uncertainty into `technical-specification.md` or `delivery-plan.md`.
+  - Prefer asking clarifying questions in this prompt rather than deferring uncertainty into `technical-specification.md` or plan files under `plans/`.
 - MUST NOT: Invent business details, requirements, measures, stakeholders, or constraints that the user has not provided.
 - MUST NOT: Leave placeholders in the final output.
 - SHOULD: Prefer reasonable defaults when safe (for example: `Status: draft`, `Date: today`, standard links table).

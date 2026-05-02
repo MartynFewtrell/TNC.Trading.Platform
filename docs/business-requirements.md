@@ -1,4 +1,4 @@
-# Business Requirements
+﻿# Business Requirements
 
 This document captures the business context and high-level requirements for the Algorithmic Trading Platform project. It describes what should be built and why, and provides the foundation for systems analysis and work packages under `./docs/00x-work/`.
 
@@ -11,7 +11,7 @@ This document captures the business context and high-level requirements for the 
 - **Status**: draft
 - **Outputs**:
   - `./docs/systems-analysis.md`
-  - Work packages under `./docs/00x-work/` with `requirements.md`, `technical-specification.md`, and `delivery-plan.md`
+  - Work packages under `./docs/00x-work/` with `requirements.md`, `technical-specification.md`, and numbered plan files under `plans/`
 
 ### 1.1 Links
 

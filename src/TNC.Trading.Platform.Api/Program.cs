@@ -1,6 +1,7 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Microsoft.AspNetCore.OpenApi;
 using Scalar.AspNetCore;
+using TNC.Trading.Platform.Api.Authentication;
 using TNC.Trading.Platform.Api.Features.Platform;
 using TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration;
 using TNC.Trading.Platform.Application.Services;
@@ -11,6 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 builder.AddServiceDefaults();
+builder.AddPlatformApiAuthentication();
 builder.Services.AddDataProtection();
 builder.Services.AddSingleton<TimeProvider>(_ => PlatformTimeProviderFactory.Create(builder.Configuration));
 builder.Services.AddPlatformApplication();
@@ -51,7 +53,20 @@ app.Use(async (context, next) =>
     });
 
     await next();
+
+    if (context.Request.Path.StartsWithSegments("/api/platform", StringComparison.Ordinal)
+        && (context.Response.StatusCode == StatusCodes.Status401Unauthorized
+            || context.Response.StatusCode == StatusCodes.Status403Forbidden))
+    {
+        app.Logger.LogWarning(
+            "Protected API request denied with status code {StatusCode} for path {Path}",
+            context.Response.StatusCode,
+            context.Request.Path.Value);
+    }
 });
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapPlatformEndpoints();
 

@@ -1,6 +1,6 @@
-# Requirements Template
+﻿# Requirements Template
 
-> Use this template to capture *what* needs to be delivered. The output of this document is a set of `FRx`, `NFx`, `SRx` (and optional `*Rx`) requirements used by `technical-specification.md` and `delivery-plan.md`.
+> Use this template to capture *what* needs to be delivered. The output of this document is a set of `FRx`, `NFx`, `SRx` (and optional `*Rx`) requirements used by `technical-specification.md` and numbered plan files under `plans/`, starting with `plans/001-delivery-plan.md`.
 
 ## 1. Summary
 
@@ -12,7 +12,7 @@
 - **Status**: <draft|review|approved>
 - **Outputs**:
   - `technical-specification.md`
-  - `delivery-plan.md`
+  - `plans/001-delivery-plan.md`
 
 ### 1.1 Links
 
@@ -21,7 +21,7 @@
 | Business requirements | `../business-requirements.md` |
 | Requirements | `requirements.md` |
 | Technical specification | `technical-specification.md` |
-| Delivery plan | `delivery-plan.md` |
+| Initial delivery plan | `plans/001-delivery-plan.md` |
 
 ## 2. Context
 

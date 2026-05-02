@@ -1,4 +1,4 @@
----
+﻿---
 description: 'Standardizes how Markdown documentation is authored, structured, and maintained under `./docs/` so it stays readable, navigable, and consistent over time.'
 applyTo: 'docs/**/*.md'
 ---
@@ -33,6 +33,8 @@ Applies to: `docs/**/*.md`
 - When linking to other repo files, prefer relative links and use forward slashes (`/`) in link paths.
 - Provide meaningful alt text for images using Markdown image syntax (`![alt text](path)`).
 - When you move or rename documentation files, update inbound and outbound links so navigation remains correct.
+- When completed plan work changes the implemented solution, update the relevant pages under `./docs/wiki/` before the plan is considered complete.
+- When `./docs/wiki/` pages are updated, ensure the affected navigation and cross-links continue to resolve.
 
 ### SHOULD
 

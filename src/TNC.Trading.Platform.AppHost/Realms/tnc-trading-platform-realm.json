@@ -1,0 +1,198 @@
+﻿{
+  "realm": "tnc-trading-platform",
+  "enabled": true,
+  "displayName": "TNC Trading Platform",
+  "roles": {
+    "realm": [
+      {
+        "name": "Administrator",
+        "description": "Full protected platform access"
+      },
+      {
+        "name": "Operator",
+        "description": "Operational platform access"
+      },
+      {
+        "name": "Viewer",
+        "description": "Read-only platform access"
+      }
+    ]
+  },
+  "clientScopes": [
+    {
+      "name": "platform.viewer",
+      "protocol": "openid-connect"
+    },
+    {
+      "name": "platform.operator",
+      "protocol": "openid-connect"
+    },
+    {
+      "name": "platform.admin",
+      "protocol": "openid-connect"
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "tnc-trading-platform-api",
+      "name": "TNC Trading Platform API",
+      "protocol": "openid-connect",
+      "bearerOnly": true,
+      "enabled": true
+    },
+    {
+      "clientId": "tnc-trading-platform-web",
+      "name": "TNC Trading Platform Web",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "enabled": true,
+      "redirectUris": [
+        "http://localhost:5281/signin-oidc",
+        "https://localhost:7281/signin-oidc",
+        "http://localhost:5281/signout-callback-oidc",
+        "https://localhost:7281/signout-callback-oidc"
+      ],
+      "webOrigins": [
+        "http://localhost:5281",
+        "https://localhost:7281"
+      ],
+      "defaultClientScopes": [
+        "platform.viewer"
+      ],
+      "optionalClientScopes": [
+        "platform.operator",
+        "platform.admin"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "platform-name-claim",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-full-name-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "platform-preferred-username-claim",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String",
+            "user.attribute": "username"
+          }
+        },
+        {
+          "name": "platform-role-claim",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "role",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "platform-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "tnc-trading-platform-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "local-admin",
+      "enabled": true,
+      "email": "local-admin@local.test",
+      "emailVerified": true,
+      "firstName": "Local",
+      "lastName": "Administrator",
+      "realmRoles": [
+        "Administrator"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "LocalAuth!123",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "local-operator",
+      "enabled": true,
+      "email": "local-operator@local.test",
+      "emailVerified": true,
+      "firstName": "Local",
+      "lastName": "Operator",
+      "realmRoles": [
+        "Operator"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "LocalAuth!123",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "local-viewer",
+      "enabled": true,
+      "email": "local-viewer@local.test",
+      "emailVerified": true,
+      "firstName": "Local",
+      "lastName": "Viewer",
+      "realmRoles": [
+        "Viewer"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "LocalAuth!123",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "local-norole",
+      "enabled": true,
+      "email": "local-norole@local.test",
+      "emailVerified": true,
+      "firstName": "Local",
+      "lastName": "No Role",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "LocalAuth!123",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}
