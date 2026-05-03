@@ -6,6 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 builder.AddPlatformWebAuthentication();
+builder.AddPlatformWebUi();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddHttpClient<PlatformApiClient>(client =>
@@ -29,6 +30,19 @@ app.UseHttpsRedirection();
 app.UseAntiforgery();
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.Use(async (httpContext, next) =>
+{
+    if (HttpMethods.IsGet(httpContext.Request.Method)
+        && string.Equals(httpContext.Request.Path, "/", StringComparison.Ordinal)
+        && httpContext.User.Identity?.IsAuthenticated != true)
+    {
+        httpContext.Response.Redirect("/authentication/sign-in?returnUrl=%2F&prompt=login");
+        return;
+    }
+
+    await next();
+});
 
 app.MapStaticAssets();
 app.MapPlatformAuthenticationEndpoints();

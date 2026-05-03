@@ -49,20 +49,20 @@ The final plan includes five incremental work items.
 ### Work Item 1 details
 
 - [ ] Work Item 1: Establish UI foundation
-  - [ ] Build and test baseline established
-  - [ ] Task 1: Add shared UI infrastructure and theme registration
-    - [ ] Step 1: Register Radzen UI services, assets, and shared startup wiring while keeping `Program.cs` focused on orchestration
-    - [ ] Step 2: Add the shared theme state and browser persistence support with dark mode as the default when no preference exists
-    - [ ] Step 3: Add shared CSS tokens and theme-aware styling aligned to the Radzen Software family
-  - [ ] Task 2: Refactor the signed-in shell into reusable layout primitives
-    - [ ] Step 1: Refresh `MainLayout.razor` with the compact utility-style header and preserved left navigation
-    - [ ] Step 2: Add reusable header, environment badge, navigation item, and theme toggle components or equivalents
-    - [ ] Step 3: Implement session-default expanded navigation with desktop/laptop collapse support that preserves icons
+  - [x] Build and test baseline established
+  - [x] Task 1: Add shared UI infrastructure and theme registration
+    - [x] Step 1: Register Radzen UI services, assets, and shared startup wiring while keeping `Program.cs` focused on orchestration
+    - [x] Step 2: Add the shared theme state and browser persistence support with dark mode as the default when no preference exists
+    - [x] Step 3: Add shared CSS tokens and theme-aware styling aligned to the Radzen Software family
+  - [x] Task 2: Refactor the signed-in shell into reusable layout primitives
+    - [x] Step 1: Refresh `MainLayout.razor` with the compact utility-style header and preserved left navigation
+    - [x] Step 2: Add reusable header, environment badge, navigation item, and theme toggle components or equivalents
+    - [x] Step 3: Implement session-default expanded navigation with desktop/laptop collapse support that preserves icons
   - [ ] Task 3: Validate shared shell behavior and regression boundaries
-    - [ ] Step 1: Verify routes, page names, navigation order, and auth protection remain unchanged
+    - [x] Step 1: Verify routes, page names, navigation order, and auth protection remain unchanged
     - [ ] Step 2: Verify dark-default rendering, signed-in header state, and narrower-width shell usability
-  - [ ] Relevant `docs/wiki/` pages updated to reflect the implemented changes
-  - [ ] Build and test validation
+  - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
+  - [x] Build and test validation
 
   - **Files**:
     - `src/TNC.Trading.Platform.Web/Program.cs`: Register shared UI infrastructure and keep startup orchestration concise
@@ -75,19 +75,19 @@ The final plan includes five incremental work items.
 ### Work Item 2 details
 
 - [ ] Work Item 2: Refresh signed-out and overview surfaces
-  - [ ] Build and test baseline established
-  - [ ] Task 1: Refresh signed-out and authentication-related presentation
-    - [ ] Step 1: Apply the refined dark-default visual language to sign-in and access-related surfaces without the signed-in shell
-    - [ ] Step 2: Implement the narrower hero-style single-column layout and sign-in-focused presentation
-  - [ ] Task 2: Refresh the home overview page
-    - [ ] Step 1: Reframe the home page as the concise operator overview without changing its route or identity
-    - [ ] Step 2: Add the combined operational status summary card
-    - [ ] Step 3: Add compact, non-clickable alert and notable-event summaries plus reusable recent activity content when available
+  - [x] Build and test baseline established
+  - [x] Task 1: Refresh signed-out and authentication-related presentation
+    - [x] Step 1: Apply the refined dark-default visual language to sign-in and access-related surfaces without the signed-in shell
+    - [x] Step 2: Implement the narrower hero-style single-column layout and sign-in-focused presentation
+  - [x] Task 2: Refresh the home overview page
+    - [x] Step 1: Reframe the home page as the concise operator overview without changing its route or identity
+    - [x] Step 2: Add the combined operational status summary card
+    - [x] Step 3: Add compact, non-clickable alert and notable-event summaries plus reusable recent activity content when available
   - [ ] Task 3: Validate overview and auth presentation states
     - [ ] Step 1: Verify signed-out and signed-in header/auth states behave as intended
     - [ ] Step 2: Verify home overview content hierarchy and narrower-width usability
-  - [ ] Relevant `docs/wiki/` pages updated to reflect the implemented changes
-  - [ ] Build and test validation
+  - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
+  - [x] Build and test validation
 
   - **Files**:
     - `src/TNC.Trading.Platform.Web/Components/Pages/Home.razor`: Refresh home overview and signed-out presentation
@@ -100,20 +100,20 @@ The final plan includes five incremental work items.
 ### Work Item 3 details
 
 - [ ] Work Item 3: Refresh status and configuration flows
-  - [ ] Build and test baseline established
-  - [ ] Task 1: Refresh the status page into grouped accordion sections
-    - [ ] Step 1: Reorganize status content into a small number of readable sections or panels
-    - [ ] Step 2: Default lower-priority sections to collapsed while allowing multiple sections to remain open
-    - [ ] Step 3: Keep collapsed headers title-only and preserve the page’s current route and purpose
-  - [ ] Task 2: Refresh the configuration page into grouped accordion sections
-    - [ ] Step 1: Reorganize configuration content into a small number of editable sections aligned visually with status
-    - [ ] Step 2: Preserve in-progress edits when switching between configuration sections
-    - [ ] Step 3: Add the secondary in-context theme switcher with immediate apply behavior
-  - [ ] Task 3: Consolidate reusable page patterns and guardrails
-    - [ ] Step 1: Extract duplicated cards, sections, badges, empty/loading/error states, and related helpers where worthwhile
-    - [ ] Step 2: Verify write-only secret handling and protected operator workflows remain unchanged
-  - [ ] Relevant `docs/wiki/` pages updated to reflect the implemented changes
-  - [ ] Build and test validation
+  - [x] Build and test baseline established
+  - [x] Task 1: Refresh the status page into grouped accordion sections
+    - [x] Step 1: Reorganize status content into a small number of readable sections or panels
+    - [x] Step 2: Default lower-priority sections to collapsed while allowing multiple sections to remain open
+    - [x] Step 3: Keep collapsed headers title-only and preserve the page’s current route and purpose
+  - [x] Task 2: Refresh the configuration page into grouped accordion sections
+    - [x] Step 1: Reorganize configuration content into a small number of editable sections aligned visually with status
+    - [x] Step 2: Preserve in-progress edits when switching between configuration sections
+    - [x] Step 3: Add the secondary in-context theme switcher with immediate apply behavior
+  - [x] Task 3: Consolidate reusable page patterns and guardrails
+    - [x] Step 1: Extract duplicated cards, sections, badges, empty/loading/error states, and related helpers where worthwhile
+    - [x] Step 2: Verify write-only secret handling and protected operator workflows remain unchanged
+  - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
+  - [x] Build and test validation
 
   - **Files**:
     - `src/TNC.Trading.Platform.Web/Components/Pages/Status.razor`: Refresh the status surface with accordion-driven grouping
@@ -126,17 +126,17 @@ The final plan includes five incremental work items.
 ### Work Item 4 details
 
 - [ ] Work Item 4: Apply AppHost cleanup and validation path refinements
-  - [ ] Build and test baseline established
-  - [ ] Task 1: Refactor AppHost composition structure
-    - [ ] Step 1: Simplify resource and project wiring for readability and maintainability
-    - [ ] Step 2: Extract helper structure only where it improves clarity without changing supported resources or behavior
+  - [x] Build and test baseline established
+  - [x] Task 1: Refactor AppHost composition structure
+    - [x] Step 1: Simplify resource and project wiring for readability and maintainability
+    - [x] Step 2: Extract helper structure only where it improves clarity without changing supported resources or behavior
   - [ ] Task 2: Validate the targeted local/testing path
     - [ ] Step 1: Confirm the AppHost-backed path still relies only on the existing SQL Server and Keycloak resources
     - [ ] Step 2: Confirm no additional operator or local-development steps are introduced
-  - [ ] Task 3: Align local-development documentation if affected
-    - [ ] Step 1: Update the relevant `docs/wiki/` pages when AppHost structure or validation guidance changes
-  - [ ] Relevant `docs/wiki/` pages updated to reflect the implemented changes
-  - [ ] Build and test validation
+  - [x] Task 3: Align local-development documentation if affected
+    - [x] Step 1: Update the relevant `docs/wiki/` pages when AppHost structure or validation guidance changes
+  - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
+  - [x] Build and test validation
 
   - **Files**:
     - `src/TNC.Trading.Platform.AppHost/AppHost.cs`: Apply the broad but behavior-preserving composition cleanup
@@ -148,18 +148,18 @@ The final plan includes five incremental work items.
 ### Work Item 5 details
 
 - [ ] Work Item 5: Complete validation and documentation
-  - [ ] Build and test baseline established
+  - [x] Build and test baseline established
   - [ ] Task 1: Execute focused regression and presentation validation
     - [ ] Step 1: Re-run the full build and test suite
     - [ ] Step 2: Verify shared shell, prioritized pages, auth states, theme switching, remembered preference, and narrower-width usability
     - [ ] Step 3: Verify the targeted AppHost-supported local/testing path remains operable with SQL Server and Keycloak only
   - [ ] Task 2: Complete documentation and link validation
-    - [ ] Step 1: Update affected `docs/wiki/` pages for behavior, operator guidance, local development, and testing approach changes
+    - [x] Step 1: Update affected `docs/wiki/` pages for behavior, operator guidance, local development, and testing approach changes
     - [ ] Step 2: Verify affected wiki navigation and cross-links still resolve after the updates
   - [ ] Task 3: Close out the work package
     - [ ] Step 1: Confirm traceability coverage across implemented work items and validations
     - [ ] Step 2: Prepare the work package for review with rollback guidance preserved per increment
-  - [ ] Relevant `docs/wiki/` pages updated to reflect the implemented changes
+  - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
   - [ ] Build and test validation
 
   - **Files**:

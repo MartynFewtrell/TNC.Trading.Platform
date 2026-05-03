@@ -20,7 +20,7 @@ internal sealed class PlatformNavigationAccessCoordinator(
         var operatorContext = await operatorContextAccessor.GetCurrentAsync();
         if (!operatorContext.IsAuthenticated)
         {
-            NavigateToSignIn(returnUrl, requiredScopes, null);
+            NavigateToSignIn(returnUrl, requiredScopes, null, forcePrompt: true);
             return false;
         }
 
@@ -41,10 +41,15 @@ internal sealed class PlatformNavigationAccessCoordinator(
         }
     }
 
-    private void NavigateToSignIn(string returnUrl, IReadOnlyCollection<string> requiredScopes, string? userName)
+    private void NavigateToSignIn(string returnUrl, IReadOnlyCollection<string> requiredScopes, string? userName, bool forcePrompt = false)
     {
         var scope = string.Join(' ', requiredScopes.Distinct(StringComparer.Ordinal));
         var destination = $"/authentication/sign-in?returnUrl={Uri.EscapeDataString(returnUrl)}&scope={Uri.EscapeDataString(scope)}";
+        if (forcePrompt)
+        {
+            destination += "&prompt=login";
+        }
+
         if (string.Equals(authenticationOptions.Value.Provider, PlatformAuthenticationDefaults.Providers.Test, StringComparison.Ordinal)
             && authenticationOptions.Value.Test.EnableInteractiveSignIn
             && !string.IsNullOrWhiteSpace(userName))

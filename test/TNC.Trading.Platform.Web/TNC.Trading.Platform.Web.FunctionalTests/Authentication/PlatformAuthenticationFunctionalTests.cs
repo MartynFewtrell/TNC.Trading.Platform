@@ -13,12 +13,12 @@ public class PlatformAuthenticationFunctionalTests
 
     /// <summary>
     /// Trace: FR1, FR2, NF5, OR2.
-    /// Verifies: the landing page remains the public entry surface when the new auth model is enabled.
-    /// Expected: the root page returns HTTP 200 OK and includes the operator sign-in entry text.
-    /// Why: the work package promises a deliberate public boundary with a clear path into authentication.
+    /// Verifies: the app entry route immediately challenges anonymous users into the sign-in flow.
+    /// Expected: requesting `/` returns the sign-in page content in the synthetic runtime instead of an anonymous landing surface.
+    /// Why: the application must always prompt for sign-in when it is first opened.
     /// </summary>
     [Fact]
-    public async Task LandingPage_ShouldReturnPublicEntryContent_WhenAnonymousUserRequestsRoot()
+    public async Task LandingPage_ShouldRedirectToSignIn_WhenAnonymousUserRequestsRoot()
     {
         await using var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
@@ -29,8 +29,8 @@ public class PlatformAuthenticationFunctionalTests
         using var httpClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: true);
         var html = await httpClient.GetStringAsync("/");
 
-        Assert.Contains("TNC Trading Platform", html, StringComparison.Ordinal);
-        Assert.Contains("Sign in", html, StringComparison.Ordinal);
+        Assert.Contains("Test sign-in", html, StringComparison.Ordinal);
+        Assert.Contains("local-viewer", html, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -82,12 +82,12 @@ public class PlatformAuthenticationFunctionalTests
 
     /// <summary>
     /// Trace: FR1, TR3, NF5.
-    /// Verifies: the sign-out endpoint ends the current platform session and redirects the browser to the public landing page.
-    /// Expected: after signing in, requesting `/authentication/sign-out` returns landing-page content that includes the sign-in entry text.
-    /// Why: the sign-out flow must clearly return the operator to the signed-out public entry surface.
+    /// Verifies: the sign-out endpoint ends the current platform session and returns the browser to the sign-in-first entry flow.
+    /// Expected: after signing in, requesting `/authentication/sign-out` returns the sign-in page content in the synthetic runtime.
+    /// Why: the sign-out flow must immediately return the operator to a fresh authentication prompt.
     /// </summary>
     [Fact]
-    public async Task SignOut_ShouldReturnLandingPageContent_WhenSignedInOperatorEndsPlatformSession()
+    public async Task SignOut_ShouldReturnSignInPage_WhenSignedInOperatorEndsPlatformSession()
     {
         await using var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
@@ -101,8 +101,8 @@ public class PlatformAuthenticationFunctionalTests
 
         var html = await httpClient.GetStringAsync("/authentication/sign-out");
 
-        Assert.Contains("TNC Trading Platform", html, StringComparison.Ordinal);
-        Assert.Contains("Sign in", html, StringComparison.Ordinal);
+        Assert.Contains("Test sign-in", html, StringComparison.Ordinal);
+        Assert.Contains("local-viewer", html, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -226,7 +226,7 @@ public class PlatformAuthenticationFunctionalTests
         Assert.True(
             response.StatusCode is HttpStatusCode.RedirectKeepVerb or HttpStatusCode.Found,
             $"Expected a redirect status code but found {(int)response.StatusCode} ({response.StatusCode}).");
-        Assert.Equal("/", response.Headers.Location?.OriginalString);
+        Assert.Equal("/?platformPrompted=1", response.Headers.Location?.OriginalString);
     }
 
     /// <summary>

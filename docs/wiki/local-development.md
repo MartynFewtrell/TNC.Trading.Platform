@@ -85,6 +85,15 @@ When the application is running, AppHost exposes links for:
 
 The operator UI entry point is `/` on the web application.
 
+## Current operator UI presentation
+
+When the Web UI starts successfully, expect these presentation behaviors:
+
+- the signed-in operator experience uses a compact top header plus collapsible left navigation
+- the UI starts in dark theme until a browser-specific theme preference is stored
+- the home page acts as an operator overview after sign-in
+- the status and configuration pages use grouped accordion sections
+
 ## Validate
 
 ### Automated validation
@@ -93,6 +102,12 @@ Run the test suite from the repository root:
 
 ```powershell
 dotnet test
+```
+
+If a local machine hits intermittent MSBuild child-node exits during repository-wide test execution, rerun the suite in serialized mode:
+
+```powershell
+dotnet test -m:1
 ```
 
 The auth work package now also includes a dedicated Web unit test project for policy registration and operator-context mapping. It is included in the repository-wide `dotnet test` run.
@@ -130,6 +145,9 @@ Expected behavior:
 7. requesting `/status`, `/configuration`, or `/administration/authentication` while signed out redirects the operator to `/authentication/sign-in` with the intended `returnUrl` preserved.
 8. after sign-out, requesting a protected route returns the operator to the sign-in entry point before protected content is available again.
 9. the recent auth events view on `/status` shows redacted operator sign-in, sign-out, denial, and token-acquisition-failure audit events after those actions are exercised.
+10. the shared header shows the signed-in operator name, a sign-out action, and an environment badge when status data is available.
+11. the shared header theme toggle and the smaller configuration-page theme toggle both apply light and dark theme changes immediately.
+12. reloading the same browser preserves the previously selected theme.
 
 ## Useful local scenarios
 

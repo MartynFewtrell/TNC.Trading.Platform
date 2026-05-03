@@ -1,3 +1,6 @@
+﻿@implements IDisposable
+@inject PlatformThemeState ThemeState
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,10 +8,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
     <link rel="stylesheet" href="app.css" />
+    <RadzenTheme Theme="@ThemeState.RadzenThemeName" />
     <HeadOutlet @rendermode="InteractiveServer" />
 </head>
 <body>
     <Routes @rendermode="InteractiveServer" />
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
+    <script src="platform-theme.js"></script>
+    <script>
+        window.platformApp?.redirectToSignInOnFirstOpen();
+    </script>
     <script src="_framework/blazor.web.js"></script>
 </body>
 </html>
+
+@code {
+    protected override void OnInitialized()
+    {
+        ThemeState.Changed += HandleThemeChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ThemeState.EnsureInitializedAsync();
+        }
+    }
+
+    public void Dispose()
+    {
+        ThemeState.Changed -= HandleThemeChanged;
+    }
+
+    private void HandleThemeChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+}

@@ -18,11 +18,43 @@ public sealed class PlatformDashboardAuthenticationE2ETests : PageTest
     /// <summary>
     /// Trace: FR1, FR5, IR1, TR3, NF2.
     /// Verifies: the Aspire dashboard starts and the AppHost-started Web UI runtime endpoint can be discovered before a seeded viewer completes one real local Keycloak sign-in journey.
-    /// Expected: after the dashboard opens successfully, the runtime-discovered Web sign-in entry point is reachable and signing in as local-viewer reaches the protected platform status page.
+    /// Expected: after the dashboard opens successfully, the runtime-discovered Web home entry point is reachable and signing in as local-viewer reaches the protected operator home page.
     /// Why: the retained smoke must prove the real AppHost plus Keycloak path without falling back to brittle launch-settings ports, and it must fail clearly if endpoint discovery or Web readiness breaks.
     /// </summary>
     [Fact]
-    public async Task OperatorUi_ShouldRenderPlatformStatus_WhenSeededViewerSignsInFromAspireDashboard()
+    public async Task OperatorUi_ShouldRenderOperatorHome_WhenSeededViewerSignsInFromAspireDashboard()
+    {
+        await using var appHostProcess = StartAppHostProcess();
+
+        var dashboardLoginUri = await WaitForDashboardLoginUriAsync(appHostProcess.Process);
+
+        await Page.GotoAsync(dashboardLoginUri.ToString(), new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+        await Expect(Page.Locator("body")).ToBeVisibleAsync(new() { Timeout = 30_000 });
+
+        var authenticationEntryUri = await appHostProcess.WaitForWebSignInUriAsync(TimeSpan.FromSeconds(60));
+        var webBaseUri = new Uri(authenticationEntryUri.GetLeftPart(UriPartial.Authority));
+
+        await Page.GotoAsync(authenticationEntryUri.ToString(), new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+
+        await Expect(Page.Locator("#username")).ToBeVisibleAsync(new() { Timeout = 60_000 });
+        await Page.Locator("#username").FillAsync("local-viewer");
+        await Page.Locator("#password").FillAsync("LocalAuth!123");
+        await Page.Locator("#kc-login").ClickAsync();
+
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Operational summary" })).ToBeVisibleAsync(new() { Timeout = 30_000 });
+        await Expect(Page).ToHaveURLAsync(
+            new Regex($"^{Regex.Escape(webBaseUri.GetLeftPart(UriPartial.Authority))}/$"),
+            new() { Timeout = 30_000 });
+    }
+
+    /// <summary>
+    /// Trace: FR1, NF2, TR3, IR1.
+    /// Verifies: signing out from the real local Keycloak-backed operator UI ends both the platform cookie session and the provider session.
+    /// Expected: after sign-out completes, a later direct navigation to `/status` prompts for Keycloak sign-in again instead of silently restoring the previous operator session.
+    /// Why: local sign-out must fail closed across browser restarts and new protected navigations rather than relying only on the platform cookie being cleared.
+    /// </summary>
+    [Fact]
+    public async Task OperatorUi_ShouldRequireSignInAgain_WhenViewerSignsOutFromAspireDashboardFlow()
     {
         await using var appHostProcess = StartAppHostProcess();
 
@@ -42,9 +74,16 @@ public sealed class PlatformDashboardAuthenticationE2ETests : PageTest
         await Page.Locator("#kc-login").ClickAsync();
 
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Platform status" })).ToBeVisibleAsync(new() { Timeout = 30_000 });
+
+        await Page.GetByRole(AriaRole.Link, new() { Name = "Sign out" }).ClickAsync();
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "TNC Trading Platform" })).ToBeVisibleAsync(new() { Timeout = 30_000 });
         await Expect(Page).ToHaveURLAsync(
-            new Regex($"^{Regex.Escape(webBaseUri.GetLeftPart(UriPartial.Authority))}/status$"),
+            new Regex($"^{Regex.Escape(webBaseUri.GetLeftPart(UriPartial.Authority))}/$"),
             new() { Timeout = 30_000 });
+
+        await Page.GotoAsync(new Uri(webBaseUri, "/status").ToString(), new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+
+        await Expect(Page.Locator("#username")).ToBeVisibleAsync(new() { Timeout = 30_000 });
     }
 
     private static AppHostProcessHandle StartAppHostProcess()

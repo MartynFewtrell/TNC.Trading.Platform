@@ -30,7 +30,7 @@ public class PlatformNavigationAccessCoordinatorTests
 
         Assert.False(allowed);
         Assert.Equal(
-            "https://localhost/authentication/sign-in?returnUrl=%2Fconfiguration&scope=platform.operator",
+            "https://localhost/authentication/sign-in?returnUrl=%2Fconfiguration&scope=platform.operator&prompt=login",
             navigationManager.LastNavigationUri);
         Assert.True(navigationManager.LastForceLoad);
     }
@@ -58,6 +58,33 @@ public class PlatformNavigationAccessCoordinatorTests
         Assert.False(allowed);
         Assert.Equal(
             "https://localhost/authentication/sign-in?returnUrl=%2Fadministration%2Fauthentication&scope=platform.admin&user=local-viewer",
+            navigationManager.LastNavigationUri);
+        Assert.True(navigationManager.LastForceLoad);
+    }
+
+    /// <summary>
+    /// Trace: FR5, NF2, TR3.
+    /// Verifies: the navigation access coordinator redirects an authenticated operator back through sign-in when the session no longer carries a delegated access token.
+    /// Expected: the method returns false and the redirect preserves the return URL, requested scope, and username for the test provider.
+    /// Why: protected Blazor routes must recover stale or partial session state through the sign-in flow instead of surfacing API 401 errors in-page.
+    /// </summary>
+    [Fact]
+    public async Task EnsureRequiredScopesAsync_ShouldRedirectToSignInWithUserHint_WhenSessionHasNoAccessToken()
+    {
+        var options = Options.Create(new PlatformAuthenticationOptions());
+        var tokenFactory = new TestAuthenticationTokenFactory(options);
+        var (principal, _) = tokenFactory.Create("local-viewer", [PlatformAuthenticationDefaults.Scopes.Viewer]);
+        var navigationManager = new TestNavigationManager();
+        var coordinator = CreateCoordinator(
+            navigationManager,
+            CreateOperatorContextAccessor(principal),
+            CreateAccessTokenProvider(accessToken: null));
+
+        var allowed = await coordinator.EnsureRequiredScopesAsync("/status", PlatformAuthenticationDefaults.Scopes.Viewer);
+
+        Assert.False(allowed);
+        Assert.Equal(
+            "https://localhost/authentication/sign-in?returnUrl=%2Fstatus&scope=platform.viewer&user=local-viewer",
             navigationManager.LastNavigationUri);
         Assert.True(navigationManager.LastForceLoad);
     }

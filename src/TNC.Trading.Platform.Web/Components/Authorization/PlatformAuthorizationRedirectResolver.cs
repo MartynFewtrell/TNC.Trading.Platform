@@ -20,7 +20,7 @@ internal static class PlatformAuthorizationRedirectResolver
         var isAuthenticated = user.Identity?.IsAuthenticated == true;
         var destination = isAuthenticated
             ? $"/authentication/access-denied?returnUrl={Uri.EscapeDataString(returnUrl)}"
-            : $"/authentication/sign-in?returnUrl={Uri.EscapeDataString(returnUrl)}";
+            : $"/authentication/sign-in?returnUrl={Uri.EscapeDataString(returnUrl)}&prompt=login";
 
         return (returnUrl, destination, isAuthenticated);
     }

@@ -27,15 +27,17 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
         ILoggerFactory loggerFactory,
         string? returnUrl,
         string? scope,
+        string? prompt,
         string? user)
     {
         var options = authenticationOptions.Value;
         var logger = loggerFactory.CreateLogger(typeof(PlatformAuthenticationEndpointRouteBuilderExtensions));
         var safeReturnUrl = NormalizeReturnUrl(returnUrl);
+        var challengeReturnUrl = CreateChallengeReturnUrl(safeReturnUrl);
 
         if (testAuthenticationSignInHandler.IsEnabled)
         {
-            return await testAuthenticationSignInHandler.SignInAsync(httpContext, authAuditClient, safeReturnUrl, scope, user);
+            return await testAuthenticationSignInHandler.SignInAsync(httpContext, authAuditClient, challengeReturnUrl, scope, user);
         }
 
         if (string.Equals(options.Provider, PlatformAuthenticationDefaults.Providers.Test, StringComparison.Ordinal))
@@ -46,7 +48,7 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
 
         var authenticationProperties = new AuthenticationProperties
         {
-            RedirectUri = safeReturnUrl
+            RedirectUri = challengeReturnUrl
         };
 
         if (!string.IsNullOrWhiteSpace(scope))
@@ -59,10 +61,16 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
             authenticationProperties.Items["login_hint"] = user;
         }
 
+        if (!string.IsNullOrWhiteSpace(prompt))
+        {
+            authenticationProperties.Items["prompt"] = prompt;
+        }
+
         logger.LogInformation(
-            "OIDC sign-in challenge started for return URL {ReturnUrl} with requested scope {Scope}",
-            safeReturnUrl,
-            scope ?? string.Join(", ", options.RequiredScopes));
+            "OIDC sign-in challenge started for return URL {ReturnUrl} with requested scope {Scope} and prompt {Prompt}",
+            challengeReturnUrl,
+            scope ?? string.Join(", ", options.RequiredScopes),
+            prompt ?? "default");
 
         return Results.Challenge(
             authenticationProperties,
@@ -75,11 +83,35 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
         PlatformAuthAuditClient authAuditClient,
         ILoggerFactory loggerFactory)
     {
+        var options = authenticationOptions.Value;
         var logger = loggerFactory.CreateLogger(typeof(PlatformAuthenticationEndpointRouteBuilderExtensions));
         await authAuditClient.RecordSignOutCompletedAsync("/authentication/sign-out", httpContext.RequestAborted);
-        await httpContext.SignOutAsync(PlatformAuthenticationDefaults.Schemes.Cookie);
-        logger.LogInformation("Platform sign-out completed.");
-        return Results.LocalRedirect(NormalizeReturnUrl(authenticationOptions.Value.SignedOutRedirectPath));
+
+        var signedOutRedirectPath = NormalizeReturnUrl(options.SignedOutRedirectPath);
+        if (string.Equals(options.Provider, PlatformAuthenticationDefaults.Providers.Test, StringComparison.Ordinal))
+        {
+            await httpContext.SignOutAsync(PlatformAuthenticationDefaults.Schemes.Cookie);
+            logger.LogInformation("Platform sign-out completed for the local test provider.");
+            return Results.LocalRedirect(signedOutRedirectPath);
+        }
+
+        var authenticationProperties = new AuthenticationProperties
+        {
+            RedirectUri = signedOutRedirectPath
+        };
+        var idToken = await httpContext.GetTokenAsync("id_token");
+        if (!string.IsNullOrWhiteSpace(idToken))
+        {
+            authenticationProperties.Items["id_token_hint"] = idToken;
+        }
+
+        logger.LogInformation("Platform sign-out completed and the OpenID Connect provider session is being ended.");
+        return Results.SignOut(
+            authenticationProperties,
+            [
+                PlatformAuthenticationDefaults.Schemes.Cookie,
+                PlatformAuthenticationDefaults.Schemes.OpenIdConnect
+            ]);
     }
 
     private static string NormalizeReturnUrl(string? returnUrl)
@@ -92,6 +124,12 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
         return returnUrl.StartsWith("/", StringComparison.Ordinal)
             ? returnUrl
             : "/";
+    }
+
+    private static string CreateChallengeReturnUrl(string returnUrl)
+    {
+        var separator = returnUrl.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+        return $"{returnUrl}{separator}platformPrompted=1";
     }
 
 }

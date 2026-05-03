@@ -133,7 +133,7 @@ public class PlatformProtectedRouteFunctionalTests
             signInResponse.StatusCode is HttpStatusCode.RedirectKeepVerb or HttpStatusCode.Found,
             $"Expected a redirect status code but found {(int)signInResponse.StatusCode} ({signInResponse.StatusCode}).");
         Assert.True(
-            signInResponse.Headers.Location?.OriginalString is "/status" or "https://localhost/status",
+            signInResponse.Headers.Location?.OriginalString is "/status?platformPrompted=1" or "https://localhost/status?platformPrompted=1",
             $"Expected a redirect to /status but found '{signInResponse.Headers.Location?.OriginalString}'.");
 
         using var response = await GetApplicationResponseAsync(httpClient, "/status");

@@ -1,4 +1,5 @@
 ﻿using Aspire.Hosting.ApplicationModel;
+using TNC.Trading.Platform.AppHost;
 
 const string keycloakRealmName = "tnc-trading-platform";
 const string keycloakAuthority = "http://localhost:8080/realms/tnc-trading-platform";
@@ -8,19 +9,8 @@ const string testSigningKey = "0123456789abcdef0123456789abcdef";
 
 var builder = DistributedApplication.CreateBuilder(args);
 
-var useSyntheticRuntimeForTests = string.Equals(
-    builder.Configuration["AppHost:UseSyntheticRuntime"],
-    bool.TrueString,
-    StringComparison.OrdinalIgnoreCase);
-var enableInteractiveTestSignIn = string.Equals(
-    builder.Configuration["Authentication:Test:EnableInteractiveSignIn"],
-    bool.TrueString,
-    StringComparison.OrdinalIgnoreCase);
-var acsEndpoint = builder.Configuration["NotificationTransports:AzureCommunicationServices:Endpoint"];
-var acsSenderAddress = builder.Configuration["NotificationTransports:AzureCommunicationServices:SenderAddress"];
-var acsConnectionString = builder.Configuration["NotificationTransports:AzureCommunicationServices:ConnectionString"];
-
-var infrastructure = ConfigureInfrastructureResources(builder, useSyntheticRuntimeForTests);
+var settings = AppHostSettings.FromConfiguration(builder.Configuration);
+var infrastructure = ConfigureInfrastructureResources(builder, settings.UseSyntheticRuntimeForTests);
 
 var api = builder.AddProject<Projects.TNC_Trading_Platform_Api>("api")
     .WithExternalHttpEndpoints()
@@ -30,7 +20,7 @@ var api = builder.AddProject<Projects.TNC_Trading_Platform_Api>("api")
         DisplayText = "Scalar UI"
     });
 
-var apiProject = ConfigureApiProject(api, infrastructure, acsEndpoint, acsSenderAddress, acsConnectionString);
+var apiProject = ConfigureApiProject(api, infrastructure, settings);
 
 var web = builder.AddProject<Projects.TNC_Trading_Platform_Web>("web")
     .WithReference(api)
@@ -38,24 +28,23 @@ var web = builder.AddProject<Projects.TNC_Trading_Platform_Web>("web")
     .WithExternalHttpEndpoints()
     .WithUrlForEndpoint("https", _ => new()
     {
-        Url = "/status",
+        Url = "/",
         DisplayText = "Operator UI"
     });
 
 var webProject = ConfigureWebProject(web);
 
-ConfigureAuthenticationEnvironment(apiProject, webProject, infrastructure.Keycloak, enableInteractiveTestSignIn);
+ConfigureAuthenticationEnvironment(apiProject, webProject, infrastructure.Keycloak, settings.EnableInteractiveTestSignIn);
 
 builder.Build().Run();
 
-static (IResourceBuilder<IResourceWithConnectionString>? PlatformDatabase, IResourceBuilder<IResourceWithEndpoints>? Mailpit, IResourceBuilder<IResourceWithEndpoints>? Keycloak)
-    ConfigureInfrastructureResources(IDistributedApplicationBuilder builder, bool useSyntheticRuntimeForTests)
+static AppHostInfrastructure ConfigureInfrastructureResources(IDistributedApplicationBuilder builder, bool useSyntheticRuntimeForTests)
 {
     ArgumentNullException.ThrowIfNull(builder);
 
     if (useSyntheticRuntimeForTests)
     {
-        return (null, null, null);
+        return new AppHostInfrastructure(null, null, null);
     }
 
     var sql = builder.AddSqlServer("sql")
@@ -77,15 +66,13 @@ static (IResourceBuilder<IResourceWithConnectionString>? PlatformDatabase, IReso
         .WithLifetime(ContainerLifetime.Persistent)
         .WithRealmImport("./Realms");
 
-    return (platformDatabase, mailpit, keycloak);
+    return new AppHostInfrastructure(platformDatabase, mailpit, keycloak);
 }
 
 static IResourceBuilder<ProjectResource> ConfigureApiProject(
     IResourceBuilder<ProjectResource> apiProject,
-    (IResourceBuilder<IResourceWithConnectionString>? PlatformDatabase, IResourceBuilder<IResourceWithEndpoints>? Mailpit, IResourceBuilder<IResourceWithEndpoints>? Keycloak) infrastructure,
-    string? acsEndpoint,
-    string? acsSenderAddress,
-    string? acsConnectionString)
+    AppHostInfrastructure infrastructure,
+    AppHostSettings settings)
 {
     ArgumentNullException.ThrowIfNull(apiProject);
 
@@ -114,22 +101,7 @@ static IResourceBuilder<ProjectResource> ConfigureApiProject(
             .WithEnvironment("NotificationTransports__Smtp__EnableSsl", bool.FalseString);
     }
 
-    if (!string.IsNullOrWhiteSpace(acsEndpoint))
-    {
-        configuredApi = configuredApi.WithEnvironment("NotificationTransports__AzureCommunicationServices__Endpoint", acsEndpoint);
-    }
-
-    if (!string.IsNullOrWhiteSpace(acsSenderAddress))
-    {
-        configuredApi = configuredApi.WithEnvironment("NotificationTransports__AzureCommunicationServices__SenderAddress", acsSenderAddress);
-    }
-
-    if (!string.IsNullOrWhiteSpace(acsConnectionString))
-    {
-        configuredApi = configuredApi.WithEnvironment("NotificationTransports__AzureCommunicationServices__ConnectionString", acsConnectionString);
-    }
-
-    return configuredApi;
+    return ApplyAcsConfiguration(configuredApi, settings);
 }
 
 static IResourceBuilder<ProjectResource> ConfigureWebProject(IResourceBuilder<ProjectResource> webProject)
@@ -192,4 +164,31 @@ static void ConfigureAuthenticationEnvironment(
     {
         _ = configuredWeb.WithEnvironment("Authentication__Test__EnableInteractiveSignIn", bool.TrueString);
     }
+}
+
+static IResourceBuilder<ProjectResource> ApplyAcsConfiguration(
+    IResourceBuilder<ProjectResource> apiProject,
+    AppHostSettings settings)
+{
+    ArgumentNullException.ThrowIfNull(apiProject);
+    ArgumentNullException.ThrowIfNull(settings);
+
+    var configuredApi = apiProject;
+
+    if (!string.IsNullOrWhiteSpace(settings.AcsEndpoint))
+    {
+        configuredApi = configuredApi.WithEnvironment("NotificationTransports__AzureCommunicationServices__Endpoint", settings.AcsEndpoint);
+    }
+
+    if (!string.IsNullOrWhiteSpace(settings.AcsSenderAddress))
+    {
+        configuredApi = configuredApi.WithEnvironment("NotificationTransports__AzureCommunicationServices__SenderAddress", settings.AcsSenderAddress);
+    }
+
+    if (!string.IsNullOrWhiteSpace(settings.AcsConnectionString))
+    {
+        configuredApi = configuredApi.WithEnvironment("NotificationTransports__AzureCommunicationServices__ConnectionString", settings.AcsConnectionString);
+    }
+
+    return configuredApi;
 }

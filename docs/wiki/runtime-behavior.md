@@ -10,9 +10,12 @@ Alongside the broker-auth supervision model, the platform now also applies a sep
 
 - `/` stays public for anonymous users
 - signed-in operators receive role-based UI navigation
+- signed-in operators receive a shared shell with a compact header, environment badge, and per-browser light or dark theme preference
 - protected Web routes and API endpoints fail closed when authentication or authorization is missing
 - the Blazor host propagates delegated bearer tokens to the API
 - higher scopes are requested only when privileged areas are entered
+
+The refreshed UI defaults to dark theme when no browser preference exists. Theme selection is stored only as non-sensitive browser state and is applied immediately from the shared header and configuration page.
 
 At startup and during background execution, the application:
 
