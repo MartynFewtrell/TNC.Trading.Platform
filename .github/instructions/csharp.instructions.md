@@ -1,4 +1,4 @@
----
+﻿---
 description: 'Standardize C# contributions (formatting, naming, nullability, error handling, and test expectations) so code is consistent, maintainable, and production-ready.'
 applyTo: '**/*.cs'
 ---
@@ -16,6 +16,7 @@ Applies to: `**/*.cs`
 - These rules apply to all C# files under `src/` and `test/`.
 - For test code, also follow `/.github/instructions/tests.instructions.md` and (when applicable) `/.github/instructions/playwright.instructions.md`.
 - For auth-related work, also follow `/.github/instructions/auth.instructions.md`.
+- For Blazor UI-related C# backing code and Radzen setup code, also follow `/.github/instructions/radzen-blazor.instructions.md`.
 
 ## Instructions
 
@@ -80,5 +81,6 @@ Applies to: `**/*.cs`
 
 - `/.github/instructions/dotnet-stack.instructions.md`
 - `/.github/instructions/auth.instructions.md`
+- `/.github/instructions/radzen-blazor.instructions.md`
 - `/.github/instructions/tests.instructions.md`
 - `/.github/instructions/playwright.instructions.md`

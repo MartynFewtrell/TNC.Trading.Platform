@@ -44,6 +44,7 @@ Applies to: `**/*`
 ### SHOULD
 
 - Prefer C# with the latest .NET LTS, Minimal APIs for HTTP services, and Blazor for front ends when applicable.
+- For Blazor UI development, prefer Radzen Blazor free components as the default UI component choice and follow `./.github/instructions/radzen-blazor.instructions.md`.
 - Prefer .NET Aspire for local desktop/distributed development orchestration.
 - Prefer Azure Container Apps for deployments when containerized hosting is appropriate.
 - Prefer scalable service-based architecture with messaging when the problem domain benefits from it.
@@ -73,6 +74,7 @@ Applies to: `**/*`
 - `./.github/instructions/dotnet-stack.instructions.md`
 - `./.github/instructions/folders.instructions.md`
 - `./.github/instructions/playwright.instructions.md`
+- `./.github/instructions/radzen-blazor.instructions.md`
 - `./.github/instructions/scalar.instructions.md`
 - `./.github/instructions/tests.instructions.md`
 - `./.github/instructions/work-packages.instructions.md`
