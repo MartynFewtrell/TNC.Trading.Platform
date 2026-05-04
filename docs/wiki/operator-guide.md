@@ -4,40 +4,73 @@ This guide explains how the current Blazor operator UI works, what information e
 
 ## Operator UI summary
 
-The current UI is a Blazor Server app with a public entry surface and three protected operator pages:
+The current UI is a Blazor Server app with a sign-in-first browser flow and three protected operator pages:
 
 - `/`
 - `/status`
 - `/configuration`
 - `/administration/authentication`
 
-The left navigation changes based on the signed-in operator role.
+When launched from the Aspire dashboard, the Operator UI link opens the home route (`/`).
+
+The signed-in operator experience now uses a shared shell with:
+
+- a compact top header with the site title on the left
+- the current operator identity, sign-in or sign-out action, and theme toggle on the right
+- a centered environment badge when runtime environment information is available
+- a left navigation area that preserves route order and can be collapsed on desktop and laptop widths
+
+The left navigation still changes based on the signed-in operator role.
 
 ## Navigation
 
 | Route | Purpose |
 | --- | --- |
-| `/` | Public landing page for anonymous users and signed-in home page for operators. |
+| `/` | UI entry route. It redirects anonymous users to sign-in on first access and shows the signed-in home overview for authenticated operators. |
 | `/status` | Runtime status, trading-schedule state, auth state, retry state, and recent auth events. |
 | `/configuration` | Operator-managed configuration, notification settings, trading-schedule values, and write-only IG credential updates. |
 | `/administration/authentication` | Administrator-only summary of the configured auth provider, role claim type, and protected API audience. |
 | `/authentication/sign-in` | Starts sign-in. In automated local tests this also lists the seeded local test users. |
-| `/authentication/sign-out` | Ends the platform session and returns to the landing page. |
+| `/authentication/sign-out` | Ends the platform session and returns to the UI entry route, which prompts for sign-in again. |
 | `/authentication/access-denied` | Dedicated denied-access page for signed-in users who lack the required platform role. |
 
 ## Sign-in and sign-out
 
-Anonymous users land on `/` and use the sign-in link to start authentication.
+When the app is first opened in a fresh browser session, the UI entry route immediately sends the browser to sign-in before any operator content is shown.
+
+If the browser still has an authenticated platform cookie but no longer has a usable delegated access token, the UI treats that session as stale, clears the platform cookie, and sends the browser back through sign-in instead of rendering a broken signed-in shell.
 
 - in lightweight local test runs, `/authentication/sign-in` lists the seeded local users used by automated tests
 - in container-assisted local runs, sign-in redirects the browser to Keycloak
-- sign-out ends the platform session only and returns the operator to `/`
+- sign-out clears the platform cookie and, for OpenID Connect providers, ends the identity-provider session before returning the operator to `/`
 
 If a pre-provisioned user authenticates without a platform role, the UI routes the user to `/authentication/access-denied`.
+
+Signed-in operators can switch between the dark and light themes from the shared header. The UI defaults to the dark theme when no browser preference has been stored yet, and the selected theme is restored in the same browser on later visits.
+
+## Home overview
+
+The home page now acts as a lightweight operator overview after sign-in.
+
+### Signed-out presentation
+
+When the operator is signed out, `/` does not render a public landing surface. Instead, it redirects straight to the sign-in flow. The shared signed-in navigation shell is not shown before sign-in.
+
+### Signed-in overview content
+
+When the operator is signed in with a platform role, the home page shows:
+
+- an operational summary card with platform environment, broker environment, session status, and schedule state
+- a compact active-alert and notable-event summary list
+- a recent activity list based on the latest auth event history
+
+The overview remains summary-first. It does not introduce home-page quick actions.
 
 ## Status page
 
 The status page is the main runtime dashboard.
+
+It now uses grouped accordion sections so operators can focus on higher-priority information first while still keeping multiple sections open at the same time.
 
 ### Environment panel
 
@@ -93,7 +126,9 @@ When manual retry is not allowed, the button stays disabled and the API protects
 
 ### Recent auth events table
 
-The bottom of the page shows recent auth events filtered from the event history.
+The recent auth events section is now lower-priority and collapsed by default.
+
+When expanded, it shows recent auth events filtered from the event history.
 
 Each row includes:
 
@@ -107,10 +142,19 @@ This table can now show both broker-auth supervision events and operator-session
 
 ## Configuration page
 
+The configuration page groups startup-fixed runtime choices under an **Environment** section.
+
+This section currently allows operators to change:
+
+- platform environment
+- broker environment
+
 The configuration page is the main operator-edit surface.
 
 It is designed for safe review and update of configuration without exposing stored secrets.
 It is available only to `Operator` and `Administrator` users.
+
+It now uses grouped accordion sections aligned with the status page so the form remains easier to scan without losing in-progress edits while sections are expanded or collapsed.
 
 ## Authentication administration page
 
@@ -138,6 +182,7 @@ Important behavior:
 - the `Live` broker option is shown but disabled when the platform environment is `Test`
 - changing startup-fixed values can set `RestartRequired`
 - the page explains that startup-fixed changes apply on the next platform start
+- UI theme switching is provided from the shared header control rather than from the configuration form
 
 ### Trading schedule
 

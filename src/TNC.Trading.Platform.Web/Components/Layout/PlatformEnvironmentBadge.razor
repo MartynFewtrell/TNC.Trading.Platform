@@ -1,0 +1,16 @@
+﻿@if (Environment is not null)
+{
+    <span class="platform-environment-badge" title="@TooltipText">
+        <RadzenIcon Icon="cloud_done" />
+        <span>@Environment.PlatformEnvironment / @Environment.BrokerEnvironment</span>
+    </span>
+}
+
+@code {
+    [Parameter]
+    public PlatformShellEnvironment? Environment { get; set; }
+
+    private string TooltipText => Environment is null
+        ? string.Empty
+        : $"Platform: {Environment.PlatformEnvironment} | Broker: {Environment.BrokerEnvironment} | Live option: {(Environment.LiveOptionAvailable ? "Available" : "Blocked")}";
+}

@@ -1,6 +1,8 @@
-﻿using Microsoft.AspNetCore.Authentication;
+﻿using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using TNC.Trading.Platform.Application.Authentication;
 
 namespace TNC.Trading.Platform.Web.Authentication;
 
@@ -20,7 +22,7 @@ internal sealed class PlatformAccessTokenProvider(
             throw new InvalidOperationException("The current operator session does not contain an access token.");
         }
 
-        var grantedScopes = PlatformTokenScopeEvaluator.ReadEffectiveScopes(accessToken);
+        var grantedScopes = GetGrantedScopes(httpContext.User, accessToken);
         var missingScopes = requiredScopes
             .Where(scope => !grantedScopes.Contains(scope, StringComparer.Ordinal))
             .Distinct(StringComparer.Ordinal)
@@ -42,5 +44,33 @@ internal sealed class PlatformAccessTokenProvider(
         }
 
         return accessToken;
+    }
+
+    private static IReadOnlyCollection<string> GetGrantedScopes(ClaimsPrincipal principal, string accessToken)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
+        var grantedScopes = PlatformTokenScopeEvaluator.ReadEffectiveScopes(accessToken)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (principal.IsInRole(PlatformAuthenticationDefaults.Roles.Viewer)
+            || principal.IsInRole(PlatformAuthenticationDefaults.Roles.Operator)
+            || principal.IsInRole(PlatformAuthenticationDefaults.Roles.Administrator))
+        {
+            grantedScopes.Add(PlatformAuthenticationDefaults.Scopes.Viewer);
+        }
+
+        if (principal.IsInRole(PlatformAuthenticationDefaults.Roles.Operator)
+            || principal.IsInRole(PlatformAuthenticationDefaults.Roles.Administrator))
+        {
+            grantedScopes.Add(PlatformAuthenticationDefaults.Scopes.Operator);
+        }
+
+        if (principal.IsInRole(PlatformAuthenticationDefaults.Roles.Administrator))
+        {
+            grantedScopes.Add(PlatformAuthenticationDefaults.Scopes.Administrator);
+        }
+
+        return grantedScopes;
     }
 }

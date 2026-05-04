@@ -23,7 +23,7 @@ public class PlatformAuthorizationRedirectResolverTests
             principal);
 
         Assert.Equal("/status?tab=recent", result.ReturnUrl);
-        Assert.Equal("/authentication/sign-in?returnUrl=%2Fstatus%3Ftab%3Drecent", result.Destination);
+        Assert.Equal("/authentication/sign-in?returnUrl=%2Fstatus%3Ftab%3Drecent&prompt=login", result.Destination);
         Assert.False(result.ShouldRecordAccessDenied);
     }
 

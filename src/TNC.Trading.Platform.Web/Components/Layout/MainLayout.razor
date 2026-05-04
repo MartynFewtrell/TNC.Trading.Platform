@@ -1,34 +1,66 @@
 ﻿@inherits LayoutComponentBase
+@implements IDisposable
+@inject PlatformShellContextProvider ShellContextProvider
 
-<div class="shell">
-    <nav class="sidebar">
-        <div class="brand"><a href="/">TNC Trading Platform</a></div>
-        <NavLink href="/" Match="NavLinkMatch.All">Home</NavLink>
+<div class="platform-app-shell @(isSidebarCollapsed ? "platform-app-shell--collapsed" : string.Empty)">
+    <PlatformHeader Environment="shellEnvironment"
+                    IsSidebarCollapsed="isSidebarCollapsed"
+                    OperatorContext="operatorContext"
+                    ShowSidebarToggle="@(operatorContext?.HasAnyPlatformRole == true)"
+                    ShowThemeToggle="@(operatorContext?.HasAnyPlatformRole == true)"
+                    ToggleSidebar="ToggleSidebarAsync" />
 
-        <AuthorizeView Roles="Viewer,Operator,Administrator">
-            <NavLink href="/status">Status</NavLink>
-        </AuthorizeView>
+    <div class="platform-app-shell__body @(operatorContext?.HasAnyPlatformRole == true ? string.Empty : "platform-app-shell__body--full-width")">
+        @if (operatorContext?.HasAnyPlatformRole == true)
+        {
+            <nav class="platform-sidebar" aria-label="Primary">
+                <div class="platform-sidebar__brand">Operator workspace</div>
 
-        <AuthorizeView Roles="Operator,Administrator">
-            <NavLink href="/configuration">Configuration</NavLink>
-        </AuthorizeView>
+                <PlatformNavItem Href="/" Match="NavLinkMatch.All" Icon="home" Text="Home" />
 
-        <AuthorizeView Roles="Administrator">
-            <NavLink href="/administration/authentication">Authentication administration</NavLink>
-        </AuthorizeView>
+                @if (operatorContext.IsViewer)
+                {
+                    <PlatformNavItem Href="/status" Icon="monitor_heart" Text="Status" />
+                }
 
-        <AuthorizeView>
-            <Authorized Context="authenticationState">
-                <div class="brand">@((authenticationState.User.FindFirst("name")?.Value ?? authenticationState.User.FindFirst("preferred_username")?.Value ?? authenticationState.User.Identity?.Name) ?? "Operator")</div>
-                <a href="/authentication/sign-out" data-enhance-nav="false">Sign out</a>
-            </Authorized>
-            <NotAuthorized>
-                <a href="/authentication/sign-in?returnUrl=%2F" data-enhance-nav="false">Sign in</a>
-            </NotAuthorized>
-        </AuthorizeView>
-    </nav>
+                @if (operatorContext.IsOperator)
+                {
+                    <PlatformNavItem Href="/configuration" Icon="settings" Text="Configuration" />
+                }
 
-    <main class="content">
-        @Body
-    </main>
+                @if (operatorContext.IsAdministrator)
+                {
+                    <PlatformNavItem Href="/administration/authentication" Icon="admin_panel_settings" Text="Authentication administration" />
+                }
+            </nav>
+        }
+
+        <main class="platform-content">
+            <section class="platform-page-frame">
+                @Body
+            </section>
+        </main>
+    </div>
 </div>
+
+@code {
+    private PlatformOperatorContext? operatorContext;
+    private PlatformShellEnvironment? shellEnvironment;
+    private bool isSidebarCollapsed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        operatorContext = await ShellContextProvider.GetOperatorContextAsync();
+        shellEnvironment = await ShellContextProvider.GetEnvironmentAsync();
+    }
+
+    public void Dispose()
+    {
+    }
+
+    private Task ToggleSidebarAsync()
+    {
+        isSidebarCollapsed = !isSidebarCollapsed;
+        return Task.CompletedTask;
+    }
+}

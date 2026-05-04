@@ -1,0 +1,68 @@
+﻿<header class="platform-header">
+    <div class="platform-header__primary">
+        @if (ShowSidebarToggle)
+        {
+            <RadzenButton class="platform-header__toggle"
+                          Icon="@SidebarToggleIcon"
+                          Size="ButtonSize.Small"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Variant="Variant.Flat"
+                          Click="OnToggleSidebarAsync" />
+        }
+
+        <a class="platform-header__title" href="/">TNC Trading Platform</a>
+    </div>
+
+    <div class="platform-header__secondary">
+        <div class="platform-header__center">
+            <PlatformEnvironmentBadge Environment="Environment" />
+        </div>
+
+        <div class="platform-header__actions">
+            @if (OperatorContext?.IsAuthenticated == true)
+            {
+                <span class="platform-header__operator">@OperatorContext.DisplayName</span>
+                <a class="platform-header__action" href="/authentication/sign-out" data-enhance-nav="false">Sign out</a>
+            }
+            else
+            {
+                <a class="platform-header__action" href="/authentication/sign-in?returnUrl=%2F" data-enhance-nav="false">Sign in</a>
+            }
+
+            @if (ShowThemeToggle)
+            {
+                <PlatformThemeToggle />
+            }
+        </div>
+    </div>
+</header>
+
+@code {
+    [Parameter]
+    public PlatformShellEnvironment? Environment { get; set; }
+
+    [Parameter]
+    public bool IsSidebarCollapsed { get; set; }
+
+    [Parameter]
+    public PlatformOperatorContext? OperatorContext { get; set; }
+
+    [Parameter]
+    public bool ShowSidebarToggle { get; set; }
+
+    [Parameter]
+    public bool ShowThemeToggle { get; set; }
+
+    [Parameter]
+    public EventCallback ToggleSidebar { get; set; }
+
+    private string SidebarToggleIcon => IsSidebarCollapsed ? "menu_open" : "menu";
+
+    private async Task OnToggleSidebarAsync(MouseEventArgs _)
+    {
+        if (ToggleSidebar.HasDelegate)
+        {
+            await ToggleSidebar.InvokeAsync();
+        }
+    }
+}

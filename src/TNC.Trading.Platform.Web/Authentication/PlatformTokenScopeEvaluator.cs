@@ -5,20 +5,32 @@ namespace TNC.Trading.Platform.Web.Authentication;
 
 internal static class PlatformTokenScopeEvaluator
 {
-    public static IReadOnlyList<string> ReadEffectiveScopes(string accessToken)
+    public static bool HasUsableSessionToken(string? accessToken)
     {
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            return false;
+        }
+
         var handler = new JwtSecurityTokenHandler();
         if (!handler.CanReadToken(accessToken))
         {
-            return [];
+            return false;
         }
 
         var token = handler.ReadJwtToken(accessToken);
         var utcNow = DateTime.UtcNow;
-        if (token.ValidFrom > utcNow || token.ValidTo <= utcNow)
+        return token.ValidFrom <= utcNow && token.ValidTo > utcNow;
+    }
+
+    public static IReadOnlyList<string> ReadEffectiveScopes(string accessToken)
+    {
+        if (!HasUsableSessionToken(accessToken))
         {
             return [];
         }
+
+        var token = new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
 
         var scopes = token.Claims
             .Where(claim => string.Equals(claim.Type, PlatformAuthenticationDefaults.Claims.Scope, StringComparison.Ordinal)

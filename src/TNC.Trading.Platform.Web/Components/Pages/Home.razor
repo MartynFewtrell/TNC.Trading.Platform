@@ -3,56 +3,185 @@
 @inject NavigationManager NavigationManager
 @inject PlatformAuthAuditClient AuthAuditClient
 @inject PlatformOperatorContextAccessor OperatorContextAccessor
+@inject PlatformApiClient PlatformApiClient
 
 <PageTitle>TNC Trading Platform</PageTitle>
 
-<h1>TNC Trading Platform</h1>
-
 @if (operatorContext is null)
 {
-    <p>Loading operator context...</p>
+    <section class="panel platform-callout">
+        <h1>TNC Trading Platform</h1>
+        <p>Loading operator context...</p>
+    </section>
 }
 else if (!operatorContext.IsAuthenticated)
 {
-    <p>Sign in to reach the protected operator surfaces for platform status, configuration, and administration.</p>
-    <p>
-        <a href="/authentication/sign-in?returnUrl=%2F" data-enhance-nav="false">Sign in</a>
-    </p>
-    <p>Health and readiness endpoints remain public.</p>
+    <section class="platform-hero panel">
+        <div class="platform-hero__content">
+            <h1>TNC Trading Platform</h1>
+            <p>Sign in to reach the protected operator surfaces for status, configuration, and authentication administration.</p>
+            <a class="platform-primary-action" href="/authentication/sign-in?returnUrl=%2F" data-enhance-nav="false">Sign in</a>
+            <p class="hint">Health and readiness endpoints remain public.</p>
+        </div>
+    </section>
+}
+else if (!string.IsNullOrWhiteSpace(loadError))
+{
+    <section class="panel platform-callout">
+        <h1>TNC Trading Platform</h1>
+        <p class="error">@loadError</p>
+    </section>
 }
 else
 {
-    <p>Welcome, @operatorContext.DisplayName.</p>
-    <p>
-        <a href="/authentication/sign-out" data-enhance-nav="false">Sign out</a>
-    </p>
+    @if (status is null || events is null)
+    {
+        <section class="panel platform-callout">
+            <p>Loading operator overview...</p>
+        </section>
+    }
+    else
+    {
+        <div class="panel-grid">
+            <section class="panel platform-summary-card">
+                <h2>Operational summary</h2>
+                <dl class="platform-key-value-grid">
+                    <dt>Platform environment</dt>
+                    <dd>@status.PlatformEnvironment</dd>
+                    <dt>Broker environment</dt>
+                    <dd>@status.BrokerEnvironment</dd>
+                    <dt>Session status</dt>
+                    <dd>@status.AuthState.SessionStatus</dd>
+                    <dt>Trading schedule</dt>
+                    <dd>@(status.TradingScheduleState.IsActive ? "Active" : status.TradingScheduleState.Reason)</dd>
+                </dl>
+            </section>
 
-    <ul>
-        @if (operatorContext.IsViewer)
-        {
-            <li><a href="/status">Platform status</a></li>
-        }
-        @if (operatorContext.IsOperator)
-        {
-            <li><a href="/configuration">Platform configuration</a></li>
-        }
-        @if (operatorContext.IsAdministrator)
-        {
-            <li><a href="/administration/authentication">Authentication administration</a></li>
-        }
-    </ul>
+            <section class="panel">
+                <h2>Active alerts</h2>
+                @if (alerts.Count == 0)
+                {
+                    <p class="hint">No active alerts or notable events.</p>
+                }
+                else
+                {
+                    <ul class="platform-alert-list">
+                        @foreach (var alert in alerts)
+                        {
+                            <li class="platform-alert-list__item">
+                                <span class="platform-severity-badge platform-severity-badge--@alert.SeverityCssClass">@alert.SeverityLabel</span>
+                                <span>@alert.Summary</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+        </div>
+
+        <section class="panel">
+            <h2>Recent activity</h2>
+            @if (events.Events.Count == 0)
+            {
+                <p class="hint">No recent activity recorded.</p>
+            }
+            else
+            {
+                <ul class="platform-activity-list">
+                    @foreach (var item in events.Events.Take(5))
+                    {
+                        <li>
+                            <span class="platform-activity-list__time">@item.OccurredAtUtc.ToLocalTime().ToString("g")</span>
+                            <div>
+                                <strong>@item.EventType</strong>
+                                <p>@item.Summary</p>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    }
 }
 
 @code {
+    private readonly List<HomeAlertItem> alerts = [];
+
     private PlatformOperatorContext? operatorContext;
+    private PlatformStatusViewModel? status;
+    private PlatformEventsViewModel? events;
+    private string? pendingNavigationUri;
+    private string? loadError;
 
     protected override async Task OnInitializedAsync()
     {
         operatorContext = await OperatorContextAccessor.GetCurrentAsync();
-        if (operatorContext.IsAuthenticated && !operatorContext.HasAnyPlatformRole)
+        if (!operatorContext.IsAuthenticated)
+        {
+            return;
+        }
+
+        if (!operatorContext.HasAnyPlatformRole)
         {
             await AuthAuditClient.RecordAccessDeniedAsync("/", CancellationToken.None);
-            NavigationManager.NavigateTo("/authentication/access-denied", forceLoad: true);
+            pendingNavigationUri = "/authentication/access-denied";
+            return;
+        }
+
+        await LoadOverviewAsync();
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (string.IsNullOrWhiteSpace(pendingNavigationUri))
+        {
+            return Task.CompletedTask;
+        }
+
+        var destination = pendingNavigationUri;
+        pendingNavigationUri = null;
+        NavigationManager.NavigateTo(destination, forceLoad: true);
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadOverviewAsync()
+    {
+        loadError = null;
+
+        try
+        {
+            status = await PlatformApiClient.GetStatusAsync(CancellationToken.None);
+            events = await PlatformApiClient.GetAuthEventsAsync(status.BrokerEnvironment, CancellationToken.None);
+            alerts.Clear();
+            alerts.AddRange(CreateAlerts(status, events));
+        }
+        catch (Exception exception) when (exception is HttpRequestException or PlatformScopeChallengeRequiredException or InvalidOperationException)
+        {
+            loadError = $"Unable to load the operator overview: {exception.Message}";
         }
     }
+
+    private static IEnumerable<HomeAlertItem> CreateAlerts(PlatformStatusViewModel status, PlatformEventsViewModel events)
+    {
+        if (status.AuthState.IsDegraded)
+        {
+            yield return new HomeAlertItem("warning", "Degraded", "Authentication-dependent actions are currently blocked.");
+        }
+
+        if (!status.TradingScheduleState.IsActive)
+        {
+            yield return new HomeAlertItem("info", "Schedule", status.TradingScheduleState.Reason);
+        }
+
+        if (status.RetryState.RetryLimitReached)
+        {
+            yield return new HomeAlertItem("danger", "Retry", "The automatic retry limit has been reached.");
+        }
+
+        foreach (var platformEvent in events.Events.Take(3))
+        {
+            yield return new HomeAlertItem("info", "Recent", platformEvent.Summary);
+        }
+    }
+
+    private sealed record HomeAlertItem(string SeverityCssClass, string SeverityLabel, string Summary);
 }

@@ -1,0 +1,14 @@
+﻿@inject PlatformThemeState ThemeState
+
+<RadzenButton class="platform-theme-toggle"
+              Icon="@(ThemeState.IsDarkMode ? "light_mode" : "dark_mode")"
+              Text="@(ThemeState.IsDarkMode ? "Light theme" : "Dark theme")"
+              Size="ButtonSize.Small"
+              Click="OnToggleAsync" />
+
+@code {
+    private async Task OnToggleAsync(MouseEventArgs _)
+    {
+        await ThemeState.ToggleAsync();
+    }
+}

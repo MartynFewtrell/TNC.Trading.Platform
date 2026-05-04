@@ -5,142 +5,173 @@
 
 <PageTitle>Platform configuration</PageTitle>
 
-<h1>Platform configuration</h1>
-
 @if (!hasRequiredScope)
 {
-    <p>Redirecting...</p>
+    <section class="panel platform-callout">
+        <h1>Platform configuration</h1>
+        <p>Redirecting...</p>
+    </section>
 }
 else if (!string.IsNullOrWhiteSpace(loadError))
 {
-    <p class="error">@loadError</p>
+    <section class="panel platform-callout">
+        <h1>Platform configuration</h1>
+        <p class="error">@loadError</p>
+    </section>
 }
 else if (form is null)
 {
-    <p>Loading platform configuration...</p>
+    <section class="panel platform-callout">
+        <h1>Platform configuration</h1>
+        <p>Loading platform configuration...</p>
+    </section>
 }
 else
 {
     <EditForm Model="form" OnValidSubmit="SaveAsync">
-        <div class="panel-grid">
+        <section class="panel platform-page-header">
+            <div>
+                <h1>Platform configuration</h1>
+                <p class="hint">Update the protected operator configuration without exposing stored secrets.</p>
+            </div>
+        </section>
+
+        <PlatformAccordionSection Title="Environment" IsOpen="true">
             <section class="panel">
-                <h2>Environments</h2>
-                <label>
-                    Platform environment
-                    <InputSelect @bind-Value="form.PlatformEnvironment">
-                        <option value="Test">Test</option>
-                        <option value="Live">Live</option>
-                    </InputSelect>
-                </label>
-                <label>
-                    Broker environment
-                    <InputSelect @bind-Value="form.BrokerEnvironment">
-                        <option value="Demo">Demo</option>
-                        <option value="Live" disabled="@(form.PlatformEnvironment == "Test")">Live</option>
-                    </InputSelect>
-                </label>
+                <div class="platform-form-grid">
+                    <label>
+                        Platform environment
+                        <InputSelect @bind-Value="form.PlatformEnvironment">
+                            <option value="Test">Test</option>
+                            <option value="Live">Live</option>
+                        </InputSelect>
+                    </label>
+                    <label>
+                        Broker environment
+                        <InputSelect @bind-Value="form.BrokerEnvironment">
+                            <option value="Demo">Demo</option>
+                            <option value="Live" disabled="@(form.PlatformEnvironment == "Test")">Live</option>
+                        </InputSelect>
+                    </label>
+                </div>
+
                 <p class="hint" data-testid="configuration-startup-hint">Startup-fixed changes apply on the next platform start.</p>
                 @if (form.RestartRequired)
                 {
                     <p class="warning" role="status" data-testid="configuration-restart-required-indicator">Pending startup-fixed changes will apply on the next platform start.</p>
                 }
             </section>
+        </PlatformAccordionSection>
 
+        <PlatformAccordionSection Title="Trading schedule" IsOpen="false">
             <section class="panel">
-                <h2>Trading schedule</h2>
-                <label>
-                    Start of day
-                    <InputText @bind-Value="form.StartOfDayText" type="time" />
-                </label>
-                <label>
-                    End of day
-                    <InputText @bind-Value="form.EndOfDayText" type="time" />
-                </label>
-                <label>
-                    Trading days (comma separated)
-                    <InputText @bind-Value="form.TradingDaysCsv" />
-                </label>
-                <label>
-                    Weekend behavior
-                    <InputSelect @bind-Value="form.TradingSchedule.WeekendBehavior">
-                        <option value="ExcludeWeekends">ExcludeWeekends</option>
-                        <option value="IncludeSaturday">IncludeSaturday</option>
-                        <option value="IncludeSunday">IncludeSunday</option>
-                        <option value="IncludeFullWeekend">IncludeFullWeekend</option>
-                    </InputSelect>
-                </label>
-                <label>
-                    Bank holidays (comma separated yyyy-MM-dd)
-                    <InputText @bind-Value="form.BankHolidayCsv" />
-                </label>
-                <label>
-                    Time zone
-                    <InputText @bind-Value="form.TradingSchedule.TimeZone" />
-                </label>
+                <div class="platform-form-grid">
+                    <label>
+                        Start of day
+                        <InputText @bind-Value="form.StartOfDayText" type="time" />
+                    </label>
+                    <label>
+                        End of day
+                        <InputText @bind-Value="form.EndOfDayText" type="time" />
+                    </label>
+                    <label>
+                        Trading days (comma separated)
+                        <InputText @bind-Value="form.TradingDaysCsv" />
+                    </label>
+                    <label>
+                        Weekend behavior
+                        <InputSelect @bind-Value="form.TradingSchedule.WeekendBehavior">
+                            <option value="ExcludeWeekends">ExcludeWeekends</option>
+                            <option value="IncludeSaturday">IncludeSaturday</option>
+                            <option value="IncludeSunday">IncludeSunday</option>
+                            <option value="IncludeFullWeekend">IncludeFullWeekend</option>
+                        </InputSelect>
+                    </label>
+                    <label>
+                        Bank holidays (comma separated yyyy-MM-dd)
+                        <InputText @bind-Value="form.BankHolidayCsv" />
+                    </label>
+                    <label>
+                        Time zone
+                        <InputText @bind-Value="form.TradingSchedule.TimeZone" />
+                    </label>
+                </div>
             </section>
+        </PlatformAccordionSection>
 
+        <PlatformAccordionSection Title="Retry policy" IsOpen="false">
             <section class="panel">
-                <h2>Retry policy</h2>
-                <label>
-                    Initial delay seconds
-                    <InputNumber @bind-Value="form.RetryPolicy.InitialDelaySeconds" />
-                </label>
-                <label>
-                    Max automatic retries
-                    <InputNumber @bind-Value="form.RetryPolicy.MaxAutomaticRetries" />
-                </label>
-                <label>
-                    Multiplier
-                    <InputNumber @bind-Value="form.RetryPolicy.Multiplier" />
-                </label>
-                <label>
-                    Max delay seconds
-                    <InputNumber @bind-Value="form.RetryPolicy.MaxDelaySeconds" />
-                </label>
-                <label>
-                    Periodic delay minutes
-                    <InputNumber @bind-Value="form.RetryPolicy.PeriodicDelayMinutes" />
-                </label>
+                <div class="platform-form-grid">
+                    <label>
+                        Initial delay seconds
+                        <InputNumber @bind-Value="form.RetryPolicy.InitialDelaySeconds" />
+                    </label>
+                    <label>
+                        Max automatic retries
+                        <InputNumber @bind-Value="form.RetryPolicy.MaxAutomaticRetries" />
+                    </label>
+                    <label>
+                        Multiplier
+                        <InputNumber @bind-Value="form.RetryPolicy.Multiplier" />
+                    </label>
+                    <label>
+                        Max delay seconds
+                        <InputNumber @bind-Value="form.RetryPolicy.MaxDelaySeconds" />
+                    </label>
+                    <label>
+                        Periodic delay minutes
+                        <InputNumber @bind-Value="form.RetryPolicy.PeriodicDelayMinutes" />
+                    </label>
+                </div>
             </section>
+        </PlatformAccordionSection>
 
+        <PlatformAccordionSection Title="Notifications" IsOpen="false">
             <section class="panel">
-                <h2>Notifications</h2>
-                <label>
-                    Provider
-                    <InputText @bind-Value="form.NotificationSettings.Provider" />
-                </label>
-                <label>
-                    Email recipient
-                    <InputText @bind-Value="form.NotificationSettings.EmailTo" />
-                </label>
+                <div class="platform-form-grid">
+                    <label>
+                        Provider
+                        <InputText @bind-Value="form.NotificationSettings.Provider" />
+                    </label>
+                    <label>
+                        Email recipient
+                        <InputText @bind-Value="form.NotificationSettings.EmailTo" />
+                    </label>
+                </div>
             </section>
+        </PlatformAccordionSection>
 
+        <PlatformAccordionSection Title="IG credentials" IsOpen="false">
             <section class="panel">
-                <h2>IG credentials</h2>
                 <p class="hint" data-testid="configuration-secret-handling-hint">Stored values are never shown. Enter a field only when you want to replace it.</p>
-                <p data-testid="configuration-stored-api-key">Stored API key: @(form.Credentials.HasApiKey ? "Present" : "Missing")</p>
-                <p data-testid="configuration-stored-identifier">Stored identifier: @(form.Credentials.HasIdentifier ? "Present" : "Missing")</p>
-                <p data-testid="configuration-stored-password">Stored password: @(form.Credentials.HasPassword ? "Present" : "Missing")</p>
-                <label>
-                    New API key
-                    <InputText @bind-Value="form.CredentialsUpdate.ApiKey" />
-                </label>
-                <label>
-                    New identifier
-                    <InputText @bind-Value="form.CredentialsUpdate.Identifier" />
-                </label>
-                <label>
-                    New password
-                    <InputText @bind-Value="form.CredentialsUpdate.Password" type="password" />
-                </label>
-                <label>
-                    Changed by
-                    <InputText @bind-Value="form.ChangedBy" />
-                </label>
-            </section>
-        </div>
+                <div class="platform-credential-state">
+                    <p data-testid="configuration-stored-api-key">Stored API key: @(form.Credentials.HasApiKey ? "Present" : "Missing")</p>
+                    <p data-testid="configuration-stored-identifier">Stored identifier: @(form.Credentials.HasIdentifier ? "Present" : "Missing")</p>
+                    <p data-testid="configuration-stored-password">Stored password: @(form.Credentials.HasPassword ? "Present" : "Missing")</p>
+                </div>
 
-        <button data-testid="configuration-save-button" type="submit" disabled="@saveInProgress">@(saveInProgress ? "Saving..." : "Save configuration")</button>
+                <div class="platform-form-grid">
+                    <label>
+                        New API key
+                        <InputText @bind-Value="form.CredentialsUpdate.ApiKey" />
+                    </label>
+                    <label>
+                        New identifier
+                        <InputText @bind-Value="form.CredentialsUpdate.Identifier" />
+                    </label>
+                    <label>
+                        New password
+                        <InputText @bind-Value="form.CredentialsUpdate.Password" type="password" />
+                    </label>
+                    <label>
+                        Changed by
+                        <InputText @bind-Value="form.ChangedBy" />
+                    </label>
+                </div>
+            </section>
+        </PlatformAccordionSection>
+
+        <button class="platform-primary-action" data-testid="configuration-save-button" type="submit" disabled="@saveInProgress">@(saveInProgress ? "Saving..." : "Save configuration")</button>
     </EditForm>
 
     @if (!string.IsNullOrWhiteSpace(saveMessage))

@@ -13,12 +13,12 @@ public class PlatformAuthenticationFunctionalTests
 
     /// <summary>
     /// Trace: FR1, FR2, NF5, OR2.
-    /// Verifies: the landing page remains the public entry surface when the new auth model is enabled.
-    /// Expected: the root page returns HTTP 200 OK and includes the operator sign-in entry text.
-    /// Why: the work package promises a deliberate public boundary with a clear path into authentication.
+    /// Verifies: the app entry route immediately sends an anonymous browser through the sign-in flow instead of rendering operator content or a public landing page.
+    /// Expected: requesting `/` in the synthetic local runtime resolves to the test sign-in page and shows the seeded development identities.
+    /// Why: first access to the operator UI must always present a login experience so session state is established deliberately.
     /// </summary>
     [Fact]
-    public async Task LandingPage_ShouldReturnPublicEntryContent_WhenAnonymousUserRequestsRoot()
+    public async Task RootRoute_ShouldRenderSignInPage_WhenAnonymousUserRequestsApplicationEntry()
     {
         await using var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
@@ -29,8 +29,91 @@ public class PlatformAuthenticationFunctionalTests
         using var httpClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: true);
         var html = await httpClient.GetStringAsync("/");
 
-        Assert.Contains("TNC Trading Platform", html, StringComparison.Ordinal);
-        Assert.Contains("Sign in", html, StringComparison.Ordinal);
+        Assert.Contains("Test sign-in", html, StringComparison.Ordinal);
+        Assert.Contains("local-admin", html, StringComparison.Ordinal);
+        Assert.Contains("local-operator", html, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: FR1, FR4, FR5, TR1.
+    /// Verifies: the home route still behaves as the signed-in operator overview after authentication has completed.
+    /// Expected: signing in to `/` as an operator returns HTTP 200 OK and renders the overview content instead of challenging again.
+    /// Why: the sign-in-first entry flow must not break the existing authenticated home experience.
+    /// </summary>
+    [Fact]
+    public async Task RootRoute_ShouldRenderOperatorOverview_WhenAuthenticatedOperatorReturnsToApplicationEntry()
+    {
+        await using var appHost = await DistributedApplicationTestingBuilder
+            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
+
+        await using var app = await appHost.BuildAsync();
+        await app.StartAsync();
+
+        using var httpClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: true);
+        var html = await httpClient.GetStringAsync("/authentication/sign-in?user=local-operator&returnUrl=%2F");
+
+        Assert.Contains("Operational summary", html, StringComparison.Ordinal);
+        Assert.Contains("Recent activity", html, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: FR1, NF2, OR2.
+    /// Verifies: opening the UI entry route without the platform prompt marker fails closed even when the browser still holds a valid platform session cookie.
+    /// Expected: after an operator signs in successfully, requesting `/` again without `platformPrompted=1` returns the browser to the sign-in experience instead of reusing the prior session automatically.
+    /// Why: first entry to the operator UI must always establish authentication deliberately rather than silently admitting a remembered browser session.
+    /// </summary>
+    [Fact]
+    public async Task RootRoute_ShouldRenderSignInPage_WhenBrowserReopensApplicationEntryWithoutPromptMarker()
+    {
+        await using var appHost = await DistributedApplicationTestingBuilder
+            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
+
+        await using var app = await appHost.BuildAsync();
+        await app.StartAsync();
+
+        var cookies = new CookieContainer();
+        using var signInClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: true, cookies);
+        var signedInHtml = await signInClient.GetStringAsync("/authentication/sign-in?user=local-operator&returnUrl=%2F");
+
+        Assert.Contains("Operational summary", signedInHtml, StringComparison.Ordinal);
+
+        using var reopenedClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: true, cookies);
+        var reopenedHtml = await reopenedClient.GetStringAsync("/");
+
+        Assert.Contains("Test sign-in", reopenedHtml, StringComparison.Ordinal);
+        Assert.Contains("local-operator", reopenedHtml, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: FR1, NF2, TR3.
+    /// Verifies: a stale signed-in cookie without a usable delegated access token is rejected when the operator re-enters the UI through `/`.
+    /// Expected: requesting `/` with an old test-provider cookie but no access token redirects back to the sign-in page instead of rendering the signed-in shell.
+    /// Why: first access must fail closed and require fresh authentication when the browser session no longer has usable API auth state.
+    /// </summary>
+    [Fact]
+    public async Task RootRoute_ShouldRenderSignInPage_WhenAuthenticatedCookieIsStale()
+    {
+        await using var appHost = await DistributedApplicationTestingBuilder
+            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
+
+        await using var app = await appHost.BuildAsync();
+        await app.StartAsync();
+
+        var cookies = new CookieContainer();
+        using var signInClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: true, cookies);
+        _ = await signInClient.GetStringAsync("/authentication/sign-in?user=local-operator&returnUrl=%2F");
+
+        var staleCookies = new CookieContainer();
+        foreach (Cookie cookie in cookies.GetCookies(app.GetEndpoint("web")))
+        {
+            staleCookies.Add(app.GetEndpoint("web"), new Cookie(cookie.Name, cookie.Value, cookie.Path, cookie.Domain));
+        }
+
+        using var staleSessionClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: true, staleCookies);
+        var html = await staleSessionClient.GetStringAsync("/");
+
+        Assert.Contains("Test sign-in", html, StringComparison.Ordinal);
+        Assert.Contains("local-operator", html, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -62,7 +145,7 @@ public class PlatformAuthenticationFunctionalTests
     /// <summary>
     /// Trace: FR4, FR5, FR7, TR1, TR2.
     /// Verifies: an operator can sign in through the explicit synthetic Web test harness and reach the protected configuration page through the Blazor host.
-    /// Expected: the sign-in endpoint issues a session cookie and the subsequent configuration page request returns HTTP 200 OK with the configuration heading.
+    /// Expected: the sign-in endpoint issues a session cookie and the subsequent configuration page request returns HTTP 200 OK with the configuration heading and startup hint.
     /// Why: the protected operator UI must become reachable only after a successful authenticated session is established.
     /// </summary>
     [Fact]
@@ -78,16 +161,17 @@ public class PlatformAuthenticationFunctionalTests
         var html = await httpClient.GetStringAsync("/authentication/sign-in?user=local-operator&returnUrl=%2Fconfiguration&scope=platform.operator");
 
         Assert.Contains("Platform configuration", html, StringComparison.Ordinal);
+        Assert.Contains("configuration-startup-hint", html, StringComparison.Ordinal);
     }
 
     /// <summary>
     /// Trace: FR1, TR3, NF5.
-    /// Verifies: the sign-out endpoint ends the current platform session and redirects the browser to the public landing page.
-    /// Expected: after signing in, requesting `/authentication/sign-out` returns landing-page content that includes the sign-in entry text.
-    /// Why: the sign-out flow must clearly return the operator to the signed-out public entry surface.
+    /// Verifies: the sign-out endpoint ends the current platform session and sends the browser back through the sign-in entry flow.
+    /// Expected: after signing in, requesting `/authentication/sign-out` returns the synthetic sign-in page with the seeded local users.
+    /// Why: after sign-out, the next UI entry must require a fresh login instead of showing a signed-out landing surface.
     /// </summary>
     [Fact]
-    public async Task SignOut_ShouldReturnLandingPageContent_WhenSignedInOperatorEndsPlatformSession()
+    public async Task SignOut_ShouldReturnSignInPage_WhenSignedInOperatorEndsPlatformSession()
     {
         await using var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
@@ -101,8 +185,8 @@ public class PlatformAuthenticationFunctionalTests
 
         var html = await httpClient.GetStringAsync("/authentication/sign-out");
 
-        Assert.Contains("TNC Trading Platform", html, StringComparison.Ordinal);
-        Assert.Contains("Sign in", html, StringComparison.Ordinal);
+        Assert.Contains("Test sign-in", html, StringComparison.Ordinal);
+        Assert.Contains("local-viewer", html, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -226,7 +310,7 @@ public class PlatformAuthenticationFunctionalTests
         Assert.True(
             response.StatusCode is HttpStatusCode.RedirectKeepVerb or HttpStatusCode.Found,
             $"Expected a redirect status code but found {(int)response.StatusCode} ({response.StatusCode}).");
-        Assert.Equal("/", response.Headers.Location?.OriginalString);
+        Assert.Equal("/?platformPrompted=1", response.Headers.Location?.OriginalString);
     }
 
     /// <summary>
