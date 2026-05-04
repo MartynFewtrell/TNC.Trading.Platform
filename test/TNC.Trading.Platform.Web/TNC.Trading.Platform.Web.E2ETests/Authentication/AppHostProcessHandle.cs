@@ -196,6 +196,8 @@ internal sealed class AppHostProcessHandle : IAsyncDisposable
 
     private static IEnumerable<Uri> EnumerateCandidateSignInUris(int port)
     {
+        yield return new Uri($"https://localhost:{port}/authentication/sign-in?returnUrl=%2F");
+        yield return new Uri($"http://localhost:{port}/authentication/sign-in?returnUrl=%2F");
         yield return new Uri($"https://localhost:{port}/authentication/sign-in?returnUrl=%2Fstatus");
         yield return new Uri($"http://localhost:{port}/authentication/sign-in?returnUrl=%2Fstatus");
     }

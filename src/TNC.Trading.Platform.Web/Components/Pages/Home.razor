@@ -7,14 +7,7 @@
 
 <PageTitle>TNC Trading Platform</PageTitle>
 
-@if (redirectingToSignIn)
-{
-    <section class="panel platform-callout">
-        <h1>TNC Trading Platform</h1>
-        <p>Redirecting to sign in...</p>
-    </section>
-}
-else if (operatorContext is null)
+@if (operatorContext is null)
 {
     <section class="panel platform-callout">
         <h1>TNC Trading Platform</h1>
@@ -112,13 +105,11 @@ else
 
 @code {
     private readonly List<HomeAlertItem> alerts = [];
-    private const string SignInDestination = "/authentication/sign-in?returnUrl=%2F&prompt=login";
 
     private PlatformOperatorContext? operatorContext;
     private PlatformStatusViewModel? status;
     private PlatformEventsViewModel? events;
     private string? pendingNavigationUri;
-    private bool redirectingToSignIn;
     private string? loadError;
 
     protected override async Task OnInitializedAsync()
@@ -126,7 +117,6 @@ else
         operatorContext = await OperatorContextAccessor.GetCurrentAsync();
         if (!operatorContext.IsAuthenticated)
         {
-            redirectingToSignIn = true;
             return;
         }
 

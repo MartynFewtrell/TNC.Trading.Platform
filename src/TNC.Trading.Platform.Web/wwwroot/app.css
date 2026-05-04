@@ -70,6 +70,10 @@ form {
     align-items: start;
 }
 
+.platform-app-shell__body--full-width {
+    grid-template-columns: minmax(0, 1fr);
+}
+
 .platform-app-shell--collapsed .platform-app-shell__body {
     grid-template-columns: minmax(0, var(--platform-sidebar-collapsed-width)) minmax(0, 1fr);
 }
@@ -262,6 +266,7 @@ form {
     align-items: center;
     justify-content: center;
     padding: 0.7rem 1rem;
+    margin-bottom: 0.75rem;
     border: none;
     border-radius: 0.9rem;
     background: linear-gradient(135deg, var(--platform-accent-color), #7c3aed);

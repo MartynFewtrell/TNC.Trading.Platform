@@ -10,7 +10,7 @@
                     ShowThemeToggle="@(operatorContext?.HasAnyPlatformRole == true)"
                     ToggleSidebar="ToggleSidebarAsync" />
 
-    <div class="platform-app-shell__body">
+    <div class="platform-app-shell__body @(operatorContext?.HasAnyPlatformRole == true ? string.Empty : "platform-app-shell__body--full-width")">
         @if (operatorContext?.HasAnyPlatformRole == true)
         {
             <nav class="platform-sidebar" aria-label="Primary">

@@ -43,12 +43,12 @@ public class PlatformAuthenticationE2ETests : PageTest
 
     /// <summary>
     /// Trace: FR1, FR5, TR3.
-    /// Verifies: opening the application root in a fresh browser session immediately sends the operator to the sign-in experience.
-    /// Expected: navigating to `/` in the synthetic test runtime ends on the test sign-in page instead of the anonymous landing content.
-    /// Why: the application must prompt for sign-in as soon as it is first opened.
+    /// Verifies: opening the application root in a fresh browser session sends the operator straight through the sign-in-first entry flow.
+    /// Expected: navigating to `/` in the synthetic test runtime shows the explicit sign-in harness with the seeded local users.
+    /// Why: the UI entry route must always prompt for authentication before rendering operator content.
     /// </summary>
     [Fact]
-    public async Task LandingPage_ShouldRedirectToSignIn_WhenAnonymousBrowserOpensApp()
+    public async Task RootRoute_ShouldRenderSignInPage_WhenAnonymousBrowserOpensApp()
     {
         await using var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
@@ -61,16 +61,17 @@ public class PlatformAuthenticationE2ETests : PageTest
             new() { WaitUntil = WaitUntilState.DOMContentLoaded });
 
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Test sign-in" })).ToBeVisibleAsync();
+        await Expect(Page.GetByText("local-viewer")).ToBeVisibleAsync();
     }
 
     /// <summary>
     /// Trace: FR1, TR3, NF2.
-    /// Verifies: opening the app in a fresh browser tab prompts for sign-in again even when the browser still holds a valid platform session cookie.
-    /// Expected: after a seeded viewer signs in on one page, opening `/` in a new page within the same browser context lands on the test sign-in page.
-    /// Why: the app must require an explicit sign-in prompt whenever it is first opened instead of silently continuing from the last authenticated session.
+    /// Verifies: opening the app in a new browser tab reuses the active operator session when the browser still holds a valid platform session cookie.
+    /// Expected: after a seeded viewer signs in on one page, opening `/` in a new page within the same browser context lands on the signed-in operator overview.
+    /// Why: authenticated navigation should stay continuous across browser pages until the operator explicitly signs out.
     /// </summary>
     [Fact]
-    public async Task LandingPage_ShouldPromptForSignIn_WhenAuthenticatedBrowserOpensNewPage()
+    public async Task LandingPage_ShouldRenderOperatorOverview_WhenAuthenticatedBrowserOpensNewPage()
     {
         await using var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
@@ -83,23 +84,23 @@ public class PlatformAuthenticationE2ETests : PageTest
             new Uri(app.GetEndpoint("web"), "/authentication/sign-in?user=local-viewer&returnUrl=%2F").ToString(),
             new() { WaitUntil = WaitUntilState.DOMContentLoaded });
 
-        await Expect(Page.GetByText("Signed in as")).ToBeVisibleAsync();
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Operational summary" })).ToBeVisibleAsync();
 
         var secondPage = await Context.NewPageAsync();
         await secondPage.GotoAsync(rootUri, new() { WaitUntil = WaitUntilState.DOMContentLoaded });
 
-        await Assertions.Expect(secondPage.GetByRole(AriaRole.Heading, new() { Name = "Test sign-in" })).ToBeVisibleAsync();
+        await Assertions.Expect(secondPage.GetByRole(AriaRole.Heading, new() { Name = "Operational summary" })).ToBeVisibleAsync();
         await secondPage.CloseAsync();
     }
 
     /// <summary>
     /// Trace: FR1, TR3, NF2.
-    /// Verifies: opening a protected route in a fresh browser page prompts for sign-in again even when the browser still holds a valid platform session cookie.
-    /// Expected: after a seeded viewer signs in on one page, opening `/status` in a new page within the same browser context lands on the test sign-in page.
-    /// Why: the app must require an explicit sign-in prompt whenever it is first opened, including direct navigation to protected routes.
+    /// Verifies: opening a protected route in a fresh browser page reuses the active operator session when the browser still holds a valid platform session cookie.
+    /// Expected: after a seeded viewer signs in on one page, opening `/status` in a new page within the same browser context lands on the protected status page.
+    /// Why: protected navigation should remain available across browser pages until the operator explicitly signs out.
     /// </summary>
     [Fact]
-    public async Task StatusPage_ShouldPromptForSignIn_WhenAuthenticatedBrowserOpensProtectedRouteInNewPage()
+    public async Task StatusPage_ShouldRenderProtectedContent_WhenAuthenticatedBrowserOpensProtectedRouteInNewPage()
     {
         await using var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
@@ -117,7 +118,37 @@ public class PlatformAuthenticationE2ETests : PageTest
         var secondPage = await Context.NewPageAsync();
         await secondPage.GotoAsync(statusUri, new() { WaitUntil = WaitUntilState.DOMContentLoaded });
 
+        await Assertions.Expect(secondPage.GetByRole(AriaRole.Heading, new() { Name = "Platform status" })).ToBeVisibleAsync();
+        await secondPage.CloseAsync();
+    }
+
+    /// <summary>
+    /// Trace: FR1, TR3, NF2.
+    /// Verifies: reopening the application entry route requires a fresh sign-in even when the browser still holds a valid platform session cookie.
+    /// Expected: after a seeded viewer signs in on one page, opening `/` in a new page within the same browser context shows the sign-in entry rather than the signed-in overview.
+    /// Why: first entry to the UI must always require explicit authentication instead of silently reusing the remembered browser session.
+    /// </summary>
+    [Fact]
+    public async Task RootRoute_ShouldRenderSignInPage_WhenAuthenticatedBrowserReopensApplicationEntry()
+    {
+        await using var appHost = await DistributedApplicationTestingBuilder
+            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
+
+        await using var app = await appHost.BuildAsync();
+        await app.StartAsync();
+
+        var rootUri = new Uri(app.GetEndpoint("web"), "/").ToString();
+        await Page.GotoAsync(
+            new Uri(app.GetEndpoint("web"), "/authentication/sign-in?user=local-viewer&returnUrl=%2F").ToString(),
+            new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Operational summary" })).ToBeVisibleAsync();
+
+        var secondPage = await Context.NewPageAsync();
+        await secondPage.GotoAsync(rootUri, new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+
         await Assertions.Expect(secondPage.GetByRole(AriaRole.Heading, new() { Name = "Test sign-in" })).ToBeVisibleAsync();
+        await Assertions.Expect(secondPage.GetByText("local-viewer")).ToBeVisibleAsync();
         await secondPage.CloseAsync();
     }
 

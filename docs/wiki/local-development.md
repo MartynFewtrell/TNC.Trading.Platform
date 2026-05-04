@@ -51,6 +51,8 @@ New developers should not be prompted for SQL Server or Keycloak passwords in th
 AppHost manages the local SQL Server and Keycloak infrastructure credentials through Aspire's local secret handling.
 
 - You do not need to set a SQL Server or Keycloak admin password manually for normal local startup.
+- The Keycloak admin console username is `keycloak-admin`.
+- The Keycloak admin console password remains the Aspire-managed local Keycloak admin password, not the seeded operator password.
 - The seeded Keycloak user password `LocalAuth!123` is unchanged and is used only for local operator sign-in validation.
 - Infrastructure admin credentials and seeded local operator credentials are separate concerns.
 
@@ -83,7 +85,9 @@ When the application is running, AppHost exposes links for:
 - Scalar UI in development
 - Mailpit UI
 
-The operator UI entry point is `/` on the web application.
+The operator UI entry point is `/` on the web application. In a signed-out browser session, that route immediately redirects to sign-in.
+
+Keycloak is exposed directly on its stable local port so browser-based authentication and the Keycloak admin console use the same origin as the Keycloak server itself. The AppHost dashboard Keycloak link opens the direct admin console endpoint at `http://localhost:8080/admin/master/console/`. Sign in there with the Keycloak admin username `keycloak-admin` and the Aspire-managed Keycloak admin password. Use `http://localhost:8080/` when you need the Keycloak server root instead.
 
 ## Current operator UI presentation
 
@@ -118,7 +122,7 @@ Verify these paths through the AppHost-exposed service URLs:
 
 - API liveness: `GET /health/live`
 - API readiness: `GET /health/ready`
-- Web UI landing page: `GET /`
+- Web UI entry route: `GET /`
 - protected API status: `GET /api/platform/status`
 - protected Web status page: `GET /status`
 - protected Web configuration page: `GET /configuration`
@@ -136,18 +140,20 @@ For the supported local runtime, validate these seeded local accounts with the s
 
 Expected behavior:
 
-1. `/` stays public when signed out.
-2. `local-viewer` can open `/status` but not operator or administrator-only areas.
-3. `local-operator` can open `/status` and `/configuration`.
-4. `local-admin` can open `/status`, `/configuration`, and `/administration/authentication`.
-5. `local-norole` authenticates successfully but is routed to `/authentication/access-denied`.
-6. signing out returns the operator to `/`.
-7. requesting `/status`, `/configuration`, or `/administration/authentication` while signed out redirects the operator to `/authentication/sign-in` with the intended `returnUrl` preserved.
-8. after sign-out, requesting a protected route returns the operator to the sign-in entry point before protected content is available again.
-9. the recent auth events view on `/status` shows redacted operator sign-in, sign-out, denial, and token-acquisition-failure audit events after those actions are exercised.
-10. the shared header shows the signed-in operator name, a sign-out action, and an environment badge when status data is available.
-11. the shared header theme toggle and the smaller configuration-page theme toggle both apply light and dark theme changes immediately.
-12. reloading the same browser preserves the previously selected theme.
+1. `/` redirects to sign-in when signed out.
+2. `/` also redirects to sign-in when the browser carries a stale platform cookie without a usable delegated access token.
+3. `/` requires a fresh sign-in challenge when the operator opens the UI entry route for a new browser visit, even if the browser still holds a previously issued platform session cookie.
+4. `local-viewer` can open `/status` but not operator or administrator-only areas.
+5. `local-operator` can open `/status` and `/configuration`.
+6. `local-admin` can open `/status`, `/configuration`, and `/administration/authentication`.
+7. `local-norole` authenticates successfully but is routed to `/authentication/access-denied`.
+8. signing out returns the operator to `/`.
+9. requesting `/status`, `/configuration`, or `/administration/authentication` while signed out redirects the operator to `/authentication/sign-in` with the intended `returnUrl` preserved.
+10. after sign-out, requesting a protected route returns the operator to the sign-in entry point before protected content is available again.
+11. the recent auth events view on `/status` shows redacted operator sign-in, sign-out, denial, and token-acquisition-failure audit events after those actions are exercised.
+12. the shared header shows the signed-in operator name, a sign-out action, and an environment badge when status data is available.
+13. the shared header theme toggle and the smaller configuration-page theme toggle both apply light and dark theme changes immediately.
+14. reloading the same browser preserves the previously selected theme.
 
 ## Useful local scenarios
 
@@ -177,6 +183,12 @@ Expected behavior:
 - confirm Docker is running and AppHost started SQL Server successfully
 - confirm an external `platformdb` connection string is configured if you are not using the default AppHost-managed local runtime
 - if this started after switching from an older branch or setup, reset the persisted local `sql` and `keycloak` resources and retry
+
+### Keycloak admin console shows a third-party iframe timeout
+
+- open Keycloak through the direct local endpoint instead of an older proxied dashboard URL
+- use the AppHost Keycloak link after restarting AppHost, or browse to `http://localhost:8080/admin/master/console/`
+- if the problem persists after a branch change, reset the persisted local `keycloak` resource and retry
 
 ### The UI shows degraded status
 

@@ -126,7 +126,7 @@ The package remains inside the current Web project and AppHost composition. The 
 | FR3 | The project must be refactored where needed to support cleaner UI structure and better maintainability | Extract shared components and services, keep API and view model contracts stable, and include broad AppHost cleanup where it simplifies composition without changing behavior | Build review, code review, targeted regression checks, and technical documentation review |
 | FR4 | The shared operator UI shell must include a compact utility-style top-level header area | Add shared header above page content with title left, auth and environment right, and non-sticky behavior | Manual validation of signed-in and signed-out header states |
 | FR5 | The AppHost-supported local and testing path must remain simple and rely only on the existing containerized SQL and Keycloak resources | No new supporting runtime dependencies; broad AppHost cleanup is limited to structure and ergonomics | Validate local path through AppHost with existing SQL and Keycloak only |
-| FR6 | The refreshed operator UI must provide a basic light and dark theme switching capability | Add shared theme state service, header control, configuration-page control, and immediate apply behavior | Manual validation of dark/light switching in shared shell and prioritized pages |
+| FR6 | The refreshed operator UI must provide a basic light and dark theme switching capability | Add shared theme state service, a shared header control, and immediate apply behavior | Manual validation of dark/light switching in shared shell and prioritized pages |
 | FR7 | The refreshed operator UI must remember the operator's chosen light or dark theme preference across sessions | Persist theme selection in browser storage and restore on load; default to dark without saved preference | Manual verification across browser refresh and later session in the same browser |
 | FR8 | Signed-out and authentication surfaces must align visually with the refreshed operator UI without adopting the full signed-in shell | Apply the same design language to sign-in, access-denied, and signed-out surfaces without sidebar shell | Manual validation of authentication presentation states |
 | NF1 | The updated UI and supporting project structure must be easier to understand and change | Consolidate layout primitives, reduce duplicated page styling, create reusable UI state patterns, and simplify AppHost structure | Review structure against the spec and confirm reduced duplication in touched UI/AppHost areas |
@@ -161,7 +161,7 @@ The package remains inside the current Web project and AppHost composition. The 
 | ---- | -------- | ------- | ----- |
 | UI Route | `/` | Home overview page | Route preserved; page role changes toward operator overview |
 | UI Route | `/status` | Status page with accordion sections | Route preserved; moderate targeted refresh only |
-| UI Route | `/configuration` | Configuration page with accordion sections and in-context theme setting | Route preserved; existing save workflow retained |
+| UI Route | `/configuration` | Configuration page with accordion sections | Route preserved; existing save workflow retained |
 | UI Route | `/authentication/access-denied` | Signed-in but unauthorized surface | Presentation refresh only |
 | Existing HTTP/API | Existing `PlatformApiClient` requests | `GetStatusAsync`, `GetAuthEventsAsync`, `GetConfigurationAsync`, `UpdateConfigurationAsync` | Existing backend integration retained; no new backend contract assumed in this package |
 
@@ -188,7 +188,7 @@ The package remains inside the current Web project and AppHost composition. The 
 | 5 | Refresh home overview | `Components/Pages/Home.razor`, shared summary components | Combined status card plus compact alerts/activity summaries using Radzen layout primitives |
 | 6 | Refresh status page into accordion panels | `Components/Pages/Status.razor`, shared section components | Multiple sections can remain open; lower-priority sections collapsed by default |
 | 7 | Refresh configuration page into accordion panels | `Components/Pages/Configuration.razor`, supporting form/group components | Broad Radzen form/layout adoption while preserving in-progress edits |
-| 8 | Add theme switcher to configuration page | `Configuration.razor`, shared theme controls | Smaller in-context option, not top-level focus |
+| 8 | Keep theme switching in the shared header only | Shared theme controls, header components | Avoid duplicated theme controls inside configuration content |
 | 9 | Consolidate duplicated UI patterns and styles | Shared components, CSS tokens/utilities | Reduce duplication and improve maintainability |
 | 10 | Refactor AppHost composition structure | `src/TNC.Trading.Platform.AppHost/AppHost.cs` and extracted support files if needed | Broad cleanup for readability, maintainability, and testing ergonomics without adding resources |
 | 11 | Validate UI/AppHost behavior and update docs/wiki if needed | Relevant test projects and `docs/wiki/` pages | Required before marking the plan complete |

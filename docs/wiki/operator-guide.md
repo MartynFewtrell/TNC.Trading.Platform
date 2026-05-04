@@ -26,17 +26,19 @@ The left navigation still changes based on the signed-in operator role.
 
 | Route | Purpose |
 | --- | --- |
-| `/` | App entry route. In a fresh browser session it redirects to sign-in, and after sign-in it acts as the signed-in home page. |
+| `/` | UI entry route. It redirects anonymous users to sign-in on first access and shows the signed-in home overview for authenticated operators. |
 | `/status` | Runtime status, trading-schedule state, auth state, retry state, and recent auth events. |
 | `/configuration` | Operator-managed configuration, notification settings, trading-schedule values, and write-only IG credential updates. |
 | `/administration/authentication` | Administrator-only summary of the configured auth provider, role claim type, and protected API audience. |
 | `/authentication/sign-in` | Starts sign-in. In automated local tests this also lists the seeded local test users. |
-| `/authentication/sign-out` | Ends the platform session and returns to the landing page. |
+| `/authentication/sign-out` | Ends the platform session and returns to the UI entry route, which prompts for sign-in again. |
 | `/authentication/access-denied` | Dedicated denied-access page for signed-in users who lack the required platform role. |
 
 ## Sign-in and sign-out
 
-When the app is first opened in a fresh browser session, the browser is redirected to sign-in before operator content is shown.
+When the app is first opened in a fresh browser session, the UI entry route immediately sends the browser to sign-in before any operator content is shown.
+
+If the browser still has an authenticated platform cookie but no longer has a usable delegated access token, the UI treats that session as stale, clears the platform cookie, and sends the browser back through sign-in instead of rendering a broken signed-in shell.
 
 - in lightweight local test runs, `/authentication/sign-in` lists the seeded local users used by automated tests
 - in container-assisted local runs, sign-in redirects the browser to Keycloak
@@ -52,7 +54,7 @@ The home page now acts as a lightweight operator overview after sign-in.
 
 ### Signed-out presentation
 
-When the operator is signed out, `/` uses a narrower hero-style layout focused on the sign-in action. The shared signed-in navigation shell is not shown before sign-in.
+When the operator is signed out, `/` does not render a public landing surface. Instead, it redirects straight to the sign-in flow. The shared signed-in navigation shell is not shown before sign-in.
 
 ### Signed-in overview content
 
@@ -147,8 +149,6 @@ This section currently allows operators to change:
 - platform environment
 - broker environment
 
-The browser theme toggle is no longer duplicated on this page because the shared top header already exposes the active light or dark theme control.
-
 The configuration page is the main operator-edit surface.
 
 It is designed for safe review and update of configuration without exposing stored secrets.
@@ -182,7 +182,7 @@ Important behavior:
 - the `Live` broker option is shown but disabled when the platform environment is `Test`
 - changing startup-fixed values can set `RestartRequired`
 - the page explains that startup-fixed changes apply on the next platform start
-- the section also includes an in-context theme toggle so the operator can switch the UI theme without leaving the page
+- UI theme switching is provided from the shared header control rather than from the configuration form
 
 ### Trading schedule
 

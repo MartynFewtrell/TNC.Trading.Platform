@@ -32,8 +32,8 @@ The platform currently exposes a Blazor UI and API without the local operator au
 - The Blazor Web app requests a baseline delegated scope at sign-in and acquires higher scopes only when a privileged area requires them.
 - Higher delegated scopes are acquired through interactive consent prompts when a privileged area is first accessed.
 - Delegated tokens may be renewed silently while the platform session remains valid, but a full sign-in is required when the platform session expires.
-- Authorized operators return to the public landing page after sign-in, where the page renders authenticated navigation and operator context.
-- The authenticated public landing page shows a welcome message, the operator display name, a sign-out action, and links to protected areas allowed by the operator's role.
+- The UI entry route redirects anonymous users to the sign-in experience on first access and returns authorized operators to the signed-in home overview after authentication completes.
+- The signed-in home overview shows operator-facing summary content, the operator display name, a sign-out action, and links to protected areas allowed by the operator's role.
 - Seeded local development users use fixed local-only development passwords defined in the realm import and documented only for local validation.
 - The seeded local development usernames are explicit local-dev identities: `local-admin`, `local-operator`, `local-viewer`, and `local-norole`.
 - Seeded local development users share one common fixed local-only password to keep local validation simple and repeatable.
@@ -49,7 +49,7 @@ The platform currently exposes a Blazor UI and API without the local operator au
 - Local authentication must use Keycloak orchestrated by Aspire, and Azure authentication must use Microsoft Entra ID.
 - Protected API endpoints must challenge with `401 Unauthorized` or deny with `403 Forbidden` without browser redirects.
 - Protected Blazor navigation must redirect anonymous users to the sign-in entry point and show a dedicated access-denied experience to authenticated users who lack the required role.
-- Sign-out in the initial release only ends the platform session and returns the user to the public landing page.
+- Sign-out in the initial release only ends the platform session and returns the user to the UI entry route, which prompts for sign-in again.
 - Authentication and authorization outcomes must be observable without logging tokens, client secrets, or other sensitive protocol data.
 
 ## 3. Proposed Solution
@@ -62,7 +62,7 @@ The Web app will request the baseline `platform.viewer` scope at sign-in and acq
 
 While the platform session remains valid, delegated API tokens may be renewed silently to avoid unnecessary interruption during normal operator use. If the platform session itself expires or authentication state is otherwise lost, the operator is challenged to sign in again before protected UI or API access continues.
 
-After successful sign-in for an authorized operator, the application will return the user to the public landing page, which becomes an authenticated entry surface showing a welcome message, the operator display name, a sign-out action, and links to protected areas allowed by role without requiring a separate default protected dashboard route. The displayed operator name will prefer the `name` claim and fall back to `preferred_username` when required.
+When the operator first opens the UI entry route while signed out, the application redirects immediately to the configured sign-in experience instead of rendering a public landing page. After successful sign-in for an authorized operator, the application returns the user to the signed-in home overview, which shows the operator display name, sign-out action, summary content, and links to protected areas allowed by role without requiring a separate default protected dashboard route. The displayed operator name will prefer the `name` claim and fall back to `preferred_username` when required.
 
 The design adopts a backend-for-frontend style boundary: the Blazor server authenticates the operator, exposes only the minimum authenticated context to UI components, acquires delegated access tokens on behalf of the signed-in operator, and calls protected API endpoints with bearer tokens. This fits the existing Blazor Server architecture, keeps secrets and tokens off the browser, preserves a standards-based protected API boundary, and aligns with Microsoft Learn guidance for Blazor web apps secured with OIDC and protected API access.
 
@@ -86,19 +86,19 @@ The solution extends the existing distributed application with an authentication
 
 - **Components**:
   - `TNC.Trading.Platform.AppHost`: composes local dependencies, adds a Keycloak container for local development, and supplies environment-specific configuration to the Web and API services.
-  - `TNC.Trading.Platform.Web`: hosts the public landing page, sign-in and sign-out entry points, callback handling, authentication state, protected Blazor routes, access-denied page, and operator-aware UI rendering.
+  - `TNC.Trading.Platform.Web`: hosts the sign-in-first UI entry route, sign-in and sign-out entry points, callback handling, authentication state, protected Blazor routes, access-denied page, and operator-aware UI rendering.
   - `TNC.Trading.Platform.Api`: validates authenticated operator access for protected endpoints, leaves health/readiness endpoints public, and applies shared role policies to feature endpoints.
   - Shared authorization configuration: constants and registration extensions that define role names, policy names, claim mapping, and the minimum authenticated user context exposed to the UI.
   - Identity provider resources: a Keycloak realm with separate Web and API clients for local development, plus separate Microsoft Entra Web and API app registrations for Azure-aligned environments.
 - **Data flows**:
-  - Anonymous users can reach the public landing page and health/readiness endpoints.
+  - Anonymous users can reach the UI entry route and health/readiness endpoints, but the UI immediately redirects them into the sign-in flow.
   - A sign-in request from the Blazor Web app redirects the operator to the configured OIDC provider.
   - After a successful OIDC callback, the Web app establishes the platform session, derives shared authorization state from role claims, and stores the information required for delegated token acquisition.
-  - Authorized operators are returned to the public landing page, which renders authenticated navigation and operator-aware state.
+  - Authorized operators are returned to the signed-in home overview, which renders authenticated navigation and operator-aware state.
   - Protected Blazor routes and UI actions evaluate the authenticated user and applicable role policies.
   - When the Web app calls the API on behalf of the signed-in operator, it acquires a delegated bearer token for the configured API scope and sends it to the API.
   - Protected API endpoints validate delegated bearer tokens, derive the operator identity and roles from claims, and enforce shared role policies.
-  - Sign-out clears the platform session and redirects the operator to the public landing page.
+  - Sign-out clears the platform session and redirects the operator to the UI entry route so the next visit prompts for sign-in again.
   - Authentication failures, sign-outs, and authorization denials emit structured operational signals without secret leakage.
 - **Dependencies**:
   - ASP.NET Core authentication and authorization middleware.
@@ -111,10 +111,10 @@ The solution extends the existing distributed application with an authentication
 
 | Requirement ID | Requirement | Implementation notes | Validation approach |
 | -------------- | ----------- | -------------------- | ------------------- |
-| FR1 | Provide operator sign-in and sign-out for the platform UI | Add OIDC sign-in, cookie session management, return authorized operators to the authenticated public landing page after sign-in, and redirect to the public landing page after sign-out | Functional tests for sign-in, sign-out, session expiry recovery, and post-sign-out access denial |
-| FR2 | Provide the intended unauthenticated entry and platform-public surfaces for the initial release | Keep the landing page, auth endpoints, and health/readiness endpoints anonymous while marking operator routes and protected APIs as authenticated | Functional and integration tests proving anonymous access only to intended public surfaces |
+| FR1 | Provide operator sign-in and sign-out for the platform UI | Add OIDC sign-in, cookie session management, redirect anonymous entry-route requests through sign-in, return authorized operators to the signed-in home overview after sign-in, redirect post-sign-out traffic back through the entry route, and reject stale entry sessions that no longer carry a usable access token | Functional tests for sign-in, sign-out, session expiry recovery, stale-session rejection, and post-sign-out access denial |
+| FR2 | Provide the intended unauthenticated entry and platform-public surfaces for the initial release | Keep the UI entry route, auth endpoints, and health/readiness endpoints anonymous while ensuring the UI entry route immediately presents sign-in and stale authenticated sessions are forced back through sign-in before operator content is shown | Functional and integration tests proving anonymous access only to intended public surfaces |
 | FR3 | Restrict sign-in eligibility to pre-provisioned users with assigned platform roles | Require provider-managed role claims, seed a local pre-provisioned no-role user for validation, complete authentication, and redirect no-role users to the access-denied experience instead of protected features | Role-based functional tests for users with no role and users with valid platform roles |
-| FR4 | Expose authentication state to the Blazor UI | Register authentication state services and a minimal authenticated user context service exposing display name and authorization state so the landing page and protected navigation can render correctly for authenticated operators | Component and functional tests proving authenticated and anonymous UI behavior |
+| FR4 | Expose authentication state to the Blazor UI | Register authentication state services and a minimal authenticated user context service exposing display name and authorization state so the sign-in-first entry flow and protected navigation can render correctly for authenticated operators | Component and functional tests proving authenticated and anonymous UI behavior |
 | FR5 | Protect operator-only Blazor routes and pages from anonymous access | Apply authorization to protected routes/components and redirect anonymous requests to sign-in | Functional tests for route challenge and post-sign-in success |
 | FR6 | Protect operator-only API endpoints from anonymous access | Configure JWT bearer authentication and shared authorization policies for protected API endpoints, leaving health/readiness endpoints anonymous | API integration tests for `401` challenge, `403` deny, and authorized success |
 | FR7 | Provide named roles that can be applied consistently across the Blazor UI and API | Define centralized role and policy constants for `Administrator`, `Operator`, and `Viewer` and reuse them across UI and API | Unit, integration, and functional tests covering each role boundary |
@@ -125,7 +125,7 @@ The solution extends the existing distributed application with an authentication
 | NF2 | Invalid, expired, or missing authentication state must fail closed | Use framework authentication challenges, authorization middleware, route protection, and silent delegated token renewal only while the platform session remains valid so protected features remain inaccessible without a valid session | Functional tests for expired, missing, and invalid authentication state |
 | NF3 | Identity-provider configuration must be externalized by environment | Bind provider settings from configuration and secret stores, with separate local and Azure provider sections | Configuration review and local startup validation with no hard-coded secrets |
 | NF4 | Authentication and authorization outcomes must be observable without exposing secrets | Emit structured logs and audit events for sign-in, sign-out, auth failure, and access denial without token or secret payloads | Log verification and automated tests for denial/failure flows |
-| NF5 | The operator experience must make authentication and access state understandable | Provide a public landing page, clear sign-in path, authenticated landing-page state with welcome, display name, sign-out, role-allowed navigation, and a dedicated access-denied page | Functional tests and manual local validation |
+| NF5 | The operator experience must make authentication and access state understandable | Provide a clear sign-in-first entry flow, a consistent sign-in path, a signed-in home overview with display name, sign-out, role-allowed navigation, and a dedicated access-denied page | Functional tests and manual local validation |
 | SR1 | Protected platform features must require an authenticated operator session and shared role-based authorization rules | Configure authentication and authorization middleware across Web and API with centralized role policies | Integration and functional tests covering anonymous, authenticated, and role-specific access |
 | SR2 | Authentication-related secrets and sensitive protocol data must not be exposed to client code, logs, or reports | Keep secrets server-side, minimize claims exposed to the UI, and redact or avoid sensitive log fields | Code review, configuration review, and log inspection |
 | SR3 | Identity-provider credentials and related secret configuration must be stored outside source control and be rotatable | Use Aspire parameters, secret stores, and environment configuration for provider credentials | Local configuration validation and repo review confirming no checked-in secrets |
@@ -145,7 +145,7 @@ The solution extends the existing distributed application with an authentication
 
 | Area | Contract | Example | Notes |
 | ---- | -------- | ------- | ----- |
-| Web | `GET /` | Public landing page for anonymous users | Anonymous surface |
+| Web | `GET /` | UI entry route that redirects anonymous users to sign-in and shows the home overview after sign-in | Anonymous entry surface |
 | Web | `GET /authentication/sign-in` | Initiates OIDC challenge | Anonymous surface |
 | Web | `GET /authentication/sign-out` | Clears platform session and redirects to `/` | Signed-in operator action |
 | Web | `GET /authentication/access-denied` | Dedicated access-denied page | Returned for signed-in users lacking required roles |
@@ -184,7 +184,7 @@ The solution extends the existing distributed application with an authentication
 | Scenario | Expected behavior | Instrumentation |
 | -------- | ----------------- | --------------- |
 | Anonymous user requests protected Blazor route | Redirect to sign-in entry point | Structured log for challenge flow without sensitive user data |
-| Authorized operator completes sign-in | Return to the public landing page with welcome content, operator display name, sign-out action, and role-allowed navigation | Structured informational log for successful sign-in |
+| Authorized operator completes sign-in | Return to the signed-in home overview with operator summary content, display name, sign-out action, and role-allowed navigation | Structured informational log for successful sign-in |
 | Authenticated user has no platform role at sign-in | Redirect to the dedicated access-denied page and block protected operator features | Structured warning log and audit event for authorization denial |
 | Signed-in user lacks required role for a Blazor route | Render access-denied page | Structured log and audit event for authorization denial |
 | Higher delegated scope acquisition is required for a privileged area | Request the additional scope only when the operator enters that area; if acquisition is declined or fails, block the privileged action safely and keep the operator on an allowed surface | Structured warning or error log with correlation data and no token values |

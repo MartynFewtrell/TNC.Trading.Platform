@@ -3,6 +3,7 @@ using TNC.Trading.Platform.AppHost;
 
 const string keycloakRealmName = "tnc-trading-platform";
 const string keycloakAuthority = "http://localhost:8080/realms/tnc-trading-platform";
+const string keycloakAdminUserName = "keycloak-admin";
 const string testIssuer = "https://test-auth.local";
 const string apiAudience = "tnc-trading-platform-api";
 const string testSigningKey = "0123456789abcdef0123456789abcdef";
@@ -60,11 +61,19 @@ static AppHostInfrastructure ConfigureInfrastructureResources(IDistributedApplic
             Url = "/",
             DisplayText = "Mailpit UI"
         });
+    var keycloakAdminUser = builder.AddParameter("keycloak-admin-user", keycloakAdminUserName);
     var keycloak = builder.AddKeycloak(
             "keycloak",
-            port: 8080)
+            port: 8080,
+            adminUsername: keycloakAdminUser)
+        .WithEndpointProxySupport(proxyEnabled: false)
         .WithLifetime(ContainerLifetime.Persistent)
-        .WithRealmImport("./Realms");
+        .WithRealmImport("./Realms")
+        .WithUrlForEndpoint("http", url =>
+        {
+            url.Url = "/admin/master/console/";
+            url.DisplayText = "Keycloak Admin Console";
+        });
 
     return new AppHostInfrastructure(platformDatabase, mailpit, keycloak);
 }

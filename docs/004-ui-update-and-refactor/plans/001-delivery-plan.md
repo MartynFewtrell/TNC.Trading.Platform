@@ -3,7 +3,7 @@
 ## Summary
 
 - **Source**: See `../requirements.md` for canonical work metadata (work item, owner, dates, links) and scope. See `../../business-requirements.md` for project-level business context.
-- **Status**: draft
+- **Status**: complete
 - **Inputs**:
   - `../../business-requirements.md`
   - `../requirements.md`
@@ -48,7 +48,7 @@ The final plan includes five incremental work items.
 
 ### Work Item 1 details
 
-- [ ] Work Item 1: Establish UI foundation
+- [x] Work Item 1: Establish UI foundation
   - [x] Build and test baseline established
   - [x] Task 1: Add shared UI infrastructure and theme registration
     - [x] Step 1: Register Radzen UI services, assets, and shared startup wiring while keeping `Program.cs` focused on orchestration
@@ -58,9 +58,9 @@ The final plan includes five incremental work items.
     - [x] Step 1: Refresh `MainLayout.razor` with the compact utility-style header and preserved left navigation
     - [x] Step 2: Add reusable header, environment badge, navigation item, and theme toggle components or equivalents
     - [x] Step 3: Implement session-default expanded navigation with desktop/laptop collapse support that preserves icons
-  - [ ] Task 3: Validate shared shell behavior and regression boundaries
+  - [x] Task 3: Validate shared shell behavior and regression boundaries
     - [x] Step 1: Verify routes, page names, navigation order, and auth protection remain unchanged
-    - [ ] Step 2: Verify dark-default rendering, signed-in header state, and narrower-width shell usability
+    - [x] Step 2: Verify dark-default rendering, signed-in header state, and narrower-width shell usability
   - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
   - [x] Build and test validation
 
@@ -74,7 +74,7 @@ The final plan includes five incremental work items.
 
 ### Work Item 2 details
 
-- [ ] Work Item 2: Refresh signed-out and overview surfaces
+- [x] Work Item 2: Refresh signed-out and overview surfaces
   - [x] Build and test baseline established
   - [x] Task 1: Refresh signed-out and authentication-related presentation
     - [x] Step 1: Apply the refined dark-default visual language to sign-in and access-related surfaces without the signed-in shell
@@ -83,9 +83,9 @@ The final plan includes five incremental work items.
     - [x] Step 1: Reframe the home page as the concise operator overview without changing its route or identity
     - [x] Step 2: Add the combined operational status summary card
     - [x] Step 3: Add compact, non-clickable alert and notable-event summaries plus reusable recent activity content when available
-  - [ ] Task 3: Validate overview and auth presentation states
-    - [ ] Step 1: Verify signed-out and signed-in header/auth states behave as intended
-    - [ ] Step 2: Verify home overview content hierarchy and narrower-width usability
+  - [x] Task 3: Validate overview and auth presentation states
+    - [x] Step 1: Verify signed-out and signed-in header/auth states behave as intended
+    - [x] Step 2: Verify home overview content hierarchy and narrower-width usability
   - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
   - [x] Build and test validation
 
@@ -99,7 +99,7 @@ The final plan includes five incremental work items.
 
 ### Work Item 3 details
 
-- [ ] Work Item 3: Refresh status and configuration flows
+- [x] Work Item 3: Refresh status and configuration flows
   - [x] Build and test baseline established
   - [x] Task 1: Refresh the status page into grouped accordion sections
     - [x] Step 1: Reorganize status content into a small number of readable sections or panels
@@ -125,14 +125,14 @@ The final plan includes five incremental work items.
 
 ### Work Item 4 details
 
-- [ ] Work Item 4: Apply AppHost cleanup and validation path refinements
+- [x] Work Item 4: Apply AppHost cleanup and validation path refinements
   - [x] Build and test baseline established
   - [x] Task 1: Refactor AppHost composition structure
     - [x] Step 1: Simplify resource and project wiring for readability and maintainability
     - [x] Step 2: Extract helper structure only where it improves clarity without changing supported resources or behavior
-  - [ ] Task 2: Validate the targeted local/testing path
-    - [ ] Step 1: Confirm the AppHost-backed path still relies only on the existing SQL Server and Keycloak resources
-    - [ ] Step 2: Confirm no additional operator or local-development steps are introduced
+  - [x] Task 2: Validate the targeted local/testing path
+    - [x] Step 1: Confirm the AppHost-backed path still relies only on the existing SQL Server and Keycloak resources
+    - [x] Step 2: Confirm no additional operator or local-development steps are introduced
   - [x] Task 3: Align local-development documentation if affected
     - [x] Step 1: Update the relevant `docs/wiki/` pages when AppHost structure or validation guidance changes
   - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
@@ -147,20 +147,20 @@ The final plan includes five incremental work items.
 
 ### Work Item 5 details
 
-- [ ] Work Item 5: Complete validation and documentation
+- [x] Work Item 5: Complete validation and documentation
   - [x] Build and test baseline established
-  - [ ] Task 1: Execute focused regression and presentation validation
-    - [ ] Step 1: Re-run the full build and test suite
-    - [ ] Step 2: Verify shared shell, prioritized pages, auth states, theme switching, remembered preference, and narrower-width usability
-    - [ ] Step 3: Verify the targeted AppHost-supported local/testing path remains operable with SQL Server and Keycloak only
-  - [ ] Task 2: Complete documentation and link validation
+  - [x] Task 1: Execute focused regression and presentation validation
+    - [x] Step 1: Re-run the full build and test suite
+    - [x] Step 2: Verify shared shell, prioritized pages, auth states, theme switching, remembered preference, and narrower-width usability
+    - [x] Step 3: Verify the targeted AppHost-supported local/testing path remains operable with SQL Server and Keycloak only
+  - [x] Task 2: Complete documentation and link validation
     - [x] Step 1: Update affected `docs/wiki/` pages for behavior, operator guidance, local development, and testing approach changes
-    - [ ] Step 2: Verify affected wiki navigation and cross-links still resolve after the updates
-  - [ ] Task 3: Close out the work package
-    - [ ] Step 1: Confirm traceability coverage across implemented work items and validations
-    - [ ] Step 2: Prepare the work package for review with rollback guidance preserved per increment
+    - [x] Step 2: Verify affected wiki navigation and cross-links still resolve after the updates
+  - [x] Task 3: Close out the work package
+    - [x] Step 1: Confirm traceability coverage across implemented work items and validations
+    - [x] Step 2: Prepare the work package for review with rollback guidance preserved per increment
   - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
-  - [ ] Build and test validation
+  - [x] Build and test validation
 
   - **Files**:
     - Affected pages under `docs/wiki/`: Update implementation, operator, local-development, and testing guidance pages
@@ -185,15 +185,16 @@ The final plan includes five incremental work items.
 
 ## Acceptance checklist
 
-- [ ] Work item aligns with `../business-requirements.md`.
-- [ ] All referenced `FRx` requirements are implemented and validated.
-- [ ] All referenced `NFx` requirements have measurements or checks.
-- [ ] All referenced `SRx` security requirements are implemented and validated.
-- [ ] Relevant `docs/wiki/` pages are updated to reflect the delivered implementation.
-- [ ] Affected wiki links resolve after documentation updates.
-- [ ] Rollback/backout plan documented for each work item.
+- [x] Work item aligns with `../business-requirements.md`.
+- [x] All referenced `FRx` requirements are implemented and validated.
+- [x] All referenced `NFx` requirements have measurements or checks.
+- [x] All referenced `SRx` security requirements are implemented and validated.
+- [x] Relevant `docs/wiki/` pages are updated to reflect the delivered implementation.
+- [x] Affected wiki links resolve after documentation updates.
+- [x] Rollback/backout plan documented for each work item.
 
 ## Notes
 
 - This draft uses a single-PR delivery while retaining multiple internal work items so implementation, validation, and rollback reasoning stay incremental inside the same change set.
 - If delivery risk increases during implementation, the work items can still be split into follow-up PRs without changing the traceability and validation structure.
+- Final validation completed with `dotnet build` and a serialized `dotnet test -m:1` pass after clearing lingering local test processes that had locked build outputs during repeated validation runs.
