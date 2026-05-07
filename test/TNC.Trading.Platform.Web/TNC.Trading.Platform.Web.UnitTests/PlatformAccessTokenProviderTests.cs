@@ -165,6 +165,37 @@ public class PlatformAccessTokenProviderTests
 
     /// <summary>
     /// Trace: NF2, NF4, SR4, IR2.
+    /// Verifies: the access-token provider does not use the authenticated principal role fallback when the delegated token is expired.
+    /// Expected: requesting an operator scope throws a scope-challenge exception and records one token-acquisition failure event even though the HTTP principal has the operator role.
+    /// Why: stale delegated tokens must not be reused for API calls just because the cookie principal still advertises the expected role.
+    /// </summary>
+    [Fact]
+    public async Task GetAccessTokenAsync_ShouldThrowScopeChallenge_WhenExpiredTokenWouldOtherwiseBeSatisfiedBySessionRole()
+    {
+        var principal = CreatePrincipal(PlatformAuthenticationDefaults.Roles.Operator);
+        var accessToken = CreateAccessToken(
+            "local-operator",
+            [PlatformAuthenticationDefaults.Roles.Operator],
+            [],
+            DateTimeOffset.UtcNow.AddMinutes(-5),
+            DateTimeOffset.UtcNow.AddMinutes(-10));
+        var httpContext = CreateHttpContext(accessToken, "/configuration", principal);
+        var handler = new RecordingHttpMessageHandler();
+        var provider = new PlatformAccessTokenProvider(
+            new HttpContextAccessor { HttpContext = httpContext },
+            CreateAuditClient(handler, httpContext),
+            NullLogger<PlatformAccessTokenProvider>.Instance);
+
+        var exception = await Assert.ThrowsAsync<PlatformScopeChallengeRequiredException>(() =>
+            provider.GetAccessTokenAsync([PlatformAuthenticationDefaults.Scopes.Operator], CancellationToken.None));
+
+        Assert.Equal([PlatformAuthenticationDefaults.Scopes.Operator], exception.MissingScopes);
+        Assert.Equal(1, handler.CallCount);
+        Assert.Contains(PlatformAuthenticationDefaults.AuditEvents.TokenAcquisitionFailed, handler.LastContent, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: NF2, NF4, SR4, IR2.
     /// Verifies: the access-token provider fails closed when the delegated token is not yet valid.
     /// Expected: requesting an administrator scope throws a scope-challenge exception and records one token-acquisition failure event.
     /// Why: future-dated or otherwise invalid session tokens must not be treated as usable delegated access during privileged navigation.
@@ -192,6 +223,33 @@ public class PlatformAccessTokenProviderTests
         Assert.Equal(1, handler.CallCount);
         Assert.Contains(PlatformAuthenticationDefaults.AuditEvents.TokenAcquisitionFailed, handler.LastContent, StringComparison.Ordinal);
         Assert.Contains("/administration/authentication", handler.LastContent, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: NF2, NF4, SR4, IR2.
+    /// Verifies: the access-token provider does not use the authenticated principal role fallback when the delegated token is unreadable.
+    /// Expected: requesting the viewer scope throws a scope-challenge exception and records one token-acquisition failure event even though the HTTP principal has the viewer role.
+    /// Why: malformed or tampered delegated tokens must be rejected before any session-role fallback can authorize downstream API access.
+    /// </summary>
+    [Fact]
+    public async Task GetAccessTokenAsync_ShouldThrowScopeChallenge_WhenInvalidTokenWouldOtherwiseBeSatisfiedBySessionRole()
+    {
+        var principal = CreatePrincipal(PlatformAuthenticationDefaults.Roles.Viewer);
+        const string accessToken = "not-a-jwt";
+        var httpContext = CreateHttpContext(accessToken, "/status", principal);
+        var handler = new RecordingHttpMessageHandler();
+        var provider = new PlatformAccessTokenProvider(
+            new HttpContextAccessor { HttpContext = httpContext },
+            CreateAuditClient(handler, httpContext),
+            NullLogger<PlatformAccessTokenProvider>.Instance);
+
+        var exception = await Assert.ThrowsAsync<PlatformScopeChallengeRequiredException>(() =>
+            provider.GetAccessTokenAsync([PlatformAuthenticationDefaults.Scopes.Viewer], CancellationToken.None));
+
+        Assert.Equal([PlatformAuthenticationDefaults.Scopes.Viewer], exception.MissingScopes);
+        Assert.Equal(1, handler.CallCount);
+        Assert.Contains(PlatformAuthenticationDefaults.AuditEvents.TokenAcquisitionFailed, handler.LastContent, StringComparison.Ordinal);
+        Assert.Contains("/status", handler.LastContent, StringComparison.Ordinal);
     }
 
     private static PlatformAuthAuditClient CreateAuditClient(RecordingHttpMessageHandler handler, HttpContext httpContext) =>

@@ -16,16 +16,34 @@ internal sealed class PlatformAccessTokenProvider(
         var httpContext = httpContextAccessor.HttpContext ?? throw new InvalidOperationException("The current HTTP context is unavailable.");
         cancellationToken.ThrowIfCancellationRequested();
 
+        var distinctRequiredScopes = requiredScopes
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
         var accessToken = await httpContext.GetTokenAsync("access_token");
         if (string.IsNullOrWhiteSpace(accessToken))
         {
             throw new InvalidOperationException("The current operator session does not contain an access token.");
         }
 
+        if (!PlatformTokenScopeEvaluator.HasUsableSessionToken(accessToken))
+        {
+            await authAuditClient.RecordTokenAcquisitionFailedAsync(
+                httpContext.Request.Path.Value,
+                distinctRequiredScopes,
+                accessToken,
+                cancellationToken);
+
+            logger.LogWarning(
+                "The current operator session does not contain a usable delegated access token for required scopes {MissingScopes}",
+                distinctRequiredScopes);
+
+            throw new PlatformScopeChallengeRequiredException(distinctRequiredScopes);
+        }
+
         var grantedScopes = GetGrantedScopes(httpContext.User, accessToken);
-        var missingScopes = requiredScopes
+        var missingScopes = distinctRequiredScopes
             .Where(scope => !grantedScopes.Contains(scope, StringComparer.Ordinal))
-            .Distinct(StringComparer.Ordinal)
             .ToArray();
 
         if (missingScopes.Length > 0)
@@ -52,6 +70,11 @@ internal sealed class PlatformAccessTokenProvider(
 
         var grantedScopes = PlatformTokenScopeEvaluator.ReadEffectiveScopes(accessToken)
             .ToHashSet(StringComparer.Ordinal);
+
+        if (!PlatformTokenScopeEvaluator.HasUsableSessionToken(accessToken))
+        {
+            return grantedScopes;
+        }
 
         if (principal.IsInRole(PlatformAuthenticationDefaults.Roles.Viewer)
             || principal.IsInRole(PlatformAuthenticationDefaults.Roles.Operator)
