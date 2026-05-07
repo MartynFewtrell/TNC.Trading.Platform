@@ -66,12 +66,12 @@ public class PlatformAuthenticationE2ETests : PageTest
 
     /// <summary>
     /// Trace: FR1, TR3, NF2.
-    /// Verifies: opening the app in a new browser tab reuses the active operator session when the browser still holds a valid platform session cookie.
-    /// Expected: after a seeded viewer signs in on one page, opening `/` in a new page within the same browser context lands on the signed-in operator overview.
-    /// Why: authenticated navigation should stay continuous across browser pages until the operator explicitly signs out.
+    /// Verifies: reopening the application root in a new browser tab requires a fresh sign-in even when the browser still holds a valid platform session cookie.
+    /// Expected: after a seeded viewer signs in on one page, opening `/` in a new page within the same browser context shows the sign-in entry rather than the signed-in overview.
+    /// Why: first entry to the UI must always require explicit authentication instead of silently reusing the remembered browser session.
     /// </summary>
     [Fact]
-    public async Task LandingPage_ShouldRenderOperatorOverview_WhenAuthenticatedBrowserOpensNewPage()
+    public async Task RootRoute_ShouldRenderSignInPage_WhenAuthenticatedBrowserOpensNewPage()
     {
         await using var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
@@ -89,7 +89,8 @@ public class PlatformAuthenticationE2ETests : PageTest
         var secondPage = await Context.NewPageAsync();
         await secondPage.GotoAsync(rootUri, new() { WaitUntil = WaitUntilState.DOMContentLoaded });
 
-        await Assertions.Expect(secondPage.GetByRole(AriaRole.Heading, new() { Name = "Operational summary" })).ToBeVisibleAsync();
+        await Assertions.Expect(secondPage.GetByRole(AriaRole.Heading, new() { Name = "Test sign-in" })).ToBeVisibleAsync();
+        await Assertions.Expect(secondPage.GetByText("local-viewer")).ToBeVisibleAsync();
         await secondPage.CloseAsync();
     }
 
