@@ -20,6 +20,9 @@
 </html>
 
 @code {
+    private CancellationTokenSource? themeInitializationRetryCancellationTokenSource;
+    private Task? themeInitializationRetryTask;
+
     protected override void OnInitialized()
     {
         ThemeState.Changed += HandleThemeChanged;
@@ -27,19 +30,55 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        if (ThemeState.IsInitialized)
         {
-            await ThemeState.EnsureInitializedAsync();
+            return;
+        }
+
+        await ThemeState.EnsureInitializedAsync();
+
+        if (!ThemeState.IsInitialized)
+        {
+            ScheduleThemeInitializationRetry();
         }
     }
 
     public void Dispose()
     {
+        themeInitializationRetryCancellationTokenSource?.Cancel();
+        themeInitializationRetryCancellationTokenSource?.Dispose();
         ThemeState.Changed -= HandleThemeChanged;
     }
 
     private void HandleThemeChanged()
     {
         _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void ScheduleThemeInitializationRetry()
+    {
+        if (themeInitializationRetryTask is { IsCompleted: false })
+        {
+            return;
+        }
+
+        themeInitializationRetryCancellationTokenSource ??= new CancellationTokenSource();
+        themeInitializationRetryTask = RetryThemeInitializationAsync(themeInitializationRetryCancellationTokenSource.Token);
+    }
+
+    private async Task RetryThemeInitializationAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 }

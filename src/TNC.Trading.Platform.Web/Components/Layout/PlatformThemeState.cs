@@ -14,6 +14,8 @@ internal sealed class PlatformThemeState(IJSRuntime jsRuntime, ILogger<PlatformT
 
     public bool IsDarkMode => currentMode == PlatformThemeMode.Dark;
 
+    internal bool IsInitialized => isInitialized;
+
     public string RadzenThemeName => GetRadzenThemeName(currentMode);
 
     public async Task EnsureInitializedAsync()
