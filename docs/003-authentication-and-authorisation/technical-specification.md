@@ -49,7 +49,7 @@ The platform currently exposes a Blazor UI and API without the local operator au
 - Local authentication must use Keycloak orchestrated by Aspire, and Azure authentication must use Microsoft Entra ID.
 - Protected API endpoints must challenge with `401 Unauthorized` or deny with `403 Forbidden` without browser redirects.
 - Protected Blazor navigation must redirect anonymous users to the sign-in entry point and show a dedicated access-denied experience to authenticated users who lack the required role.
-- Sign-out in the initial release only ends the platform session and returns the user to the UI entry route, which prompts for sign-in again.
+- Sign-out in the initial release ends both the platform session and the OpenID Connect provider session, forwarding `id_token_hint` when available during provider sign-out, and then returns the user to the UI entry route, which prompts for sign-in again.
 - Authentication and authorization outcomes must be observable without logging tokens, client secrets, or other sensitive protocol data.
 
 ## 3. Proposed Solution

@@ -152,7 +152,7 @@ Expected behavior:
 10. after sign-out, requesting a protected route returns the operator to the sign-in entry point before protected content is available again.
 11. the recent auth events view on `/status` shows redacted operator sign-in, sign-out, denial, and token-acquisition-failure audit events after those actions are exercised.
 12. the shared header shows the signed-in operator name, a sign-out action, and an environment badge when status data is available.
-13. the shared header theme toggle and the smaller configuration-page theme toggle both apply light and dark theme changes immediately.
+13. the shared header theme toggle applies light and dark theme changes immediately.
 14. reloading the same browser preserves the previously selected theme.
 
 ## Useful local scenarios
