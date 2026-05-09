@@ -1,4 +1,6 @@
-﻿<header class="platform-header">
+﻿@using TNC.Trading.Platform.Web.Authentication
+
+<header class="platform-header">
     <div class="platform-header__primary">
         @if (ShowSidebarToggle)
         {
@@ -26,7 +28,7 @@
             }
             else
             {
-                <a class="platform-header__action" href="/authentication/sign-in?returnUrl=%2F" data-enhance-nav="false">Sign in</a>
+                <a class="platform-header__action" href="@SignInUrl" data-enhance-nav="false">Sign in</a>
             }
 
             @if (ShowThemeToggle)
@@ -55,6 +57,8 @@
 
     [Parameter]
     public EventCallback ToggleSidebar { get; set; }
+
+    private static string SignInUrl => PlatformSignInUrlBuilder.Create("/");
 
     private string SidebarToggleIcon => IsSidebarCollapsed ? "menu_open" : "menu";
 

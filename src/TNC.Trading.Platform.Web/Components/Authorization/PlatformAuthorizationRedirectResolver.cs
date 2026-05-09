@@ -1,4 +1,5 @@
 ﻿using System.Security.Claims;
+using TNC.Trading.Platform.Web.Authentication;
 
 namespace TNC.Trading.Platform.Web.Components.Authorization;
 
@@ -20,7 +21,7 @@ internal static class PlatformAuthorizationRedirectResolver
         var isAuthenticated = user.Identity?.IsAuthenticated == true;
         var destination = isAuthenticated
             ? $"/authentication/access-denied?returnUrl={Uri.EscapeDataString(returnUrl)}"
-            : $"/authentication/sign-in?returnUrl={Uri.EscapeDataString(returnUrl)}&prompt=login";
+            : PlatformSignInUrlBuilder.Create(returnUrl);
 
         return (returnUrl, destination, isAuthenticated);
     }

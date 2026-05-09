@@ -44,18 +44,17 @@ internal sealed class PlatformNavigationAccessCoordinator(
     private void NavigateToSignIn(string returnUrl, IReadOnlyCollection<string> requiredScopes, string? userName, bool forcePrompt = false)
     {
         var scope = string.Join(' ', requiredScopes.Distinct(StringComparer.Ordinal));
-        var destination = $"/authentication/sign-in?returnUrl={Uri.EscapeDataString(returnUrl)}&scope={Uri.EscapeDataString(scope)}";
-        if (forcePrompt)
-        {
-            destination += "&prompt=login";
-        }
-
-        if (string.Equals(authenticationOptions.Value.Provider, PlatformAuthenticationDefaults.Providers.Test, StringComparison.Ordinal)
+        var user = string.Equals(authenticationOptions.Value.Provider, PlatformAuthenticationDefaults.Providers.Test, StringComparison.Ordinal)
             && authenticationOptions.Value.Test.EnableInteractiveSignIn
-            && !string.IsNullOrWhiteSpace(userName))
-        {
-            destination += $"&user={Uri.EscapeDataString(userName)}";
-        }
+            && !string.IsNullOrWhiteSpace(userName)
+            ? userName
+            : null;
+
+        var destination = PlatformSignInUrlBuilder.Create(
+            returnUrl,
+            prompt: forcePrompt ? "login" : null,
+            scope: scope,
+            user: user);
 
         navigationManager.NavigateTo(destination, forceLoad: true);
     }

@@ -38,6 +38,8 @@ The left navigation still changes based on the signed-in operator role.
 
 When the app is first opened in a fresh browser session, the UI entry route immediately sends the browser to sign-in before any operator content is shown.
 
+The signed-out header action uses the same shared sign-in entry behavior and explicitly requests `prompt=login`, so starting sign-in from the header also requires an interactive authentication step instead of silently reusing an existing identity-provider session.
+
 If the browser still has an authenticated platform cookie but no longer has a usable delegated access token, the UI treats that session as stale, clears the platform cookie, and sends the browser back through sign-in instead of rendering a broken signed-in shell.
 
 - in lightweight local test runs, `/authentication/sign-in` lists the seeded local users used by automated tests
