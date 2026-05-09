@@ -8,7 +8,7 @@ The current runtime model is a supervised control loop.
 
 Alongside the broker-auth supervision model, the platform now also applies a separate operator access model:
 
-- `/` stays public for anonymous users
+- `/` is a sign-in-first entry route that redirects anonymous users, including requests with stale cookies, to sign-in
 - signed-in operators receive role-based UI navigation
 - signed-in operators receive a shared shell with a compact header, environment badge, and per-browser light or dark theme preference
 - protected Web routes and API endpoints fail closed when authentication or authorization is missing
