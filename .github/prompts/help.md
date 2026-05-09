@@ -101,8 +101,9 @@ These prompts are useful alongside the primary workflow, but they are not normal
 ### Prompt and instruction authoring
 
 - **`generate-copilot-prompt.prompt.md`**
-  - Creates a new reusable `*.prompt.md` file from the repository prompt template.
-  - Use when you want to add another prompt to this prompt library.
+  - Supports maintenance of the existing prompt library and can help draft a reusable `*.prompt.md` file from the repository prompt template when a prompt-format artifact is explicitly required.
+  - For new Copilot artifacts, prefer creating an Agent Skill under `./.github/skills/` with `SKILL.md`, in line with `./.github/copilot-instructions.md`.
+  - Use this prompt only when extending or reorganizing the current prompt library, or when a prompt file is intentionally needed rather than a skill.
   - Best used outside the normal product-delivery flow.
 
 - **`create-instructions.prompt.md`**
