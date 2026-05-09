@@ -84,7 +84,7 @@ public sealed class PlatformDashboardAuthenticationE2ETests : PageTest
             await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Operational summary" })).ToBeVisibleAsync(new() { Timeout = 30_000 });
         }
 
-        await Page.GetByRole(AriaRole.Link, new() { Name = "Sign out" }).ClickAsync();
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Sign out" }).ClickAsync();
         await Expect(Page.Locator("#username")).ToBeVisibleAsync(new() { Timeout = 30_000 });
         await Expect(Page).ToHaveURLAsync(
             new Regex(@"^http://localhost:8080/realms/tnc-trading-platform/protocol/openid-connect/auth\?.*prompt=login.*$"),

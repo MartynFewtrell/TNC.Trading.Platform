@@ -1,4 +1,5 @@
-﻿@inherits LayoutComponentBase
+﻿@implements IDisposable
+@inherits LayoutComponentBase
 @inject PlatformShellContextProvider ShellContextProvider
 
 <div class="platform-app-shell @(isSidebarCollapsed ? "platform-app-shell--collapsed" : string.Empty)">
@@ -46,16 +47,57 @@
     private PlatformOperatorContext? operatorContext;
     private PlatformShellEnvironment? shellEnvironment;
     private bool isSidebarCollapsed;
+    private bool shellEnvironmentLoadStarted;
+    private readonly CancellationTokenSource shellEnvironmentLoadCancellation = new();
 
     protected override async Task OnInitializedAsync()
     {
         operatorContext = await ShellContextProvider.GetOperatorContextAsync();
-        shellEnvironment = await ShellContextProvider.GetEnvironmentAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || shellEnvironmentLoadStarted || operatorContext?.HasAnyPlatformRole != true)
+        {
+            return;
+        }
+
+        shellEnvironmentLoadStarted = true;
+        await LoadShellEnvironmentAsync(shellEnvironmentLoadCancellation.Token);
+    }
+
+    public void Dispose()
+    {
+        shellEnvironmentLoadCancellation.Cancel();
+        shellEnvironmentLoadCancellation.Dispose();
     }
 
     private Task ToggleSidebarAsync()
     {
         isSidebarCollapsed = !isSidebarCollapsed;
         return Task.CompletedTask;
+    }
+
+    private async Task LoadShellEnvironmentAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested && shellEnvironment is null)
+        {
+            shellEnvironment = await ShellContextProvider.GetEnvironmentAsync();
+
+            if (shellEnvironment is not null)
+            {
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+        }
     }
 }

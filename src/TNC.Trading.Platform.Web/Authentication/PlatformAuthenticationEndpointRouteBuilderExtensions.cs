@@ -16,7 +16,7 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
         endpoints.MapGet("/authentication/sign-in", SignInAsync)
             .AllowAnonymous();
         endpoints.MapPost("/authentication/sign-out", SignOutAsync)
-            .AllowAnonymous();
+            .RequireAuthorization();
 
         return endpoints;
     }
@@ -144,3 +144,8 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
         return $"{returnUrl}{separator}platformPrompted=1";
     }
 }
+
+
+
+
+
