@@ -37,13 +37,13 @@ internal sealed class PlatformShellContextProvider(
                 status.PlatformEnvironment,
                 status.BrokerEnvironment,
                 status.LiveOptionAvailable);
+            environmentLoaded = true;
         }
         catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or PlatformScopeChallengeRequiredException)
         {
             logger.LogWarning(exception, "Shell environment details could not be loaded.");
         }
 
-        environmentLoaded = true;
         return environment;
     }
 }
