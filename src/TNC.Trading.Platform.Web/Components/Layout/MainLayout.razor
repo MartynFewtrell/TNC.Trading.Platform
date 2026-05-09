@@ -1,5 +1,4 @@
 ﻿@inherits LayoutComponentBase
-@implements IDisposable
 @inject PlatformShellContextProvider ShellContextProvider
 
 <div class="platform-app-shell @(isSidebarCollapsed ? "platform-app-shell--collapsed" : string.Empty)">
@@ -52,10 +51,6 @@
     {
         operatorContext = await ShellContextProvider.GetOperatorContextAsync();
         shellEnvironment = await ShellContextProvider.GetEnvironmentAsync();
-    }
-
-    public void Dispose()
-    {
     }
 
     private Task ToggleSidebarAsync()
