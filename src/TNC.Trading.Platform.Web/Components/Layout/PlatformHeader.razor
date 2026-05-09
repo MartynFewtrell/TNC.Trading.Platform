@@ -24,7 +24,14 @@
             @if (OperatorContext?.IsAuthenticated == true)
             {
                 <span class="platform-header__operator">@OperatorContext.DisplayName</span>
-                <a class="platform-header__action" href="/authentication/sign-out" data-enhance-nav="false">Sign out</a>
+                <form class="platform-header__action-form"
+                      method="post"
+                      action="/authentication/sign-out"
+                      @formname="platform-header-sign-out"
+                      data-enhance="false">
+                    <AntiforgeryToken />
+                    <button class="platform-header__action platform-header__action-button" type="submit">Sign out</button>
+                </form>
             }
             else
             {

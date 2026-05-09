@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TNC.Trading.Platform.Application.Authentication;
@@ -13,7 +15,7 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
     {
         endpoints.MapGet("/authentication/sign-in", SignInAsync)
             .AllowAnonymous();
-        endpoints.MapGet("/authentication/sign-out", SignOutAsync)
+        endpoints.MapPost("/authentication/sign-out", SignOutAsync)
             .AllowAnonymous();
 
         return endpoints;
@@ -79,12 +81,22 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
 
     private static async Task<IResult> SignOutAsync(
         HttpContext httpContext,
+        [FromForm] IFormCollection _,
+        IAntiforgery antiforgery,
         IOptions<PlatformAuthenticationOptions> authenticationOptions,
         PlatformAuthAuditClient authAuditClient,
         ILoggerFactory loggerFactory)
     {
         var options = authenticationOptions.Value;
         var logger = loggerFactory.CreateLogger(typeof(PlatformAuthenticationEndpointRouteBuilderExtensions));
+        var isRequestValid = await antiforgery.IsRequestValidAsync(httpContext);
+
+        if (!isRequestValid)
+        {
+            logger.LogWarning("Platform sign-out request failed antiforgery validation.");
+            return Results.BadRequest();
+        }
+
         await authAuditClient.RecordSignOutCompletedAsync("/authentication/sign-out", httpContext.RequestAborted);
 
         var signedOutRedirectPath = NormalizeReturnUrl(options.SignedOutRedirectPath);
@@ -131,5 +143,4 @@ internal static class PlatformAuthenticationEndpointRouteBuilderExtensions
         var separator = returnUrl.Contains('?', StringComparison.Ordinal) ? '&' : '?';
         return $"{returnUrl}{separator}platformPrompted=1";
     }
-
 }

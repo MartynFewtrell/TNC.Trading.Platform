@@ -136,8 +136,21 @@ form {
     font-size: 0.95rem;
 }
 
+.platform-header__action-form {
+    margin: 0;
+}
+
 .platform-header__action {
     text-decoration: none;
+}
+
+.platform-header__action-button {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--platform-accent-color);
+    font: inherit;
+    cursor: pointer;
 }
 
 .platform-environment-badge {

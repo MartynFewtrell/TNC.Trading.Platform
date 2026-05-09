@@ -196,4 +196,31 @@ public class PlatformAuthenticationE2ETests : PageTest
 
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Authentication administration" })).ToBeVisibleAsync();
     }
+
+    /// <summary>
+    /// Trace: FR1, TR3, SR4.
+    /// Verifies: the shared header signs the operator out through the browser-visible POST flow.
+    /// Expected: selecting the Sign out button from a signed-in page returns the browser to the test sign-in experience.
+    /// Why: the hardened sign-out action must remain reachable from the Blazor shell after switching from a GET link to an antiforgery-protected form.
+    /// </summary>
+    [Fact]
+    public async Task HeaderSignOut_ShouldReturnSignInPage_WhenOperatorSubmitsSignOutForm()
+    {
+        await using var appHost = await DistributedApplicationTestingBuilder
+            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
+
+        await using var app = await appHost.BuildAsync();
+        await app.StartAsync();
+
+        await Page.GotoAsync(
+            new Uri(app.GetEndpoint("web"), "/authentication/sign-in?user=local-viewer&returnUrl=%2Fstatus").ToString(),
+            new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Platform status" })).ToBeVisibleAsync();
+
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Sign out" }).ClickAsync();
+
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Test sign-in" })).ToBeVisibleAsync();
+        await Expect(Page.GetByText("local-viewer")).ToBeVisibleAsync();
+    }
 }

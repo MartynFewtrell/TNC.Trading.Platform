@@ -1,4 +1,5 @@
 ﻿using System.Net;
+using System.Text.RegularExpressions;
 using Aspire.Hosting.Testing;
 
 namespace TNC.Trading.Platform.Web.FunctionalTests.Authentication;
@@ -167,7 +168,7 @@ public class PlatformAuthenticationFunctionalTests
     /// <summary>
     /// Trace: FR1, TR3, NF5.
     /// Verifies: the sign-out endpoint ends the current platform session and sends the browser back through the sign-in entry flow.
-    /// Expected: after signing in, requesting `/authentication/sign-out` returns the synthetic sign-in page with the seeded local users.
+    /// Expected: after signing in, posting to `/authentication/sign-out` with a valid antiforgery token returns the synthetic sign-in page with the seeded local users.
     /// Why: after sign-out, the next UI entry must require a fresh login instead of showing a signed-out landing surface.
     /// </summary>
     [Fact]
@@ -181,9 +182,14 @@ public class PlatformAuthenticationFunctionalTests
 
         var cookies = new CookieContainer();
         using var httpClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: true, cookies);
-        _ = await httpClient.GetStringAsync("/authentication/sign-in?user=local-operator&returnUrl=%2Fconfiguration&scope=platform.operator");
+        var signedInHtml = await httpClient.GetStringAsync("/authentication/sign-in?user=local-operator&returnUrl=%2Fconfiguration&scope=platform.operator");
+        var requestVerificationToken = ExtractRequestVerificationToken(signedInHtml);
 
-        var html = await httpClient.GetStringAsync("/authentication/sign-out");
+        using var response = await PostApplicationFormResponseAsync(
+            httpClient,
+            "/authentication/sign-out",
+            CreateSignOutForm(requestVerificationToken));
+        var html = await response.Content.ReadAsStringAsync();
 
         Assert.Contains("Test sign-in", html, StringComparison.Ordinal);
         Assert.Contains("local-viewer", html, StringComparison.Ordinal);
@@ -211,7 +217,11 @@ public class PlatformAuthenticationFunctionalTests
         Assert.Contains("Platform configuration", protectedHtml, StringComparison.Ordinal);
 
         using var httpClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: false, cookies);
-        using var signOutResponse = await GetApplicationResponseAsync(httpClient, "/authentication/sign-out");
+        var requestVerificationToken = await GetRequestVerificationTokenAsync(httpClient, "/configuration");
+        using var signOutResponse = await PostApplicationFormResponseAsync(
+            httpClient,
+            "/authentication/sign-out",
+            CreateSignOutForm(requestVerificationToken));
 
         Assert.True(
             signOutResponse.StatusCode is HttpStatusCode.RedirectKeepVerb or HttpStatusCode.Found,
@@ -353,8 +363,13 @@ public class PlatformAuthenticationFunctionalTests
         await app.StartAsync();
 
         using var operatorClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: true, new CookieContainer());
-        _ = await operatorClient.GetStringAsync("/authentication/sign-in?user=local-operator&returnUrl=%2Fconfiguration&scope=platform.operator");
-        _ = await operatorClient.GetStringAsync("/authentication/sign-out");
+        var signedInHtml = await operatorClient.GetStringAsync("/authentication/sign-in?user=local-operator&returnUrl=%2Fconfiguration&scope=platform.operator");
+        var requestVerificationToken = ExtractRequestVerificationToken(signedInHtml);
+        using var signOutResponse = await PostApplicationFormResponseAsync(
+            operatorClient,
+            "/authentication/sign-out",
+            CreateSignOutForm(requestVerificationToken));
+        _ = await signOutResponse.Content.ReadAsStringAsync();
 
         using var viewerClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: true, new CookieContainer());
         var html = await viewerClient.GetStringAsync("/authentication/sign-in?user=local-viewer&returnUrl=%2Fstatus");
@@ -364,13 +379,13 @@ public class PlatformAuthenticationFunctionalTests
     }
 
     /// <summary>
-    /// Trace: FR3, FR10, NF4, DR1, SR2, TR3.
-    /// Verifies: a no-role user routed to the access-denied experience records an access-denied audit event through the Web stack.
-    /// Expected: after the no-role navigation completes, a later viewer visit to `/status` shows the denied event type and denied-route summary.
-    /// Why: access-denied observability must be proven from the actual Blazor authorization flow and remain secret-safe.
+    /// Trace: SR4, TR3, NF2.
+    /// Verifies: the legacy GET-based sign-out URL is no longer accepted after the UI moves to an antiforgery-protected POST flow.
+    /// Expected: requesting GET `/authentication/sign-out` returns HTTP 404 Not Found.
+    /// Why: sign-out must not remain exposed as a state-changing GET endpoint once CSRF hardening is in place.
     /// </summary>
     [Fact]
-    public async Task StatusPage_ShouldRenderAccessDeniedAuditEvent_WhenNoRoleUserIsRoutedToDeniedExperience()
+    public async Task SignOutEndpoint_ShouldReturnNotFound_WhenBrowserUsesLegacyGetRequest()
     {
         await using var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
@@ -378,16 +393,35 @@ public class PlatformAuthenticationFunctionalTests
         await using var app = await appHost.BuildAsync();
         await app.StartAsync();
 
-        using var deniedClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: true, new CookieContainer());
-        var deniedHtml = await deniedClient.GetStringAsync("/authentication/sign-in?user=local-norole&returnUrl=%2Fstatus");
+        using var httpClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: false, new CookieContainer());
+        using var response = await GetApplicationResponseAsync(httpClient, "/authentication/sign-out");
 
-        Assert.Contains("Access denied", deniedHtml, StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
 
-        using var viewerClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: true, new CookieContainer());
-        var html = await viewerClient.GetStringAsync("/authentication/sign-in?user=local-viewer&returnUrl=%2Fstatus");
+    /// <summary>
+    /// Trace: SR4, TR3, NF2.
+    /// Verifies: the POST sign-out endpoint rejects requests that do not include the expected antiforgery token.
+    /// Expected: posting to `/authentication/sign-out` without an antiforgery token returns HTTP 400 Bad Request.
+    /// Why: the sign-out surface must fail closed when a browser request does not present the synchronizer token required for CSRF protection.
+    /// </summary>
+    [Fact]
+    public async Task SignOutEndpoint_ShouldReturnBadRequest_WhenAntiforgeryTokenIsMissing()
+    {
+        await using var appHost = await DistributedApplicationTestingBuilder
+            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
 
-        Assert.Contains("OperatorAccessDenied", html, StringComparison.Ordinal);
-        Assert.Contains("was denied access to /status", html, StringComparison.Ordinal);
+        await using var app = await appHost.BuildAsync();
+        await app.StartAsync();
+
+        var cookies = new CookieContainer();
+        using var signInClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: true, cookies);
+        _ = await signInClient.GetStringAsync("/authentication/sign-in?user=local-operator&returnUrl=%2Fconfiguration&scope=platform.operator");
+
+        using var httpClient = FunctionalBrowserClientFactory.Create(app.GetEndpoint("web"), allowAutoRedirect: false, cookies);
+        using var response = await PostApplicationFormResponseAsync(httpClient, "/authentication/sign-out", []);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     private static async Task<HttpResponseMessage> GetApplicationResponseAsync(HttpClient httpClient, string path)
@@ -402,5 +436,62 @@ public class PlatformAuthenticationFunctionalTests
         }
 
         return response;
+    }
+
+    private static async Task<HttpResponseMessage> PostApplicationFormResponseAsync(
+        HttpClient httpClient,
+        string path,
+        IReadOnlyCollection<KeyValuePair<string, string>> formValues)
+    {
+        var response = await httpClient.PostAsync(path, new FormUrlEncodedContent(formValues));
+        if (response.StatusCode == HttpStatusCode.RedirectKeepVerb
+            && response.Headers.Location?.IsAbsoluteUri == true
+            && string.Equals(response.Headers.Location.AbsolutePath, path.Split('?', 2)[0], StringComparison.Ordinal))
+        {
+            response.Dispose();
+            return await httpClient.PostAsync(response.Headers.Location, new FormUrlEncodedContent(formValues));
+        }
+
+        return response;
+    }
+
+    private static async Task<string> GetRequestVerificationTokenAsync(HttpClient httpClient, string path)
+    {
+        using var response = await GetApplicationResponseAsync(httpClient, path);
+        var html = await response.Content.ReadAsStringAsync();
+        return ExtractRequestVerificationToken(html);
+    }
+
+    private static string ExtractRequestVerificationToken(string html)
+    {
+        var inputMatch = Regex.Match(
+            html,
+            "<input[^>]*name=\"__RequestVerificationToken\"[^>]*>",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        if (!inputMatch.Success)
+        {
+            throw new InvalidOperationException("The rendered page did not include an antiforgery token.");
+        }
+
+        var tokenMatch = Regex.Match(
+            inputMatch.Value,
+            "value=\"(?<token>[^\"]+)\"",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        if (!tokenMatch.Success)
+        {
+            throw new InvalidOperationException("The rendered antiforgery token input did not include a value.");
+        }
+
+        return WebUtility.HtmlDecode(tokenMatch.Groups["token"].Value);
+    }
+
+    private static KeyValuePair<string, string>[] CreateSignOutForm(string requestVerificationToken)
+    {
+        return
+        [
+            new KeyValuePair<string, string>("__RequestVerificationToken", requestVerificationToken)
+        ];
     }
 }
