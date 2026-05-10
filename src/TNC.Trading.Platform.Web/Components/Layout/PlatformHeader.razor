@@ -1,0 +1,79 @@
+﻿@using TNC.Trading.Platform.Web.Authentication
+
+<header class="platform-header">
+    <div class="platform-header__primary">
+        @if (ShowSidebarToggle)
+        {
+            <RadzenButton class="platform-header__toggle"
+                          Icon="@SidebarToggleIcon"
+                          Size="ButtonSize.Small"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Variant="Variant.Flat"
+                          Click="OnToggleSidebarAsync" />
+        }
+
+        <a class="platform-header__title" href="/">TNC Trading Platform</a>
+    </div>
+
+    <div class="platform-header__secondary">
+        <div class="platform-header__center">
+            <PlatformEnvironmentBadge Environment="Environment" />
+        </div>
+
+        <div class="platform-header__actions">
+            @if (OperatorContext?.IsAuthenticated == true)
+            {
+                <span class="platform-header__operator">@OperatorContext.DisplayName</span>
+                <form class="platform-header__action-form"
+                      method="post"
+                      action="/authentication/sign-out"
+                      @formname="platform-header-sign-out"
+                      data-enhance="false">
+                    <AntiforgeryToken />
+                    <button class="platform-header__action platform-header__action-button" type="submit">Sign out</button>
+                </form>
+            }
+            else
+            {
+                <a class="platform-header__action" href="@SignInUrl" data-enhance-nav="false">Sign in</a>
+            }
+
+            @if (ShowThemeToggle)
+            {
+                <PlatformThemeToggle />
+            }
+        </div>
+    </div>
+</header>
+
+@code {
+    [Parameter]
+    public PlatformShellEnvironment? Environment { get; set; }
+
+    [Parameter]
+    public bool IsSidebarCollapsed { get; set; }
+
+    [Parameter]
+    public PlatformOperatorContext? OperatorContext { get; set; }
+
+    [Parameter]
+    public bool ShowSidebarToggle { get; set; }
+
+    [Parameter]
+    public bool ShowThemeToggle { get; set; }
+
+    [Parameter]
+    public EventCallback ToggleSidebar { get; set; }
+
+    private static string SignInUrl => PlatformSignInUrlBuilder.Create("/");
+
+    private string SidebarToggleIcon => IsSidebarCollapsed ? "menu_open" : "menu";
+
+    private async Task OnToggleSidebarAsync(MouseEventArgs _)
+    {
+        if (ToggleSidebar.HasDelegate)
+        {
+            await ToggleSidebar.InvokeAsync();
+        }
+    }
+}

@@ -98,26 +98,29 @@ internal static class PlatformWebAuthenticationServiceCollectionExtensions
         if (!string.Equals(authenticationOptions.Provider, PlatformAuthenticationDefaults.Providers.Keycloak, StringComparison.Ordinal))
         {
             options.Scope.Add("profile");
+        }
 
-            foreach (var scope in authenticationOptions.RequiredScopes)
-            {
-                options.Scope.Add(scope);
-            }
+        foreach (var scope in authenticationOptions.RequiredScopes)
+        {
+            options.Scope.Add(scope);
         }
 
         options.Events = new OpenIdConnectEvents
         {
             OnRedirectToIdentityProvider = context =>
             {
-                if (!string.Equals(authenticationOptions.Provider, PlatformAuthenticationDefaults.Providers.Keycloak, StringComparison.Ordinal)
-                    && context.Properties.Items.TryGetValue("platform:scope", out var requiredScope)
+                if (context.Properties.Items.TryGetValue("platform:scope", out var requiredScope)
                     && !string.IsNullOrWhiteSpace(requiredScope))
                 {
                     var scopes = new HashSet<string>(StringComparer.Ordinal)
                     {
-                        "openid",
-                        "profile"
+                        "openid"
                     };
+
+                    if (!string.Equals(authenticationOptions.Provider, PlatformAuthenticationDefaults.Providers.Keycloak, StringComparison.Ordinal))
+                    {
+                        scopes.Add("profile");
+                    }
 
                     foreach (var scope in requiredScope.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                     {
@@ -136,6 +139,22 @@ internal static class PlatformWebAuthenticationServiceCollectionExtensions
                     && !string.IsNullOrWhiteSpace(loginHint))
                 {
                     context.ProtocolMessage.LoginHint = loginHint;
+                }
+
+                if (context.Properties.Items.TryGetValue("prompt", out var prompt)
+                    && !string.IsNullOrWhiteSpace(prompt))
+                {
+                    context.ProtocolMessage.Prompt = prompt;
+                }
+
+                return Task.CompletedTask;
+            },
+            OnRedirectToIdentityProviderForSignOut = context =>
+            {
+                if (context.Properties?.Items.TryGetValue("id_token_hint", out var idTokenHint) == true
+                    && !string.IsNullOrWhiteSpace(idTokenHint))
+                {
+                    context.ProtocolMessage.IdTokenHint = idTokenHint;
                 }
 
                 return Task.CompletedTask;

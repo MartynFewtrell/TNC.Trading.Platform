@@ -1,6 +1,8 @@
-﻿using Microsoft.AspNetCore.Authentication;
+﻿using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using TNC.Trading.Platform.Application.Authentication;
 
 namespace TNC.Trading.Platform.Web.Authentication;
 
@@ -14,16 +16,34 @@ internal sealed class PlatformAccessTokenProvider(
         var httpContext = httpContextAccessor.HttpContext ?? throw new InvalidOperationException("The current HTTP context is unavailable.");
         cancellationToken.ThrowIfCancellationRequested();
 
+        var distinctRequiredScopes = requiredScopes
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
         var accessToken = await httpContext.GetTokenAsync("access_token");
         if (string.IsNullOrWhiteSpace(accessToken))
         {
             throw new InvalidOperationException("The current operator session does not contain an access token.");
         }
 
-        var grantedScopes = PlatformTokenScopeEvaluator.ReadEffectiveScopes(accessToken);
-        var missingScopes = requiredScopes
+        if (!PlatformTokenScopeEvaluator.HasUsableSessionToken(accessToken))
+        {
+            await authAuditClient.RecordTokenAcquisitionFailedAsync(
+                httpContext.Request.Path.Value,
+                distinctRequiredScopes,
+                accessToken,
+                cancellationToken);
+
+            logger.LogWarning(
+                "The current operator session does not contain a usable delegated access token for required scopes {MissingScopes}",
+                distinctRequiredScopes);
+
+            throw new PlatformScopeChallengeRequiredException(distinctRequiredScopes);
+        }
+
+        var grantedScopes = GetGrantedScopes(httpContext.User, accessToken);
+        var missingScopes = distinctRequiredScopes
             .Where(scope => !grantedScopes.Contains(scope, StringComparer.Ordinal))
-            .Distinct(StringComparer.Ordinal)
             .ToArray();
 
         if (missingScopes.Length > 0)
@@ -42,5 +62,38 @@ internal sealed class PlatformAccessTokenProvider(
         }
 
         return accessToken;
+    }
+
+    private static IReadOnlyCollection<string> GetGrantedScopes(ClaimsPrincipal principal, string accessToken)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
+        var grantedScopes = PlatformTokenScopeEvaluator.ReadEffectiveScopes(accessToken)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (!PlatformTokenScopeEvaluator.HasUsableSessionToken(accessToken))
+        {
+            return grantedScopes;
+        }
+
+        if (principal.IsInRole(PlatformAuthenticationDefaults.Roles.Viewer)
+            || principal.IsInRole(PlatformAuthenticationDefaults.Roles.Operator)
+            || principal.IsInRole(PlatformAuthenticationDefaults.Roles.Administrator))
+        {
+            grantedScopes.Add(PlatformAuthenticationDefaults.Scopes.Viewer);
+        }
+
+        if (principal.IsInRole(PlatformAuthenticationDefaults.Roles.Operator)
+            || principal.IsInRole(PlatformAuthenticationDefaults.Roles.Administrator))
+        {
+            grantedScopes.Add(PlatformAuthenticationDefaults.Scopes.Operator);
+        }
+
+        if (principal.IsInRole(PlatformAuthenticationDefaults.Roles.Administrator))
+        {
+            grantedScopes.Add(PlatformAuthenticationDefaults.Scopes.Administrator);
+        }
+
+        return grantedScopes;
     }
 }

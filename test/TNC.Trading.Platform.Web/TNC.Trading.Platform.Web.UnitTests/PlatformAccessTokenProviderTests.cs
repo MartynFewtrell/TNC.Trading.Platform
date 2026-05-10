@@ -50,9 +50,9 @@ public class PlatformAccessTokenProviderTests
     {
         var options = Options.Create(new PlatformAuthenticationOptions());
         var tokenFactory = new TestAuthenticationTokenFactory(options);
-        var (_, properties) = tokenFactory.Create("local-operator", [PlatformAuthenticationDefaults.Scopes.Operator]);
+        var (principal, properties) = tokenFactory.Create("local-operator", [PlatformAuthenticationDefaults.Scopes.Operator]);
         var accessToken = properties.GetTokenValue("access_token");
-        var httpContext = CreateHttpContext(accessToken);
+        var httpContext = CreateHttpContext(accessToken, principal: principal);
         var handler = new RecordingHttpMessageHandler();
         var auditClient = CreateAuditClient(handler, httpContext);
         var provider = new PlatformAccessTokenProvider(
@@ -61,6 +61,35 @@ public class PlatformAccessTokenProviderTests
             NullLogger<PlatformAccessTokenProvider>.Instance);
 
         var token = await provider.GetAccessTokenAsync([PlatformAuthenticationDefaults.Scopes.Operator], CancellationToken.None);
+
+        Assert.Equal(accessToken, token);
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    /// <summary>
+    /// Trace: FR6, NF2, IR2.
+    /// Verifies: the access-token provider accepts the baseline viewer capability when the authenticated session carries the viewer role even if the delegated token omits an explicit scope claim.
+    /// Expected: requesting the viewer scope returns the original access token and does not emit a token-acquisition failure audit event.
+    /// Why: provider-issued access tokens can vary in scope-claim shape while still representing an authenticated operator session that the API authorizes by role.
+    /// </summary>
+    [Fact]
+    public async Task GetAccessTokenAsync_ShouldReturnAccessToken_WhenSessionRoleSatisfiesRequiredScope()
+    {
+        var principal = CreatePrincipal(PlatformAuthenticationDefaults.Roles.Viewer);
+        var accessToken = CreateAccessToken(
+            "local-viewer",
+            [PlatformAuthenticationDefaults.Roles.Viewer],
+            [],
+            DateTimeOffset.UtcNow.AddHours(1));
+        var httpContext = CreateHttpContext(accessToken, principal: principal);
+        var handler = new RecordingHttpMessageHandler();
+        var auditClient = CreateAuditClient(handler, httpContext);
+        var provider = new PlatformAccessTokenProvider(
+            new HttpContextAccessor { HttpContext = httpContext },
+            auditClient,
+            NullLogger<PlatformAccessTokenProvider>.Instance);
+
+        var token = await provider.GetAccessTokenAsync([PlatformAuthenticationDefaults.Scopes.Viewer], CancellationToken.None);
 
         Assert.Equal(accessToken, token);
         Assert.Equal(0, handler.CallCount);
@@ -136,6 +165,37 @@ public class PlatformAccessTokenProviderTests
 
     /// <summary>
     /// Trace: NF2, NF4, SR4, IR2.
+    /// Verifies: the access-token provider does not use the authenticated principal role fallback when the delegated token is expired.
+    /// Expected: requesting an operator scope throws a scope-challenge exception and records one token-acquisition failure event even though the HTTP principal has the operator role.
+    /// Why: stale delegated tokens must not be reused for API calls just because the cookie principal still advertises the expected role.
+    /// </summary>
+    [Fact]
+    public async Task GetAccessTokenAsync_ShouldThrowScopeChallenge_WhenExpiredTokenWouldOtherwiseBeSatisfiedBySessionRole()
+    {
+        var principal = CreatePrincipal(PlatformAuthenticationDefaults.Roles.Operator);
+        var accessToken = CreateAccessToken(
+            "local-operator",
+            [PlatformAuthenticationDefaults.Roles.Operator],
+            [],
+            DateTimeOffset.UtcNow.AddMinutes(-5),
+            DateTimeOffset.UtcNow.AddMinutes(-10));
+        var httpContext = CreateHttpContext(accessToken, "/configuration", principal);
+        var handler = new RecordingHttpMessageHandler();
+        var provider = new PlatformAccessTokenProvider(
+            new HttpContextAccessor { HttpContext = httpContext },
+            CreateAuditClient(handler, httpContext),
+            NullLogger<PlatformAccessTokenProvider>.Instance);
+
+        var exception = await Assert.ThrowsAsync<PlatformScopeChallengeRequiredException>(() =>
+            provider.GetAccessTokenAsync([PlatformAuthenticationDefaults.Scopes.Operator], CancellationToken.None));
+
+        Assert.Equal([PlatformAuthenticationDefaults.Scopes.Operator], exception.MissingScopes);
+        Assert.Equal(1, handler.CallCount);
+        Assert.Contains(PlatformAuthenticationDefaults.AuditEvents.TokenAcquisitionFailed, handler.LastContent, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: NF2, NF4, SR4, IR2.
     /// Verifies: the access-token provider fails closed when the delegated token is not yet valid.
     /// Expected: requesting an administrator scope throws a scope-challenge exception and records one token-acquisition failure event.
     /// Why: future-dated or otherwise invalid session tokens must not be treated as usable delegated access during privileged navigation.
@@ -165,6 +225,33 @@ public class PlatformAccessTokenProviderTests
         Assert.Contains("/administration/authentication", handler.LastContent, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Trace: NF2, NF4, SR4, IR2.
+    /// Verifies: the access-token provider does not use the authenticated principal role fallback when the delegated token is unreadable.
+    /// Expected: requesting the viewer scope throws a scope-challenge exception and records one token-acquisition failure event even though the HTTP principal has the viewer role.
+    /// Why: malformed or tampered delegated tokens must be rejected before any session-role fallback can authorize downstream API access.
+    /// </summary>
+    [Fact]
+    public async Task GetAccessTokenAsync_ShouldThrowScopeChallenge_WhenInvalidTokenWouldOtherwiseBeSatisfiedBySessionRole()
+    {
+        var principal = CreatePrincipal(PlatformAuthenticationDefaults.Roles.Viewer);
+        const string accessToken = "not-a-jwt";
+        var httpContext = CreateHttpContext(accessToken, "/status", principal);
+        var handler = new RecordingHttpMessageHandler();
+        var provider = new PlatformAccessTokenProvider(
+            new HttpContextAccessor { HttpContext = httpContext },
+            CreateAuditClient(handler, httpContext),
+            NullLogger<PlatformAccessTokenProvider>.Instance);
+
+        var exception = await Assert.ThrowsAsync<PlatformScopeChallengeRequiredException>(() =>
+            provider.GetAccessTokenAsync([PlatformAuthenticationDefaults.Scopes.Viewer], CancellationToken.None));
+
+        Assert.Equal([PlatformAuthenticationDefaults.Scopes.Viewer], exception.MissingScopes);
+        Assert.Equal(1, handler.CallCount);
+        Assert.Contains(PlatformAuthenticationDefaults.AuditEvents.TokenAcquisitionFailed, handler.LastContent, StringComparison.Ordinal);
+        Assert.Contains("/status", handler.LastContent, StringComparison.Ordinal);
+    }
+
     private static PlatformAuthAuditClient CreateAuditClient(RecordingHttpMessageHandler handler, HttpContext httpContext) =>
         new(
             new HttpClient(handler)
@@ -174,7 +261,7 @@ public class PlatformAccessTokenProviderTests
             new HttpContextAccessor { HttpContext = httpContext },
             NullLogger<PlatformAuthAuditClient>.Instance);
 
-    private static DefaultHttpContext CreateHttpContext(string? accessToken, string path = "/")
+    private static DefaultHttpContext CreateHttpContext(string? accessToken, string path = "/", ClaimsPrincipal? principal = null)
     {
         var authenticationProperties = new AuthenticationProperties();
         if (!string.IsNullOrWhiteSpace(accessToken))
@@ -185,8 +272,8 @@ public class PlatformAccessTokenProviderTests
             ]);
         }
 
-        var principal = new ClaimsPrincipal(new ClaimsIdentity(authenticationType: PlatformAuthenticationDefaults.Schemes.Cookie));
-        var ticket = new AuthenticationTicket(principal, authenticationProperties, PlatformAuthenticationDefaults.Schemes.Cookie);
+        var effectivePrincipal = principal ?? new ClaimsPrincipal(new ClaimsIdentity(authenticationType: PlatformAuthenticationDefaults.Schemes.Cookie));
+        var ticket = new AuthenticationTicket(effectivePrincipal, authenticationProperties, PlatformAuthenticationDefaults.Schemes.Cookie);
         var context = new DefaultHttpContext
         {
             RequestServices = new ServiceCollection()
@@ -194,8 +281,20 @@ public class PlatformAccessTokenProviderTests
                 .BuildServiceProvider()
         };
 
+        context.User = effectivePrincipal;
         context.Request.Path = path;
         return context;
+    }
+
+    private static ClaimsPrincipal CreatePrincipal(params string[] roles)
+    {
+        var identity = new ClaimsIdentity(
+            roles.Select(role => new Claim(PlatformAuthenticationDefaults.Claims.Role, role)),
+            authenticationType: PlatformAuthenticationDefaults.Schemes.Cookie,
+            nameType: PlatformAuthenticationDefaults.Claims.Name,
+            roleType: PlatformAuthenticationDefaults.Claims.Role);
+
+        return new ClaimsPrincipal(identity);
     }
 
     private static string CreateAccessToken(

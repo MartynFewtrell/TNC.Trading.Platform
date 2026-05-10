@@ -1,0 +1,17 @@
+﻿<details class="platform-accordion-section" open="@IsOpen">
+    <summary class="platform-accordion-section__summary">@Title</summary>
+    <div class="platform-accordion-section__content">
+        @ChildContent
+    </div>
+</details>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public bool IsOpen { get; set; }
+
+    [Parameter, EditorRequired]
+    public RenderFragment? ChildContent { get; set; }
+}

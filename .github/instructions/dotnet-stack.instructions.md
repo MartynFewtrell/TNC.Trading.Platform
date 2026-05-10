@@ -1,4 +1,4 @@
----
+﻿---
 description: 'Standardize repository contributions around the Microsoft stack: modern C#/.NET, Minimal APIs, Blazor, SQL Server, Aspire, and Azure Container Apps.'
 applyTo: 'src/**/*.cs, src/**/*.csproj, src/**/*.sln, src/**/*.razor, src/**/*.json, infra/**/*'
 ---
@@ -15,6 +15,7 @@ Applies to: `src/**/*.cs, src/**/*.csproj, src/**/*.sln, src/**/*.razor, src/**/
 
 - Applies when creating new services, APIs, Blazor front ends, or distributed app wiring.
 - Applies when selecting a database or local orchestration approach for a work item.
+- For Blazor UI component work, also follow `/.github/instructions/radzen-blazor.instructions.md`.
 
 ## Instructions
 
@@ -91,6 +92,7 @@ Applies to: `src/**/*.cs, src/**/*.csproj, src/**/*.sln, src/**/*.razor, src/**/
 
 - `/.github/instructions/configuration.instructions.md`
 - `/.github/instructions/folders.instructions.md`
+- `/.github/instructions/radzen-blazor.instructions.md`
 - `/.github/instructions/work-packages.instructions.md`
 - https://learn.microsoft.com/dotnet/core/releases-and-support
 - https://learn.microsoft.com/dotnet/core/tools/global-json

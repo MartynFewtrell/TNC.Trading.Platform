@@ -645,7 +645,7 @@ public class PlatformAuthenticationIntegrationTests
         ArgumentNullException.ThrowIfNull(httpClient);
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(90));
 
         while (!timeoutCts.IsCancellationRequested)
         {

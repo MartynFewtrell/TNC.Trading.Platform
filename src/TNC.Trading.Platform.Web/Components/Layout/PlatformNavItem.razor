@@ -1,0 +1,20 @@
+﻿<NavLink href="@Href" Match="@Match" class="platform-nav-item">
+    <span class="platform-nav-item__icon" aria-hidden="true">
+        <RadzenIcon Icon="@Icon" />
+    </span>
+    <span class="platform-nav-item__text">@Text</span>
+</NavLink>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Href { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public string Icon { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public string Text { get; set; } = string.Empty;
+
+    [Parameter]
+    public NavLinkMatch Match { get; set; } = NavLinkMatch.Prefix;
+}

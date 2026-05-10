@@ -60,6 +60,7 @@ The Web unit, functional, and end-to-end tests cover:
 
 - shared authorization policy registration for viewer, operator, and administrator routes
 - anonymous, no-role, and elevated-role operator-context mapping
+- theme-mode parsing and Radzen Software theme selection for the shared UI shell
 - delegated-scope token evaluation and navigation recovery decisions for protected UI flows
 - lower-level protected-route redirect decisions and auth-audit helper behavior
 - public landing-page behavior
@@ -72,6 +73,8 @@ The Web unit, functional, and end-to-end tests cover:
 - no-role access-denied routing
 - administrator-only browser access to the auth-administration page
 - one retained Aspire dashboard plus real Keycloak smoke that verifies dashboard startup and the protected `/status` path without fixed-port assumptions
+
+Focused manual validation still complements the automated suite for the refreshed shared shell, theme switching, remembered browser preference, header presentation, and narrower-width layout behavior.
 
 ## Quality characteristics currently protected
 
@@ -104,6 +107,12 @@ From the repository root:
 
 ```powershell
  dotnet test
+```
+
+If a local environment hits intermittent MSBuild child-node exits during the repository-wide run, use serialized execution:
+
+```powershell
+ dotnet test -m:1
 ```
 
 To build first:

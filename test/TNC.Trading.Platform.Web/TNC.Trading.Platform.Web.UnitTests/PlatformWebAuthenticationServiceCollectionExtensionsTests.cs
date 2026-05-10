@@ -3,9 +3,11 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using TNC.Trading.Platform.Application.Authentication;
 using TNC.Trading.Platform.Web.Authentication;
 
@@ -73,6 +75,124 @@ public class PlatformWebAuthenticationServiceCollectionExtensionsTests
 
         Assert.NotNull(cookieScheme);
         Assert.Null(oidcScheme);
+    }
+
+    /// <summary>
+    /// Trace: NF2, SR1, TR2.
+    /// Verifies: the Keycloak Web registration includes the baseline delegated viewer scope in the OpenID Connect sign-in request.
+    /// Expected: the resolved OpenID Connect options contain the `platform.viewer` scope.
+    /// Why: the Blazor host needs the delegated viewer scope immediately after sign-in so the shared shell can call the protected API without a spurious scope challenge.
+    /// </summary>
+    [Fact]
+    public async Task AddPlatformWebAuthentication_ShouldIncludeViewerScope_WhenConfiguredForKeycloak()
+    {
+        var builder = CreateBuilder(new Dictionary<string, string?>
+        {
+            ["Authentication:Provider"] = PlatformAuthenticationDefaults.Providers.Keycloak,
+            ["Authentication:Keycloak:Authority"] = "https://localhost:8080/realms/tnc-trading-platform",
+            ["Authentication:Keycloak:ClientId"] = "tnc-trading-platform-web",
+            ["Authentication:Keycloak:ApiClientId"] = "tnc-trading-platform-api"
+        });
+
+        builder.AddPlatformWebAuthentication();
+
+        await using var app = builder.Build();
+        await using var scope = app.Services.CreateAsyncScope();
+        var optionsMonitor = scope.ServiceProvider.GetRequiredService<IOptionsMonitor<OpenIdConnectOptions>>();
+
+        var options = optionsMonitor.Get(PlatformAuthenticationDefaults.Schemes.OpenIdConnect);
+
+        Assert.Contains(PlatformAuthenticationDefaults.Scopes.Viewer, options.Scope);
+    }
+
+    /// <summary>
+    /// Trace: FR1, IR1, NF2.
+    /// Verifies: the Keycloak Web registration forwards the saved ID token during OpenID Connect sign-out.
+    /// Expected: the sign-out redirect event copies the `id_token_hint` value into the outbound protocol message.
+    /// Why: ending the provider session requires the Web host to participate in the OIDC sign-out flow instead of clearing only the local cookie.
+    /// </summary>
+    [Fact]
+    public async Task AddPlatformWebAuthentication_ShouldForwardIdTokenHint_WhenSigningOutWithKeycloak()
+    {
+        var builder = CreateBuilder(new Dictionary<string, string?>
+        {
+            ["Authentication:Provider"] = PlatformAuthenticationDefaults.Providers.Keycloak,
+            ["Authentication:Keycloak:Authority"] = "https://localhost:8080/realms/tnc-trading-platform",
+            ["Authentication:Keycloak:ClientId"] = "tnc-trading-platform-web",
+            ["Authentication:Keycloak:ApiClientId"] = "tnc-trading-platform-api"
+        });
+
+        builder.AddPlatformWebAuthentication();
+
+        await using var app = builder.Build();
+        await using var scope = app.Services.CreateAsyncScope();
+        var optionsMonitor = scope.ServiceProvider.GetRequiredService<IOptionsMonitor<OpenIdConnectOptions>>();
+        var options = optionsMonitor.Get(PlatformAuthenticationDefaults.Schemes.OpenIdConnect);
+        var properties = new AuthenticationProperties();
+        properties.Items["id_token_hint"] = "test-id-token";
+        var context = new RedirectContext(
+            new DefaultHttpContext
+            {
+                RequestServices = scope.ServiceProvider
+            },
+            new AuthenticationScheme(
+                PlatformAuthenticationDefaults.Schemes.OpenIdConnect,
+                PlatformAuthenticationDefaults.Schemes.OpenIdConnect,
+                typeof(OpenIdConnectHandler)),
+            options,
+            properties)
+        {
+            ProtocolMessage = new OpenIdConnectMessage()
+        };
+
+        await options.Events.OnRedirectToIdentityProviderForSignOut(context);
+
+        Assert.Equal("test-id-token", context.ProtocolMessage.IdTokenHint);
+    }
+
+    /// <summary>
+    /// Trace: FR1, FR5, NF2.
+    /// Verifies: the Web auth registration forwards an explicit prompt parameter when sign-in should require an interactive credential prompt.
+    /// Expected: the sign-in redirect event copies the stored `prompt` value into the outbound OpenID Connect protocol message.
+    /// Why: first-open sign-in must not silently reuse an existing provider session when the application requires the operator to authenticate explicitly.
+    /// </summary>
+    [Fact]
+    public async Task AddPlatformWebAuthentication_ShouldForwardPrompt_WhenSignInRequiresInteractiveLogin()
+    {
+        var builder = CreateBuilder(new Dictionary<string, string?>
+        {
+            ["Authentication:Provider"] = PlatformAuthenticationDefaults.Providers.Keycloak,
+            ["Authentication:Keycloak:Authority"] = "https://localhost:8080/realms/tnc-trading-platform",
+            ["Authentication:Keycloak:ClientId"] = "tnc-trading-platform-web",
+            ["Authentication:Keycloak:ApiClientId"] = "tnc-trading-platform-api"
+        });
+
+        builder.AddPlatformWebAuthentication();
+
+        await using var app = builder.Build();
+        await using var scope = app.Services.CreateAsyncScope();
+        var optionsMonitor = scope.ServiceProvider.GetRequiredService<IOptionsMonitor<OpenIdConnectOptions>>();
+        var options = optionsMonitor.Get(PlatformAuthenticationDefaults.Schemes.OpenIdConnect);
+        var properties = new AuthenticationProperties();
+        properties.Items["prompt"] = "login";
+        var context = new RedirectContext(
+            new DefaultHttpContext
+            {
+                RequestServices = scope.ServiceProvider
+            },
+            new AuthenticationScheme(
+                PlatformAuthenticationDefaults.Schemes.OpenIdConnect,
+                PlatformAuthenticationDefaults.Schemes.OpenIdConnect,
+                typeof(OpenIdConnectHandler)),
+            options,
+            properties)
+        {
+            ProtocolMessage = new OpenIdConnectMessage()
+        };
+
+        await options.Events.OnRedirectToIdentityProvider(context);
+
+        Assert.Equal("login", context.ProtocolMessage.Prompt);
     }
 
     /// <summary>

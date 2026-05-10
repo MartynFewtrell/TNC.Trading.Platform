@@ -1,5 +1,12 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Options;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.IdentityModel.Tokens;
+using TNC.Trading.Platform.Web.Authentication;
 using TNC.Trading.Platform.Application.Authentication;
 
 namespace TNC.Trading.Platform.Web.UnitTests;
@@ -82,5 +89,79 @@ public class PlatformAuthenticationRegistrationTests
         Assert.Equal(
             "The configuration key 'Authentication:Keycloak:ClientId' is required when using the Keycloak provider.",
             exception.Message);
+    }
+
+    /// <summary>
+    /// Trace: FR1, NF2, SR4.
+    /// Verifies: the Web entry-session validation rejects a cookie session when the stored delegated access token is missing.
+    /// Expected: the evaluation reports the session as unusable.
+    /// Why: the UI root must force reauthentication instead of trusting a stale authenticated cookie with no API auth state.
+    /// </summary>
+    [Fact]
+    public void HasUsableSessionToken_ShouldReturnFalse_WhenAccessTokenIsMissing()
+    {
+        var usable = PlatformTokenScopeEvaluator.HasUsableSessionToken(null);
+
+        Assert.False(usable);
+    }
+
+    /// <summary>
+    /// Trace: FR1, NF2, SR4.
+    /// Verifies: the Web entry-session validation rejects a cookie session when the stored delegated access token is expired.
+    /// Expected: the evaluation reports the session as unusable even though token text is present.
+    /// Why: the UI root must not render the signed-in shell from stale browser cookie state.
+    /// </summary>
+    [Fact]
+    public void HasUsableSessionToken_ShouldReturnFalse_WhenAccessTokenIsExpired()
+    {
+        var expiredAccessToken = CreateAccessToken(DateTimeOffset.UtcNow.AddMinutes(-5));
+
+        var usable = PlatformTokenScopeEvaluator.HasUsableSessionToken(expiredAccessToken);
+
+        Assert.False(usable);
+    }
+
+    /// <summary>
+    /// Trace: FR1, NF2, TR3.
+    /// Verifies: the Web entry-session validation accepts a current delegated access token.
+    /// Expected: the evaluation reports the session as usable when the token is still valid.
+    /// Why: the sign-in-first entry rule must preserve valid authenticated sessions instead of prompting unnecessarily.
+    /// </summary>
+    [Fact]
+    public void HasUsableSessionToken_ShouldReturnTrue_WhenAccessTokenIsCurrent()
+    {
+        var currentAccessToken = CreateAccessToken(DateTimeOffset.UtcNow.AddHours(1));
+
+        var usable = PlatformTokenScopeEvaluator.HasUsableSessionToken(currentAccessToken);
+
+        Assert.True(usable);
+    }
+
+    private static string CreateAccessToken(DateTimeOffset expiresUtc)
+    {
+        var options = new PlatformAuthenticationOptions();
+        var notBeforeUtc = expiresUtc <= DateTimeOffset.UtcNow
+            ? expiresUtc.AddHours(-1)
+            : DateTimeOffset.UtcNow.AddMinutes(-1);
+        var claims = new List<Claim>
+        {
+            new(PlatformAuthenticationDefaults.Claims.Name, "Local Operator"),
+            new(PlatformAuthenticationDefaults.Claims.PreferredUserName, "local-operator"),
+            new(ClaimTypes.NameIdentifier, "local-operator"),
+            new(PlatformAuthenticationDefaults.Claims.Scope, PlatformAuthenticationDefaults.Scopes.Operator),
+            new(PlatformAuthenticationDefaults.Claims.Role, PlatformAuthenticationDefaults.Roles.Operator)
+        };
+
+        var token = new JwtSecurityToken(
+            issuer: options.Test.Issuer,
+            audience: options.ApiAudience ?? options.Test.Audience,
+            claims: claims,
+            notBefore: notBeforeUtc.UtcDateTime,
+            expires: expiresUtc.UtcDateTime,
+            signingCredentials: new SigningCredentials(
+                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(options.Test.SigningKey)),
+                SecurityAlgorithms.HmacSha256));
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }
