@@ -7,8 +7,8 @@ var infrastructure = AppHostInfrastructureRegistration.Create(builder);
 var apiProject = AppHostProjectRegistration.AddApiProject(builder, infrastructure);
 var webProject = AppHostProjectRegistration.AddWebProject(builder, apiProject);
 
-AppHostEnvironmentWiring.ConfigureApiProject(apiProject, infrastructure, settings);
-AppHostEnvironmentWiring.ConfigureWebProject(webProject);
-AppHostEnvironmentWiring.ConfigureAuthenticationProvider(apiProject, webProject, infrastructure.Keycloak, settings);
+apiProject = AppHostEnvironmentWiring.ConfigureApiProject(apiProject, infrastructure, settings);
+webProject = AppHostEnvironmentWiring.ConfigureWebProject(webProject);
+(apiProject, webProject) = AppHostEnvironmentWiring.ConfigureAuthenticationProvider(apiProject, webProject, infrastructure.Keycloak, settings);
 
 builder.Build().Run();

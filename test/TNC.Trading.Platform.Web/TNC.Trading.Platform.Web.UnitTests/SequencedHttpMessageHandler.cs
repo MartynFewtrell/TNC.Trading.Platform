@@ -4,7 +4,7 @@ namespace TNC.Trading.Platform.Web.UnitTests;
 
 internal sealed class SequencedHttpMessageHandler(params Func<HttpRequestMessage, HttpResponseMessage>[] responseFactories) : HttpMessageHandler
 {
-    private readonly Queue<Func<HttpRequestMessage, HttpResponseMessage>> responseFactories = new(responseFactories);
+    private readonly Queue<Func<HttpRequestMessage, HttpResponseMessage>> _responseFactories = new(responseFactories);
 
     public List<RecordedRequest> Requests { get; } = [];
 
@@ -24,12 +24,12 @@ internal sealed class SequencedHttpMessageHandler(params Func<HttpRequestMessage
             request.Headers.Authorization?.ToString(),
             content));
 
-        if (responseFactories.Count == 0)
+        if (_responseFactories.Count == 0)
         {
             throw new InvalidOperationException("No response was configured for the HTTP request.");
         }
 
-        return responseFactories.Dequeue()(request);
+        return _responseFactories.Dequeue()(request);
     }
 
     internal sealed record RecordedRequest(

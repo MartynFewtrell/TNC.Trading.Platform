@@ -37,7 +37,7 @@ internal static class RealAuthenticationSessionFactory
         });
         await page.Locator("#username").FillAsync(userName);
         await page.Locator("#password").FillAsync("LocalAuth!123");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Sign In" }).ClickAsync(new() { NoWaitAfter = true });
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign In" }).ClickAsync();
         await WaitForPlatformSessionCookieAsync(browserContext, page, webBaseUri, userName, returnUrl);
 
         foreach (var browserCookie in await browserContext.CookiesAsync(new[] { webBaseUri.ToString() }))
@@ -92,26 +92,37 @@ internal static class RealAuthenticationSessionFactory
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(webBaseUri);
 
-        using var timeoutCancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        while (!timeoutCancellationTokenSource.IsCancellationRequested)
+        try
         {
-            var browserCookies = await browserContext.CookiesAsync(new[] { webBaseUri.ToString() });
-            foreach (var browserCookie in browserCookies)
+            await page.GetByRole(AriaRole.Button, new() { Name = "Sign out" }).WaitForAsync(new LocatorWaitForOptions
             {
-                if (IsPlatformSessionCookie(browserCookie.Name))
-                {
-                    return;
-                }
-            }
+                State = WaitForSelectorState.Visible,
+                Timeout = 60_000
+            });
+        }
+        catch (TimeoutException)
+        {
+            var timeoutCurrentUrl = string.IsNullOrWhiteSpace(page.Url)
+                ? "<unknown>"
+                : page.Url;
+            throw new TimeoutException(
+                $"The authenticated platform UI did not appear within the expected time for user '{userName}' and return URL '{returnUrl}'. Current browser URL: {timeoutCurrentUrl}.");
+        }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(500), timeoutCancellationTokenSource.Token).ConfigureAwait(false);
+        var cookies = await browserContext.CookiesAsync(new[] { webBaseUri.ToString() });
+        foreach (var browserCookie in cookies)
+        {
+            if (IsPlatformSessionCookie(browserCookie.Name))
+            {
+                return;
+            }
         }
 
         var currentUrl = string.IsNullOrWhiteSpace(page.Url)
             ? "<unknown>"
             : page.Url;
         throw new TimeoutException(
-            $"The platform session cookie was not established within the expected time for user '{userName}' and return URL '{returnUrl}'. Current browser URL: {currentUrl}.");
+            $"The platform session cookie was not established after the authenticated platform UI appeared for user '{userName}' and return URL '{returnUrl}'. Current browser URL: {currentUrl}.");
     }
 
     private static bool IsPlatformSessionCookie(string cookieName)

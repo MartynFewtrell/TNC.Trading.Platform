@@ -103,7 +103,7 @@ internal static class AppHostEnvironmentWiring
         return environmentValues;
     }
 
-    internal static void ConfigureApiProject(
+    internal static IResourceBuilder<ProjectResource> ConfigureApiProject(
         IResourceBuilder<ProjectResource> apiProject,
         AppHostInfrastructure infrastructure,
         AppHostSettings settings)
@@ -134,9 +134,11 @@ internal static class AppHostEnvironmentWiring
             configuredApi = configuredApi
                 .WithEnvironment(environmentValue.Key, environmentValue.Value);
         }
+
+        return configuredApi;
     }
 
-    internal static void ConfigureWebProject(IResourceBuilder<ProjectResource> webProject)
+    internal static IResourceBuilder<ProjectResource> ConfigureWebProject(IResourceBuilder<ProjectResource> webProject)
     {
         ArgumentNullException.ThrowIfNull(webProject);
 
@@ -147,9 +149,11 @@ internal static class AppHostEnvironmentWiring
             configuredWeb = configuredWeb
                 .WithEnvironment(environmentValue.Key, environmentValue.Value);
         }
+
+        return configuredWeb;
     }
 
-    internal static void ConfigureAuthenticationProvider(
+    internal static (IResourceBuilder<ProjectResource> ApiProject, IResourceBuilder<ProjectResource> WebProject) ConfigureAuthenticationProvider(
         IResourceBuilder<ProjectResource> apiProject,
         IResourceBuilder<ProjectResource> webProject,
         IResourceBuilder<IResourceWithEndpoints> keycloak,
@@ -180,5 +184,7 @@ internal static class AppHostEnvironmentWiring
             configuredWeb = configuredWeb
                 .WithEnvironment(environmentValue.Key, environmentValue.Value);
         }
+
+        return (configuredApi, configuredWeb);
     }
 }

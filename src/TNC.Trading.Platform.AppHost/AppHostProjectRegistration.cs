@@ -1,4 +1,4 @@
-using Aspire.Hosting.ApplicationModel;
+﻿using Aspire.Hosting.ApplicationModel;
 
 namespace TNC.Trading.Platform.AppHost;
 
@@ -18,17 +18,10 @@ internal static class AppHostProjectRegistration
                 DisplayText = "Scalar UI"
             });
 
-        if (infrastructure.PlatformDatabase is not null)
-        {
-            apiProject = apiProject
-                .WithReference(infrastructure.PlatformDatabase)
-                .WaitFor(infrastructure.PlatformDatabase);
-        }
-
-        if (infrastructure.Mailpit is not null)
-        {
-            apiProject = apiProject.WaitFor(infrastructure.Mailpit);
-        }
+        apiProject = apiProject
+            .WithReference(infrastructure.PlatformDatabase)
+            .WaitFor(infrastructure.PlatformDatabase)
+            .WaitFor(infrastructure.Mailpit);
 
         return apiProject;
     }

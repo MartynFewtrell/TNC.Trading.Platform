@@ -12,10 +12,7 @@ internal static class RealKeycloakAccessTokenFactory
 
     public static async Task<HttpRequestMessage> CreateAuthenticatedRequestAsync(HttpMethod method, string path, string userName, string? scope = null)
     {
-        using var tokenResponse = await RequestTokenAsync(userName, scope);
-
-        var payload = await tokenResponse.Content.ReadFromJsonAsync<KeycloakTokenResponse>()
-            ?? throw new InvalidOperationException("The Keycloak token response was empty.");
+        var payload = await RequestTokenAsync(userName, scope);
 
         var request = new HttpRequestMessage(method, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", payload.AccessToken);
@@ -31,8 +28,7 @@ internal static class RealKeycloakAccessTokenFactory
         {
             try
             {
-                using var tokenResponse = await RequestTokenAsync(userName, scope, timeoutCts.Token);
-                var payload = await tokenResponse.Content.ReadFromJsonAsync<KeycloakTokenResponse>(cancellationToken: timeoutCts.Token);
+                var payload = await RequestTokenAsync(userName, scope, timeoutCts.Token);
                 if (!string.IsNullOrWhiteSpace(payload?.AccessToken))
                 {
                     return;
@@ -54,7 +50,7 @@ internal static class RealKeycloakAccessTokenFactory
         throw new TimeoutException("The Keycloak token endpoint did not become ready within the expected time for the authentication integration tests.");
     }
 
-    private static async Task<HttpResponseMessage> RequestTokenAsync(string userName, string? scope, CancellationToken cancellationToken = default)
+    private static async Task<KeycloakTokenResponse> RequestTokenAsync(string userName, string? scope, CancellationToken cancellationToken = default)
     {
         using var tokenClient = new HttpClient();
         using var tokenRequest = new HttpRequestMessage(HttpMethod.Post, TokenEndpoint)
@@ -62,9 +58,11 @@ internal static class RealKeycloakAccessTokenFactory
             Content = new FormUrlEncodedContent(CreateTokenForm(userName, scope))
         };
 
-        var tokenResponse = await tokenClient.SendAsync(tokenRequest, cancellationToken);
+        using var tokenResponse = await tokenClient.SendAsync(tokenRequest, cancellationToken);
         tokenResponse.EnsureSuccessStatusCode();
-        return tokenResponse;
+
+        return await tokenResponse.Content.ReadFromJsonAsync<KeycloakTokenResponse>(cancellationToken)
+            ?? throw new InvalidOperationException("The Keycloak token response was empty.");
     }
 
     private static IReadOnlyCollection<KeyValuePair<string, string>> CreateTokenForm(string userName, string? scope)
