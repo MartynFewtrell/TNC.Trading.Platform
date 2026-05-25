@@ -513,7 +513,7 @@ internal sealed class PlatformStateCoordinator(
             && currentState.ExpiresAtUtc <= now;
     }
 
-    private Task UpsertRetryCycleAsync(
+    internal Task UpsertRetryCycleAsync(
         Guid? retryCycleId,
         PlatformConfigurationSnapshot currentConfiguration,
         PlatformRuntimeState currentState,

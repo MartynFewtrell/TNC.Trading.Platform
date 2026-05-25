@@ -20,22 +20,28 @@ internal static class TestJwtTokenFactory
         string userName,
         IReadOnlyCollection<string> roles,
         IReadOnlyCollection<string> scopes,
+        IReadOnlyCollection<Claim>? additionalClaims = null,
         string? issuer = null,
         string? audience = null,
         string? signingKey = null,
         DateTimeOffset? expiresUtc = null,
-        DateTimeOffset? notBeforeUtc = null)
+        DateTimeOffset? notBeforeUtc = null,
+        bool includeNameClaim = true,
+        bool includePreferredUserNameClaim = true)
     {
         var request = new HttpRequestMessage(method, url);
         var token = CreateToken(
             userName,
             roles,
             scopes,
+            additionalClaims,
             issuer,
             audience,
             signingKey,
             expiresUtc,
-            notBeforeUtc);
+            notBeforeUtc,
+            includeNameClaim,
+            includePreferredUserNameClaim);
 
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return request;
@@ -45,21 +51,37 @@ internal static class TestJwtTokenFactory
         string userName,
         IReadOnlyCollection<string> roles,
         IReadOnlyCollection<string> scopes,
+        IReadOnlyCollection<Claim>? additionalClaims = null,
         string? issuer = null,
         string? audience = null,
         string? signingKey = null,
         DateTimeOffset? expiresUtc = null,
-        DateTimeOffset? notBeforeUtc = null)
+        DateTimeOffset? notBeforeUtc = null,
+        bool includeNameClaim = true,
+        bool includePreferredUserNameClaim = true)
     {
         var claims = new List<Claim>
         {
-            new("name", userName),
-            new("preferred_username", userName),
             new(ClaimTypes.NameIdentifier, userName),
             new("scope", string.Join(' ', scopes))
         };
 
+        if (includeNameClaim)
+        {
+            claims.Add(new Claim("name", userName));
+        }
+
+        if (includePreferredUserNameClaim)
+        {
+            claims.Add(new Claim("preferred_username", userName));
+        }
+
         claims.AddRange(roles.Select(role => new Claim("role", role)));
+
+        if (additionalClaims is not null)
+        {
+            claims.AddRange(additionalClaims);
+        }
 
         var resolvedSigningKey = signingKey ?? SigningKey;
         var resolvedExpiresUtc = expiresUtc ?? DateTimeOffset.UtcNow.AddHours(1);

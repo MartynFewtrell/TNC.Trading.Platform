@@ -3,7 +3,7 @@
 namespace TNC.Trading.Platform.AppHost;
 
 internal sealed record AppHostSettings(
-    bool UseSyntheticRuntimeForTests,
+    string? ApiAuthenticationProvider,
     bool EnableInteractiveTestSignIn,
     string? AcsEndpoint,
     string? AcsSenderAddress,
@@ -14,10 +14,7 @@ internal sealed record AppHostSettings(
         ArgumentNullException.ThrowIfNull(configuration);
 
         return new AppHostSettings(
-            UseSyntheticRuntimeForTests: string.Equals(
-                configuration["AppHost:UseSyntheticRuntime"],
-                bool.TrueString,
-                StringComparison.OrdinalIgnoreCase),
+            ApiAuthenticationProvider: configuration["Authentication:ApiProvider"],
             EnableInteractiveTestSignIn: string.Equals(
                 configuration["Authentication:Test:EnableInteractiveSignIn"],
                 bool.TrueString,

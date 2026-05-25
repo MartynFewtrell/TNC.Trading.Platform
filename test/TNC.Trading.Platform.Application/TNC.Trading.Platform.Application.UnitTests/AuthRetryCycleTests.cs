@@ -1,4 +1,8 @@
-using Microsoft.EntityFrameworkCore;
+﻿using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Services;
+using TNC.Trading.Platform.Infrastructure.Notifications;
+using TNC.Trading.Platform.Infrastructure.Persistence;
+using TNC.Trading.Platform.Infrastructure.Platform;
 using Microsoft.Extensions.Configuration;
 
 namespace TNC.Trading.Platform.Application.UnitTests;
@@ -18,51 +22,47 @@ public class AuthRetryCycleTests
         var configuration = new ConfigurationBuilder().Build();
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, TimeProvider.System);
         var configurationStore = CreateConfigurationStore(dbContext, configuration, protectedCredentialService, TimeProvider.System);
-        var configurationService = ApplicationReflection.Create("TNC.Trading.Platform.Application.Services.PlatformConfigurationService", configurationStore);
-        var notificationDispatcher = CreateNotificationDispatcher(dbContext);
-        var coordinatorType = ApplicationReflection.GetType("TNC.Trading.Platform.Application.Services.PlatformStateCoordinator");
-        var coordinator = Activator.CreateInstance(
-            coordinatorType,
+        var configurationService = new PlatformConfigurationService(configurationStore);
+        var coordinator = new PlatformStateCoordinator(
             configuration,
             configurationService,
-            ApplicationReflection.Create("TNC.Trading.Platform.Infrastructure.Platform.EfPlatformRuntimeStateStore", dbContext),
-            ApplicationReflection.Create("TNC.Trading.Platform.Infrastructure.Platform.EfPlatformRetryCycleStore", dbContext),
-            ApplicationReflection.Create("TNC.Trading.Platform.Infrastructure.Platform.EfPlatformEventStore", dbContext),
-            notificationDispatcher,
-            ApplicationReflection.Create("TNC.Trading.Platform.Application.Services.TradingScheduleGate"),
+            new EfPlatformRuntimeStateStore(dbContext),
+            new EfPlatformRetryCycleStore(dbContext),
+            new EfPlatformEventStore(dbContext),
+            CreateNotificationDispatcher(dbContext, TimeProvider.System),
+            new TradingScheduleGate(),
             TimeProvider.System,
-            ApplicationReflection.CreateNullLogger(coordinatorType))!;
+            ApplicationReflection.CreateNullLogger<PlatformStateCoordinator>());
 
         var configurationSnapshot = CreateConfigurationSnapshot();
-        var state = ApplicationReflection.Create("TNC.Trading.Platform.Application.Configuration.PlatformRuntimeState");
+        var state = new PlatformRuntimeState();
         var retryCycleId = Guid.NewGuid();
         var nextRetryAtUtc = DateTimeOffset.UtcNow.AddSeconds(1);
 
-        ApplicationReflection.SetProperty(state, "RetryPhase", ApplicationReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.AuthRetryPhase", "InitialAutomatic"));
-        ApplicationReflection.SetProperty(state, "AutomaticAttemptNumber", 1);
-        ApplicationReflection.SetProperty(state, "NextRetryAtUtc", nextRetryAtUtc);
-        ApplicationReflection.SetProperty(state, "RetryLimitReached", false);
+        state.RetryPhase = AuthRetryPhase.InitialAutomatic;
+        state.AutomaticAttemptNumber = 1;
+        state.NextRetryAtUtc = nextRetryAtUtc;
+        state.RetryLimitReached = false;
 
-        _ = await ApplicationReflection.InvokeAsync(coordinator, "UpsertRetryCycleAsync", retryCycleId, configurationSnapshot, state, "Automatic", false, 1, CancellationToken.None);
+        await coordinator.UpsertRetryCycleAsync(retryCycleId, configurationSnapshot, state, "Automatic", false, 1, CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
-        ApplicationReflection.SetProperty(state, "RetryPhase", ApplicationReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.AuthRetryPhase", "Periodic"));
-        ApplicationReflection.SetProperty(state, "AutomaticAttemptNumber", 5);
-        ApplicationReflection.SetProperty(state, "NextRetryAtUtc", nextRetryAtUtc.AddMinutes(5));
-        ApplicationReflection.SetProperty(state, "RetryLimitReached", true);
+        state.RetryPhase = AuthRetryPhase.Periodic;
+        state.AutomaticAttemptNumber = 5;
+        state.NextRetryAtUtc = nextRetryAtUtc.AddMinutes(5);
+        state.RetryLimitReached = true;
 
-        _ = await ApplicationReflection.InvokeAsync(coordinator, "UpsertRetryCycleAsync", retryCycleId, configurationSnapshot, state, "Automatic", true, 60, CancellationToken.None);
+        await coordinator.UpsertRetryCycleAsync(retryCycleId, configurationSnapshot, state, "Automatic", true, 60, CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
-        var cycles = ((IEnumerable<object>)dbContext.GetType().GetProperty("AuthRetryCycles", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!.GetValue(dbContext)!)
-            .ToArray();
+        var cycles = dbContext.AuthRetryCycles.ToArray();
 
         var cycle = Assert.Single(cycles);
-        Assert.Equal("Periodic", ApplicationReflection.GetProperty<string>(cycle, "RetryPhase"));
-        Assert.Equal(5, ApplicationReflection.GetProperty<int>(cycle, "AutomaticAttemptNumber"));
-        Assert.True(ApplicationReflection.GetProperty<bool>(cycle, "RetryLimitReached"));
-        Assert.True(ApplicationReflection.GetProperty<bool>(cycle, "FailureNotificationSent"));
-        Assert.Equal(60, ApplicationReflection.GetProperty<int?>(cycle, "LastDelaySeconds"));
+        Assert.Equal("Periodic", cycle.RetryPhase);
+        Assert.Equal(5, cycle.AutomaticAttemptNumber);
+        Assert.True(cycle.RetryLimitReached);
+        Assert.True(cycle.FailureNotificationSent);
+        Assert.Equal(60, cycle.LastDelaySeconds);
     }
 
     /// <summary>
@@ -80,39 +80,39 @@ public class AuthRetryCycleTests
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
         var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
 
-        await ApplicationReflection.InvokeAsync(coordinator, "TickAsync", CancellationToken.None);
+        await coordinator.TickAsync(CancellationToken.None);
         timeProvider.Advance(TimeSpan.FromMinutes(5));
-        await ApplicationReflection.InvokeAsync(coordinator, "TickAsync", CancellationToken.None);
+        await coordinator.TickAsync(CancellationToken.None);
         timeProvider.Advance(TimeSpan.FromMinutes(5));
-        await ApplicationReflection.InvokeAsync(coordinator, "TickAsync", CancellationToken.None);
+        await coordinator.TickAsync(CancellationToken.None);
 
         var failureNotification = Assert.Single(
             GetNotificationRecords(dbContext).Where(record =>
-                string.Equals(ApplicationReflection.GetProperty<string>(record, "NotificationType"), "AuthFailure", StringComparison.Ordinal)));
+                string.Equals(record.NotificationType, "AuthFailure", StringComparison.Ordinal)));
 
         Assert.Contains(
             "credentials are incomplete",
-            ApplicationReflection.GetProperty<string>(failureNotification, "Summary"),
+            failureNotification.Summary,
             StringComparison.Ordinal);
-        Assert.Equal("Recorded", ApplicationReflection.GetProperty<string>(failureNotification, "DispatchStatus"));
-        Assert.Equal("RecordedOnly", ApplicationReflection.GetProperty<string>(failureNotification, "Provider"));
+        Assert.Equal("Recorded", failureNotification.DispatchStatus);
+        Assert.Equal("RecordedOnly", failureNotification.Provider);
         Assert.DoesNotContain(
             GetNotificationRecords(dbContext),
-            record => string.Equals(ApplicationReflection.GetProperty<string>(record, "NotificationType"), "RetryLimitReached", StringComparison.Ordinal));
+            record => string.Equals(record.NotificationType, "RetryLimitReached", StringComparison.Ordinal));
 
         var operationalEvents = GetOperationalEvents(dbContext);
         Assert.DoesNotContain(
             operationalEvents,
-            record => string.Equals(ApplicationReflection.GetProperty<string>(record, "EventType"), "AuthAttempted", StringComparison.Ordinal));
+            record => string.Equals(record.EventType, "AuthAttempted", StringComparison.Ordinal));
         Assert.DoesNotContain(
             operationalEvents,
-            record => string.Equals(ApplicationReflection.GetProperty<string>(record, "EventType"), "RetryScheduled", StringComparison.Ordinal));
+            record => string.Equals(record.EventType, "RetryScheduled", StringComparison.Ordinal));
         Assert.DoesNotContain(
             operationalEvents,
-            record => string.Equals(ApplicationReflection.GetProperty<string>(record, "EventType"), "PeriodicRetryScheduled", StringComparison.Ordinal));
+            record => string.Equals(record.EventType, "PeriodicRetryScheduled", StringComparison.Ordinal));
         Assert.DoesNotContain(
             operationalEvents,
-            record => string.Equals(ApplicationReflection.GetProperty<string>(record, "EventType"), "RetryLimitReached", StringComparison.Ordinal));
+            record => string.Equals(record.EventType, "RetryLimitReached", StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -130,25 +130,25 @@ public class AuthRetryCycleTests
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
 
         var firstCoordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
-        await ApplicationReflection.InvokeAsync(firstCoordinator, "TickAsync", CancellationToken.None);
+        await firstCoordinator.TickAsync(CancellationToken.None);
 
         timeProvider.Advance(TimeSpan.FromMinutes(1));
 
         var restartedCoordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
-        await ApplicationReflection.InvokeAsync(restartedCoordinator, "TickAsync", CancellationToken.None);
+        await restartedCoordinator.TickAsync(CancellationToken.None);
 
         var failureNotifications = GetNotificationRecords(dbContext)
-            .Where(record => string.Equals(ApplicationReflection.GetProperty<string>(record, "NotificationType"), "AuthFailure", StringComparison.Ordinal))
+            .Where(record => string.Equals(record.NotificationType, "AuthFailure", StringComparison.Ordinal))
             .ToArray();
 
         var failureNotification = Assert.Single(failureNotifications);
         Assert.Contains(
             "credentials are incomplete",
-            ApplicationReflection.GetProperty<string>(failureNotification, "Summary"),
+            failureNotification.Summary,
             StringComparison.Ordinal);
         Assert.All(
             failureNotifications,
-            record => Assert.Equal("RecordedOnly", ApplicationReflection.GetProperty<string>(record, "Provider")));
+            record => Assert.Equal("RecordedOnly", record.Provider));
     }
 
     /// <summary>
@@ -169,16 +169,16 @@ public class AuthRetryCycleTests
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
         var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
 
-        var status = await ApplicationReflection.InvokeAsync(coordinator, "GetStatusAsync", CancellationToken.None);
-        var retryState = ApplicationReflection.GetProperty<object>(status!, "RetryState");
+        var status = await coordinator.GetStatusAsync(CancellationToken.None);
+        var retryState = status.RetryState;
 
-        Assert.Equal("Degraded", ApplicationReflection.GetProperty<object>(status!, "SessionStatus").ToString());
-        Assert.True(ApplicationReflection.GetProperty<bool>(status!, "IsDegraded"));
-        Assert.Equal("None", ApplicationReflection.GetProperty<object>(retryState, "Phase").ToString());
-        Assert.Equal(0, ApplicationReflection.GetProperty<int>(retryState, "AutomaticAttemptNumber"));
-        Assert.Null(ApplicationReflection.GetProperty<DateTimeOffset?>(retryState, "NextRetryAtUtc"));
-        Assert.False(ApplicationReflection.GetProperty<bool>(retryState, "RetryLimitReached"));
-        Assert.False(ApplicationReflection.GetProperty<bool>(retryState, "ManualRetryAvailable"));
+        Assert.Equal(PlatformSessionStatus.Degraded, status.SessionStatus);
+        Assert.True(status.IsDegraded);
+        Assert.Equal(AuthRetryPhase.None, retryState.Phase);
+        Assert.Equal(0, retryState.AutomaticAttemptNumber);
+        Assert.Null(retryState.NextRetryAtUtc);
+        Assert.False(retryState.RetryLimitReached);
+        Assert.False(retryState.ManualRetryAvailable);
     }
 
     /// <summary>
@@ -200,18 +200,18 @@ public class AuthRetryCycleTests
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
         var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
 
-        await ApplicationReflection.InvokeAsync(coordinator, "TickAsync", CancellationToken.None);
+        await coordinator.TickAsync(CancellationToken.None);
         timeProvider.Advance(TimeSpan.FromMinutes(7));
-        await ApplicationReflection.InvokeAsync(coordinator, "TickAsync", CancellationToken.None);
+        await coordinator.TickAsync(CancellationToken.None);
 
-        var status = await ApplicationReflection.InvokeAsync(coordinator, "GetStatusAsync", CancellationToken.None);
-        var retryState = ApplicationReflection.GetProperty<object>(status!, "RetryState");
+        var status = await coordinator.GetStatusAsync(CancellationToken.None);
+        var retryState = status.RetryState;
 
-        Assert.Equal("None", ApplicationReflection.GetProperty<object>(retryState, "Phase").ToString());
-        Assert.Equal(0, ApplicationReflection.GetProperty<int>(retryState, "AutomaticAttemptNumber"));
-        Assert.False(ApplicationReflection.GetProperty<bool>(retryState, "RetryLimitReached"));
-        Assert.False(ApplicationReflection.GetProperty<bool>(retryState, "ManualRetryAvailable"));
-        Assert.Null(ApplicationReflection.GetProperty<DateTimeOffset?>(retryState, "NextRetryAtUtc"));
+        Assert.Equal(AuthRetryPhase.None, retryState.Phase);
+        Assert.Equal(0, retryState.AutomaticAttemptNumber);
+        Assert.False(retryState.RetryLimitReached);
+        Assert.False(retryState.ManualRetryAvailable);
+        Assert.Null(retryState.NextRetryAtUtc);
     }
 
     /// <summary>
@@ -229,10 +229,10 @@ public class AuthRetryCycleTests
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
         var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
 
-        await ApplicationReflection.InvokeAsync(coordinator, "TickAsync", CancellationToken.None);
+        await coordinator.TickAsync(CancellationToken.None);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            ApplicationReflection.InvokeAsync(coordinator, "TriggerManualRetryAsync", CancellationToken.None));
+            coordinator.TriggerManualRetryAsync(CancellationToken.None));
 
         Assert.Equal(
             "Manual retry becomes available only after the initial automatic retries are exhausted.",
@@ -257,18 +257,18 @@ public class AuthRetryCycleTests
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
         var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
 
-        await ApplicationReflection.InvokeAsync(coordinator, "TickAsync", CancellationToken.None);
+        await coordinator.TickAsync(CancellationToken.None);
 
         _ = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            ApplicationReflection.InvokeAsync(coordinator, "TriggerManualRetryAsync", CancellationToken.None));
-        var status = await ApplicationReflection.InvokeAsync(coordinator, "GetStatusAsync", CancellationToken.None);
-        var retryState = ApplicationReflection.GetProperty<object>(status!, "RetryState");
+            coordinator.TriggerManualRetryAsync(CancellationToken.None));
+        var status = await coordinator.GetStatusAsync(CancellationToken.None);
+        var retryState = status.RetryState;
 
-        Assert.Equal("None", ApplicationReflection.GetProperty<object>(retryState, "Phase").ToString());
-        Assert.Equal(0, ApplicationReflection.GetProperty<int>(retryState, "AutomaticAttemptNumber"));
-        Assert.False(ApplicationReflection.GetProperty<bool>(retryState, "RetryLimitReached"));
-        Assert.False(ApplicationReflection.GetProperty<bool>(retryState, "ManualRetryAvailable"));
-        Assert.Null(ApplicationReflection.GetProperty<DateTimeOffset?>(retryState, "NextRetryAtUtc"));
+        Assert.Equal(AuthRetryPhase.None, retryState.Phase);
+        Assert.Equal(0, retryState.AutomaticAttemptNumber);
+        Assert.False(retryState.RetryLimitReached);
+        Assert.False(retryState.ManualRetryAvailable);
+        Assert.Null(retryState.NextRetryAtUtc);
     }
 
     /// <summary>
@@ -284,11 +284,8 @@ public class AuthRetryCycleTests
         var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
         var configuration = CreateConfiguration();
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        var demoEnvironment = ApplicationReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.BrokerEnvironmentKind", "Demo");
-        _ = await ApplicationReflection.InvokeAsync(
-            protectedCredentialService,
-            "UpdateAsync",
-            demoEnvironment,
+        await protectedCredentialService.UpdateAsync(
+            BrokerEnvironmentKind.Demo,
             "demo-api-key",
             "demo-identifier",
             "demo-password",
@@ -298,16 +295,16 @@ public class AuthRetryCycleTests
 
         var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
 
-        _ = await ApplicationReflection.InvokeAsync(coordinator, "GetStatusAsync", CancellationToken.None);
+        _ = await coordinator.GetStatusAsync(CancellationToken.None);
 
         var authAttempt = Assert.Single(
             GetOperationalEvents(dbContext).Where(record =>
-                string.Equals(ApplicationReflection.GetProperty<string>(record, "EventType"), "AuthAttempted", StringComparison.Ordinal)));
+                string.Equals(record.EventType, "AuthAttempted", StringComparison.Ordinal)));
 
-        Assert.Equal("Demo", ApplicationReflection.GetProperty<string>(authAttempt, "BrokerEnvironment"));
-        Assert.Contains("demo auth attempt started", ApplicationReflection.GetProperty<string>(authAttempt, "Summary"), StringComparison.Ordinal);
-        Assert.Contains("Demo", ApplicationReflection.GetProperty<string>(authAttempt, "DetailsJson"), StringComparison.Ordinal);
-        Assert.DoesNotContain("demo-api-key", ApplicationReflection.GetProperty<string>(authAttempt, "DetailsJson"), StringComparison.Ordinal);
+        Assert.Equal("Demo", authAttempt.BrokerEnvironment);
+        Assert.Contains("demo auth attempt started", authAttempt.Summary, StringComparison.Ordinal);
+        Assert.Contains("Demo", authAttempt.DetailsJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("demo-api-key", authAttempt.DetailsJson, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -327,11 +324,8 @@ public class AuthRetryCycleTests
             ["Bootstrap:BrokerEnvironment"] = "Live"
         });
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        var liveEnvironment = ApplicationReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.BrokerEnvironmentKind", "Live");
-        _ = await ApplicationReflection.InvokeAsync(
-            protectedCredentialService,
-            "UpdateAsync",
-            liveEnvironment,
+        await protectedCredentialService.UpdateAsync(
+            BrokerEnvironmentKind.Live,
             "live-api-key",
             "live-identifier",
             "live-password",
@@ -340,45 +334,37 @@ public class AuthRetryCycleTests
         await dbContext.SaveChangesAsync();
 
         var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
-        var status = await ApplicationReflection.InvokeAsync(coordinator, "GetStatusAsync", CancellationToken.None);
+        var status = await coordinator.GetStatusAsync(CancellationToken.None);
 
-        Assert.Equal("Blocked", ApplicationReflection.GetProperty<object>(status!, "SessionStatus").ToString());
-        Assert.True(ApplicationReflection.GetProperty<bool>(status!, "IsDegraded"));
+        Assert.Equal(PlatformSessionStatus.Blocked, status.SessionStatus);
+        Assert.True(status.IsDegraded);
         Assert.Equal(
             "IG live is unavailable while the platform environment is Test.",
-            ApplicationReflection.GetProperty<string>(status!, "BlockedReason"));
+            status.BlockedReason);
 
         var blockedNotification = Assert.Single(
             GetNotificationRecords(dbContext).Where(record =>
-                string.Equals(ApplicationReflection.GetProperty<string>(record, "NotificationType"), "BlockedLiveAttempt", StringComparison.Ordinal)));
+                string.Equals(record.NotificationType, "BlockedLiveAttempt", StringComparison.Ordinal)));
         var blockedEvent = Assert.Single(
             GetOperationalEvents(dbContext).Where(record =>
-                string.Equals(ApplicationReflection.GetProperty<string>(record, "Category"), "auth", StringComparison.Ordinal)
+                string.Equals(record.Category, "auth", StringComparison.Ordinal)
                 &&
-                string.Equals(ApplicationReflection.GetProperty<string>(record, "EventType"), "BlockedLiveAttempt", StringComparison.Ordinal)));
+                string.Equals(record.EventType, "BlockedLiveAttempt", StringComparison.Ordinal)));
 
-        Assert.Equal("Live", ApplicationReflection.GetProperty<string>(blockedNotification, "BrokerEnvironment"));
-        Assert.Equal("BlockedLiveAttempt", ApplicationReflection.GetProperty<string>(blockedEvent, "EventType"));
+        Assert.Equal("Live", blockedNotification.BrokerEnvironment);
+        Assert.Equal("BlockedLiveAttempt", blockedEvent.EventType);
         Assert.DoesNotContain(
             GetOperationalEvents(dbContext),
-            record => string.Equals(ApplicationReflection.GetProperty<string>(record, "EventType"), "AuthAttempted", StringComparison.Ordinal));
+            record => string.Equals(record.EventType, "AuthAttempted", StringComparison.Ordinal));
     }
 
-    private static object CreateNotificationDispatcher(DbContext dbContext)
+    private static NotificationDispatcher CreateNotificationDispatcher(PlatformDbContext dbContext, TimeProvider timeProvider)
     {
-        var providerType = ApplicationReflection.GetType("TNC.Trading.Platform.Infrastructure.Notifications.INotificationProvider");
-        var dispatcherType = ApplicationReflection.GetType("TNC.Trading.Platform.Infrastructure.Platform.NotificationDispatcher");
-        var recordedProviderType = ApplicationReflection.GetType("TNC.Trading.Platform.Infrastructure.Notifications.RecordedNotificationProvider");
-        var providers = Array.CreateInstance(providerType, 1);
-        var recordedProvider = Activator.CreateInstance(recordedProviderType, ApplicationReflection.CreateNullLogger(recordedProviderType))!;
-        providers.SetValue(recordedProvider, 0);
-
-        return Activator.CreateInstance(
-            dispatcherType,
+        return new NotificationDispatcher(
             dbContext,
-            providers,
-            ApplicationReflection.CreateNullLogger(dispatcherType),
-            TimeProvider.System)!;
+            [new RecordedNotificationProvider(ApplicationReflection.CreateNullLogger<RecordedNotificationProvider>())],
+            ApplicationReflection.CreateNullLogger<NotificationDispatcher>(),
+            timeProvider);
     }
 
     private static IConfiguration CreateConfiguration(IReadOnlyDictionary<string, string?>? values = null)
@@ -421,83 +407,80 @@ public class AuthRetryCycleTests
             .Build();
     }
 
-    private static object CreateProtectedCredentialService(DbContext dbContext, TimeProvider timeProvider)
+    private static ProtectedCredentialService CreateProtectedCredentialService(PlatformDbContext dbContext, TimeProvider timeProvider)
     {
-        return ApplicationReflection.Create(
-            "TNC.Trading.Platform.Infrastructure.Platform.ProtectedCredentialService",
+        return new ProtectedCredentialService(
             dbContext,
             ApplicationReflection.CreateDataProtectionProvider(),
             timeProvider);
     }
 
-    private static object CreateConfigurationStore(DbContext dbContext, IConfiguration configuration, object protectedCredentialService, TimeProvider timeProvider)
+    private static SqlPlatformConfigurationStore CreateConfigurationStore(
+        PlatformDbContext dbContext,
+        IConfiguration configuration,
+        ProtectedCredentialService protectedCredentialService,
+        TimeProvider timeProvider)
     {
-        return ApplicationReflection.Create(
-            "TNC.Trading.Platform.Infrastructure.Platform.SqlPlatformConfigurationStore",
+        return new SqlPlatformConfigurationStore(
             dbContext,
             configuration,
             protectedCredentialService,
             timeProvider);
     }
 
-    private static object CreateCoordinator(DbContext dbContext, IConfiguration configuration, object protectedCredentialService, TimeProvider timeProvider)
+    private static PlatformStateCoordinator CreateCoordinator(
+        PlatformDbContext dbContext,
+        IConfiguration configuration,
+        ProtectedCredentialService protectedCredentialService,
+        TimeProvider timeProvider)
     {
         var configurationStore = CreateConfigurationStore(dbContext, configuration, protectedCredentialService, timeProvider);
-        var configurationService = ApplicationReflection.Create("TNC.Trading.Platform.Application.Services.PlatformConfigurationService", configurationStore);
-        var coordinatorType = ApplicationReflection.GetType("TNC.Trading.Platform.Application.Services.PlatformStateCoordinator");
+        var configurationService = new PlatformConfigurationService(configurationStore);
 
-        return Activator.CreateInstance(
-            coordinatorType,
+        return new PlatformStateCoordinator(
             configuration,
             configurationService,
-            ApplicationReflection.Create("TNC.Trading.Platform.Infrastructure.Platform.EfPlatformRuntimeStateStore", dbContext),
-            ApplicationReflection.Create("TNC.Trading.Platform.Infrastructure.Platform.EfPlatformRetryCycleStore", dbContext),
-            ApplicationReflection.Create("TNC.Trading.Platform.Infrastructure.Platform.EfPlatformEventStore", dbContext),
-            CreateNotificationDispatcher(dbContext),
-            ApplicationReflection.Create("TNC.Trading.Platform.Application.Services.TradingScheduleGate"),
+            new EfPlatformRuntimeStateStore(dbContext),
+            new EfPlatformRetryCycleStore(dbContext),
+            new EfPlatformEventStore(dbContext),
+            CreateNotificationDispatcher(dbContext, timeProvider),
+            new TradingScheduleGate(),
             timeProvider,
-            ApplicationReflection.CreateNullLogger(coordinatorType))!;
+            ApplicationReflection.CreateNullLogger<PlatformStateCoordinator>());
     }
 
-    private static object[] GetNotificationRecords(DbContext dbContext)
+    private static NotificationRecordEntity[] GetNotificationRecords(PlatformDbContext dbContext)
     {
-        return ((IEnumerable<object>)dbContext.GetType().GetProperty("NotificationRecords", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!.GetValue(dbContext)!)
-            .ToArray();
+        return dbContext.NotificationRecords.ToArray();
     }
 
-    private static object[] GetOperationalEvents(DbContext dbContext)
+    private static OperationalEventEntity[] GetOperationalEvents(PlatformDbContext dbContext)
     {
-        return ((IEnumerable<object>)dbContext.GetType().GetProperty("OperationalEvents", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!.GetValue(dbContext)!)
-            .ToArray();
+        return dbContext.OperationalEvents.ToArray();
     }
 
-    private static object CreateConfigurationSnapshot()
+    private static PlatformConfigurationSnapshot CreateConfigurationSnapshot()
     {
-        return ApplicationReflection.Create(
-            "TNC.Trading.Platform.Application.Configuration.PlatformConfigurationSnapshot",
-            ApplicationReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.PlatformEnvironmentKind", "Live"),
-            ApplicationReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.BrokerEnvironmentKind", "Demo"),
-            ApplicationReflection.Create(
-                "TNC.Trading.Platform.Application.Configuration.TradingScheduleConfiguration",
+        return new PlatformConfigurationSnapshot(
+            PlatformEnvironmentKind.Live,
+            BrokerEnvironmentKind.Demo,
+            new TradingScheduleConfiguration(
                 new TimeOnly(8, 0),
                 new TimeOnly(16, 30),
                 new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday },
-                ApplicationReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.WeekendBehavior", "ExcludeWeekends"),
+                WeekendBehavior.ExcludeWeekends,
                 Array.Empty<DateOnly>(),
                 "UTC"),
-            ApplicationReflection.Create(
-                "TNC.Trading.Platform.Application.Configuration.RetryPolicyConfiguration",
+            new RetryPolicyConfiguration(
                 1,
                 5,
                 2,
                 60,
                 5),
-            ApplicationReflection.Create(
-                "TNC.Trading.Platform.Application.Configuration.NotificationSettingsConfiguration",
+            new NotificationSettingsConfiguration(
                 "RecordedOnly",
                 "owner@example.com"),
-            ApplicationReflection.Create(
-                "TNC.Trading.Platform.Application.Configuration.CredentialPresence",
+            new CredentialPresence(
                 true,
                 true,
                 true),

@@ -1,3 +1,6 @@
+﻿using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Services;
+
 namespace TNC.Trading.Platform.Application.UnitTests;
 
 public class TradingScheduleGateTests
@@ -11,13 +14,13 @@ public class TradingScheduleGateTests
     [Fact]
     public void Evaluate_ShouldReturnActive_WhenCurrentTimeIsWithinTradingWindow()
     {
-        var gate = ApplicationReflection.Create("TNC.Trading.Platform.Application.Services.TradingScheduleGate");
+        var gate = new TradingScheduleGate();
         var schedule = CreateTradingSchedule(Array.Empty<DateOnly>());
 
-        var status = ApplicationReflection.Invoke(gate, "Evaluate", schedule, new DateTimeOffset(2026, 3, 30, 10, 0, 0, TimeSpan.Zero));
+        var status = gate.Evaluate(schedule, new DateTimeOffset(2026, 3, 30, 10, 0, 0, TimeSpan.Zero));
 
-        Assert.True(ApplicationReflection.GetProperty<bool>(status!, "IsActive"));
-        Assert.Equal("Trading schedule is active.", ApplicationReflection.GetProperty<string>(status!, "Reason"));
+        Assert.True(status.IsActive);
+        Assert.Equal("Trading schedule is active.", status.Reason);
     }
 
     /// <summary>
@@ -29,13 +32,13 @@ public class TradingScheduleGateTests
     [Fact]
     public void Evaluate_ShouldReturnInactive_WhenCurrentDateIsABankHoliday()
     {
-        var gate = ApplicationReflection.Create("TNC.Trading.Platform.Application.Services.TradingScheduleGate");
+        var gate = new TradingScheduleGate();
         var schedule = CreateTradingSchedule([new DateOnly(2026, 3, 30)]);
 
-        var status = ApplicationReflection.Invoke(gate, "Evaluate", schedule, new DateTimeOffset(2026, 3, 30, 10, 0, 0, TimeSpan.Zero));
+        var status = gate.Evaluate(schedule, new DateTimeOffset(2026, 3, 30, 10, 0, 0, TimeSpan.Zero));
 
-        Assert.False(ApplicationReflection.GetProperty<bool>(status!, "IsActive"));
-        Assert.Equal("Trading schedule is inactive for the configured bank holiday.", ApplicationReflection.GetProperty<string>(status!, "Reason"));
+        Assert.False(status.IsActive);
+        Assert.Equal("Trading schedule is inactive for the configured bank holiday.", status.Reason);
     }
 
     /// <summary>
@@ -47,13 +50,13 @@ public class TradingScheduleGateTests
     [Fact]
     public void Evaluate_ShouldReturnActive_WhenSaturdayIsIncludedByWeekendBehavior()
     {
-        var gate = ApplicationReflection.Create("TNC.Trading.Platform.Application.Services.TradingScheduleGate");
+        var gate = new TradingScheduleGate();
         var schedule = CreateTradingSchedule(Array.Empty<DateOnly>(), "IncludeSaturday");
 
-        var status = ApplicationReflection.Invoke(gate, "Evaluate", schedule, new DateTimeOffset(2026, 4, 4, 10, 0, 0, TimeSpan.Zero));
+        var status = gate.Evaluate(schedule, new DateTimeOffset(2026, 4, 4, 10, 0, 0, TimeSpan.Zero));
 
-        Assert.True(ApplicationReflection.GetProperty<bool>(status!, "IsActive"));
-        Assert.Equal("Trading schedule is active.", ApplicationReflection.GetProperty<string>(status!, "Reason"));
+        Assert.True(status.IsActive);
+        Assert.Equal("Trading schedule is active.", status.Reason);
     }
 
     /// <summary>
@@ -65,13 +68,13 @@ public class TradingScheduleGateTests
     [Fact]
     public void Evaluate_ShouldReturnActive_WhenSundayIsIncludedByWeekendBehavior()
     {
-        var gate = ApplicationReflection.Create("TNC.Trading.Platform.Application.Services.TradingScheduleGate");
+        var gate = new TradingScheduleGate();
         var schedule = CreateTradingSchedule(Array.Empty<DateOnly>(), "IncludeSunday");
 
-        var status = ApplicationReflection.Invoke(gate, "Evaluate", schedule, new DateTimeOffset(2026, 4, 5, 10, 0, 0, TimeSpan.Zero));
+        var status = gate.Evaluate(schedule, new DateTimeOffset(2026, 4, 5, 10, 0, 0, TimeSpan.Zero));
 
-        Assert.True(ApplicationReflection.GetProperty<bool>(status!, "IsActive"));
-        Assert.Equal("Trading schedule is active.", ApplicationReflection.GetProperty<string>(status!, "Reason"));
+        Assert.True(status.IsActive);
+        Assert.Equal("Trading schedule is active.", status.Reason);
     }
 
     /// <summary>
@@ -83,13 +86,13 @@ public class TradingScheduleGateTests
     [Fact]
     public void Evaluate_ShouldReturnInactive_WhenWeekendIsExcluded()
     {
-        var gate = ApplicationReflection.Create("TNC.Trading.Platform.Application.Services.TradingScheduleGate");
+        var gate = new TradingScheduleGate();
         var schedule = CreateTradingSchedule(Array.Empty<DateOnly>());
 
-        var status = ApplicationReflection.Invoke(gate, "Evaluate", schedule, new DateTimeOffset(2026, 4, 5, 10, 0, 0, TimeSpan.Zero));
+        var status = gate.Evaluate(schedule, new DateTimeOffset(2026, 4, 5, 10, 0, 0, TimeSpan.Zero));
 
-        Assert.False(ApplicationReflection.GetProperty<bool>(status!, "IsActive"));
-        Assert.Equal("Trading schedule is inactive for the current day.", ApplicationReflection.GetProperty<string>(status!, "Reason"));
+        Assert.False(status.IsActive);
+        Assert.Equal("Trading schedule is inactive for the current day.", status.Reason);
     }
 
     /// <summary>
@@ -101,13 +104,13 @@ public class TradingScheduleGateTests
     [Fact]
     public void Evaluate_ShouldReturnInactive_WhenCurrentTimeIsOutsideTradingWindow()
     {
-        var gate = ApplicationReflection.Create("TNC.Trading.Platform.Application.Services.TradingScheduleGate");
+        var gate = new TradingScheduleGate();
         var schedule = CreateTradingSchedule(Array.Empty<DateOnly>());
 
-        var status = ApplicationReflection.Invoke(gate, "Evaluate", schedule, new DateTimeOffset(2026, 3, 30, 7, 59, 0, TimeSpan.Zero));
+        var status = gate.Evaluate(schedule, new DateTimeOffset(2026, 3, 30, 7, 59, 0, TimeSpan.Zero));
 
-        Assert.False(ApplicationReflection.GetProperty<bool>(status!, "IsActive"));
-        Assert.Equal("Trading schedule is inactive for the current time window.", ApplicationReflection.GetProperty<string>(status!, "Reason"));
+        Assert.False(status.IsActive);
+        Assert.Equal("Trading schedule is inactive for the current time window.", status.Reason);
     }
 
     /// <summary>
@@ -119,23 +122,22 @@ public class TradingScheduleGateTests
     [Fact]
     public void Evaluate_ShouldReturnInactive_WhenWeekendIsEnabledButDateIsABankHoliday()
     {
-        var gate = ApplicationReflection.Create("TNC.Trading.Platform.Application.Services.TradingScheduleGate");
+        var gate = new TradingScheduleGate();
         var schedule = CreateTradingSchedule([new DateOnly(2026, 4, 5)], "IncludeSunday");
 
-        var status = ApplicationReflection.Invoke(gate, "Evaluate", schedule, new DateTimeOffset(2026, 4, 5, 10, 0, 0, TimeSpan.Zero));
+        var status = gate.Evaluate(schedule, new DateTimeOffset(2026, 4, 5, 10, 0, 0, TimeSpan.Zero));
 
-        Assert.False(ApplicationReflection.GetProperty<bool>(status!, "IsActive"));
-        Assert.Equal("Trading schedule is inactive for the configured bank holiday.", ApplicationReflection.GetProperty<string>(status!, "Reason"));
+        Assert.False(status.IsActive);
+        Assert.Equal("Trading schedule is inactive for the configured bank holiday.", status.Reason);
     }
 
-    private static object CreateTradingSchedule(IReadOnlyList<DateOnly> bankHolidays, string weekendBehavior = "ExcludeWeekends")
+    private static TradingScheduleConfiguration CreateTradingSchedule(IReadOnlyList<DateOnly> bankHolidays, string weekendBehavior = "ExcludeWeekends")
     {
-        return ApplicationReflection.Create(
-            "TNC.Trading.Platform.Application.Configuration.TradingScheduleConfiguration",
+        return new TradingScheduleConfiguration(
             new TimeOnly(8, 0),
             new TimeOnly(16, 30),
             new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday },
-            ApplicationReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.WeekendBehavior", weekendBehavior),
+            Enum.Parse<WeekendBehavior>(weekendBehavior, ignoreCase: true),
             bankHolidays,
             "UTC");
     }

@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Polly.Timeout;
 using TNC.Trading.Platform.Application.Authentication;
 
 namespace TNC.Trading.Platform.Web.Authentication;
@@ -78,7 +79,10 @@ internal sealed class PlatformAuthAuditClient(
             };
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", resolvedAccessToken);
 
-            using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            using var requestTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            requestTimeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+
+            using var response = await httpClient.SendAsync(request, requestTimeoutCts.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogWarning(
@@ -87,7 +91,7 @@ internal sealed class PlatformAuthAuditClient(
                     response.StatusCode);
             }
         }
-        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException or TaskCanceledException)
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException or TaskCanceledException or TimeoutRejectedException)
         {
             logger.LogWarning(
                 exception,

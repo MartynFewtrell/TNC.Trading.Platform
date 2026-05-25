@@ -3,14 +3,13 @@ using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using TNC.Trading.Platform.Api.Authentication;
 using TNC.Trading.Platform.Application.Authentication;
 
 namespace TNC.Trading.Platform.Api.UnitTests;
 
 public class PlatformApiAuthenticationServiceCollectionExtensionsTests
 {
-    private const string AuthenticationExtensionsType = "TNC.Trading.Platform.Api.Authentication.PlatformApiAuthenticationServiceCollectionExtensions";
-
     /// <summary>
     /// Trace: FR7, TR2.
     /// Verifies: the API authentication registration applies the shared viewer, operator, and administrator role-policy matrix.
@@ -29,7 +28,7 @@ public class PlatformApiAuthenticationServiceCollectionExtensionsTests
             ["Authentication:Authorization:DisplayNameFallbackClaimType"] = PlatformAuthenticationDefaults.Claims.PreferredUserName
         });
 
-        _ = ApiReflection.InvokeStatic(AuthenticationExtensionsType, "AddPlatformApiAuthentication", builder);
+        _ = builder.AddPlatformApiAuthentication();
 
         await using var app = builder.Build();
         await using var scope = app.Services.CreateAsyncScope();
@@ -66,7 +65,7 @@ public class PlatformApiAuthenticationServiceCollectionExtensionsTests
         });
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            ApiReflection.InvokeStatic(AuthenticationExtensionsType, "AddPlatformApiAuthentication", builder));
+            builder.AddPlatformApiAuthentication());
 
         Assert.Equal("The authentication provider 'UnsupportedProvider' is not supported.", exception.Message);
     }

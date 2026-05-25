@@ -15,4 +15,8 @@
     <UserSecretsId>3d020646-2c53-47c6-8194-c47388af2604</UserSecretsId>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="TNC.Trading.Platform.AppHost.UnitTests" />
+  </ItemGroup>
+
 </Project>

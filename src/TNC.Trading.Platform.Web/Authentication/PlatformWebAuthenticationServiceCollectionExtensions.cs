@@ -162,17 +162,29 @@ internal static class PlatformWebAuthenticationServiceCollectionExtensions
             OnTicketReceived = async context =>
             {
                 var auditClient = context.HttpContext.RequestServices.GetRequiredService<PlatformAuthAuditClient>();
+                var logger = context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger(typeof(PlatformWebAuthenticationServiceCollectionExtensions));
                 var accessToken = context.Properties?.GetTokenValue("access_token");
                 var scope = context.Properties?.GetTokenValue("scope");
                 var grantedScopes = string.IsNullOrWhiteSpace(scope)
                     ? authenticationOptions.RequiredScopes
                     : scope.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-                await auditClient.RecordSignInCompletedAsync(
-                    authenticationOptions.CallbackPath,
-                    grantedScopes,
-                    accessToken,
-                    context.HttpContext.RequestAborted).ConfigureAwait(false);
+                try
+                {
+                    await auditClient.RecordSignInCompletedAsync(
+                        authenticationOptions.CallbackPath,
+                        grantedScopes,
+                        accessToken,
+                        context.HttpContext.RequestAborted).ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    logger.LogWarning(
+                        exception,
+                        "Authentication audit recording failed during sign-in callback. Continuing without blocking the operator sign-in flow.");
+                }
             }
         };
     }

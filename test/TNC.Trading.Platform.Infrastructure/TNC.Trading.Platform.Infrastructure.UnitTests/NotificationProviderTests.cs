@@ -1,6 +1,8 @@
-using System.Reflection;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
+using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Infrastructure.Notifications;
+using TNC.Trading.Platform.Infrastructure.Persistence;
+using TNC.Trading.Platform.Infrastructure.Platform;
 
 namespace TNC.Trading.Platform.Infrastructure.UnitTests;
 
@@ -15,18 +17,16 @@ public class NotificationProviderTests
     [Fact]
     public async Task DispatchAsync_ShouldReturnRecordedResult_WhenUsingRecordedNotificationProvider()
     {
-        var providerType = InfrastructureReflection.GetType("TNC.Trading.Platform.Infrastructure.Notifications.RecordedNotificationProvider");
-        var provider = Activator.CreateInstance(providerType, InfrastructureReflection.CreateNullLogger(providerType))!;
-        var message = InfrastructureReflection.Create(
-            "TNC.Trading.Platform.Infrastructure.Notifications.NotificationMessage",
+        var provider = new RecordedNotificationProvider(InfrastructureReflection.CreateNullLogger<RecordedNotificationProvider>());
+        var message = new NotificationMessage(
             "AuthFailure",
             "owner@example.com",
             "Summary");
 
-        var result = await InfrastructureReflection.InvokeAsync(provider, "DispatchAsync", message, CancellationToken.None);
+        var result = await provider.DispatchAsync(message, CancellationToken.None);
 
-        Assert.Equal("Recorded", InfrastructureReflection.GetProperty<string>(result!, "Status"));
-        Assert.Equal("RecordedOnly", InfrastructureReflection.GetProperty<string>(result!, "ProviderName"));
+        Assert.Equal("Recorded", result.Status);
+        Assert.Equal("RecordedOnly", result.ProviderName);
     }
 
     /// <summary>
@@ -37,19 +37,17 @@ public class NotificationProviderTests
     [Fact]
     public async Task DispatchAsync_ShouldReturnSkippedResult_WhenSmtpConfigurationIsMissing()
     {
-        var providerType = InfrastructureReflection.GetType("TNC.Trading.Platform.Infrastructure.Notifications.SmtpNotificationProvider");
         var configuration = new ConfigurationBuilder().Build();
-        var provider = Activator.CreateInstance(providerType, configuration, InfrastructureReflection.CreateNullLogger(providerType))!;
-        var message = InfrastructureReflection.Create(
-            "TNC.Trading.Platform.Infrastructure.Notifications.NotificationMessage",
+        var provider = new SmtpNotificationProvider(configuration, InfrastructureReflection.CreateNullLogger<SmtpNotificationProvider>());
+        var message = new NotificationMessage(
             "AuthFailure",
             "owner@example.com",
             "Summary");
 
-        var result = await InfrastructureReflection.InvokeAsync(provider, "DispatchAsync", message, CancellationToken.None);
+        var result = await provider.DispatchAsync(message, CancellationToken.None);
 
-        Assert.Equal("Skipped", InfrastructureReflection.GetProperty<string>(result!, "Status"));
-        Assert.Equal("Smtp", InfrastructureReflection.GetProperty<string>(result!, "ProviderName"));
+        Assert.Equal("Skipped", result.Status);
+        Assert.Equal("Smtp", result.ProviderName);
     }
 
     /// <summary>
@@ -60,19 +58,17 @@ public class NotificationProviderTests
     [Fact]
     public async Task DispatchAsync_ShouldReturnSkippedResult_WhenAcsEmailConfigurationIsMissing()
     {
-        var providerType = InfrastructureReflection.GetType("TNC.Trading.Platform.Infrastructure.Notifications.AzureCommunicationServicesEmailNotificationProvider");
         var configuration = new ConfigurationBuilder().Build();
-        var provider = Activator.CreateInstance(providerType, configuration, InfrastructureReflection.CreateNullLogger(providerType))!;
-        var message = InfrastructureReflection.Create(
-            "TNC.Trading.Platform.Infrastructure.Notifications.NotificationMessage",
+        var provider = new AzureCommunicationServicesEmailNotificationProvider(configuration, InfrastructureReflection.CreateNullLogger<AzureCommunicationServicesEmailNotificationProvider>());
+        var message = new NotificationMessage(
             "AuthFailure",
             "owner@example.com",
             "Summary");
 
-        var result = await InfrastructureReflection.InvokeAsync(provider, "DispatchAsync", message, CancellationToken.None);
+        var result = await provider.DispatchAsync(message, CancellationToken.None);
 
-        Assert.Equal("Skipped", InfrastructureReflection.GetProperty<string>(result!, "Status"));
-        Assert.Equal("AzureCommunicationServicesEmail", InfrastructureReflection.GetProperty<string>(result!, "ProviderName"));
+        Assert.Equal("Skipped", result.Status);
+        Assert.Equal("AzureCommunicationServicesEmail", result.ProviderName);
     }
 
     /// <summary>
@@ -89,9 +85,7 @@ public class NotificationProviderTests
         var configuration = CreateConfigurationSnapshot("Live", "Demo", "RecordedOnly", "owner@example.com");
         var retryCycleId = Guid.NewGuid();
 
-        _ = await InfrastructureReflection.InvokeAsync(
-            dispatcher,
-            "DispatchRetryLimitReachedAsync",
+        await dispatcher.DispatchRetryLimitReachedAsync(
             configuration,
             "Initial automatic IG demo auth retries are exhausted after 5 attempts. Last automatic retry delay was 60 second(s). Manual retry is now available, and periodic retry continues every 5 minutes. password=secret-value",
             "correlation-id",
@@ -99,17 +93,17 @@ public class NotificationProviderTests
             CancellationToken.None);
 
         var record = Assert.Single(GetNotificationRecords(dbContext));
-        var summary = InfrastructureReflection.GetProperty<string>(record, "Summary");
+        var summary = record.Summary;
 
-        Assert.Equal("RetryLimitReached", InfrastructureReflection.GetProperty<string>(record, "NotificationType"));
-        Assert.Equal("Live", InfrastructureReflection.GetProperty<string>(record, "PlatformEnvironment"));
-        Assert.Equal("Demo", InfrastructureReflection.GetProperty<string>(record, "BrokerEnvironment"));
-        Assert.Equal("owner@example.com", InfrastructureReflection.GetProperty<string>(record, "Recipient"));
-        Assert.Equal("Recorded", InfrastructureReflection.GetProperty<string>(record, "DispatchStatus"));
-        Assert.Equal("RecordedOnly", InfrastructureReflection.GetProperty<string>(record, "Provider"));
-        Assert.Equal("correlation-id", InfrastructureReflection.GetProperty<string>(record, "CorrelationId"));
-        Assert.Equal(retryCycleId, InfrastructureReflection.GetProperty<Guid?>(record, "RetryCycleId"));
-        Assert.NotEqual(default, InfrastructureReflection.GetProperty<DateTimeOffset>(record, "DispatchedAtUtc"));
+        Assert.Equal("RetryLimitReached", record.NotificationType);
+        Assert.Equal("Live", record.PlatformEnvironment);
+        Assert.Equal("Demo", record.BrokerEnvironment);
+        Assert.Equal("owner@example.com", record.Recipient);
+        Assert.Equal("Recorded", record.DispatchStatus);
+        Assert.Equal("RecordedOnly", record.Provider);
+        Assert.Equal("correlation-id", record.CorrelationId);
+        Assert.Equal(retryCycleId, record.RetryCycleId);
+        Assert.NotEqual(default, record.DispatchedAtUtc);
         Assert.Contains("Last automatic retry delay was 60 second(s)", summary, StringComparison.Ordinal);
         Assert.Contains("Manual retry is now available", summary, StringComparison.Ordinal);
         Assert.Contains("periodic retry continues every 5 minutes", summary, StringComparison.Ordinal);
@@ -130,9 +124,7 @@ public class NotificationProviderTests
         var dispatcher = CreateNotificationDispatcher(dbContext);
         var configuration = CreateConfigurationSnapshot("Test", "Live", "RecordedOnly", "owner@example.com");
 
-        _ = await InfrastructureReflection.InvokeAsync(
-            dispatcher,
-            "DispatchBlockedLiveAsync",
+        await dispatcher.DispatchBlockedLiveAsync(
             configuration,
             "A live broker action was blocked because the platform environment is Test.",
             "blocked-live-correlation",
@@ -141,16 +133,16 @@ public class NotificationProviderTests
 
         var record = Assert.Single(GetNotificationRecords(dbContext));
 
-        Assert.Equal("BlockedLiveAttempt", InfrastructureReflection.GetProperty<string>(record, "NotificationType"));
-        Assert.Equal("Test", InfrastructureReflection.GetProperty<string>(record, "PlatformEnvironment"));
-        Assert.Equal("Live", InfrastructureReflection.GetProperty<string>(record, "BrokerEnvironment"));
-        Assert.Equal("owner@example.com", InfrastructureReflection.GetProperty<string>(record, "Recipient"));
-        Assert.Equal("Recorded", InfrastructureReflection.GetProperty<string>(record, "DispatchStatus"));
-        Assert.Equal("RecordedOnly", InfrastructureReflection.GetProperty<string>(record, "Provider"));
-        Assert.Equal("blocked-live-correlation", InfrastructureReflection.GetProperty<string>(record, "CorrelationId"));
+        Assert.Equal("BlockedLiveAttempt", record.NotificationType);
+        Assert.Equal("Test", record.PlatformEnvironment);
+        Assert.Equal("Live", record.BrokerEnvironment);
+        Assert.Equal("owner@example.com", record.Recipient);
+        Assert.Equal("Recorded", record.DispatchStatus);
+        Assert.Equal("RecordedOnly", record.Provider);
+        Assert.Equal("blocked-live-correlation", record.CorrelationId);
         Assert.Equal(
             "A live broker action was blocked because the platform environment is Test.",
-            InfrastructureReflection.GetProperty<string>(record, "Summary"));
+            record.Summary);
     }
 
     /// <summary>
@@ -166,9 +158,7 @@ public class NotificationProviderTests
         var dispatcher = CreateNotificationDispatcher(dbContext);
         var configuration = CreateConfigurationSnapshot("Live", "Demo", "RecordedOnly", "owner@example.com");
 
-        _ = await InfrastructureReflection.InvokeAsync(
-            dispatcher,
-            "DispatchFailureAsync",
+        await dispatcher.DispatchFailureAsync(
             configuration,
             "Notification summary with token=abc123",
             "transition-correlation",
@@ -176,18 +166,18 @@ public class NotificationProviderTests
             CancellationToken.None);
 
         var record = Assert.Single(GetNotificationRecords(dbContext));
-        var summary = InfrastructureReflection.GetProperty<string>(record, "Summary");
+        var summary = record.Summary;
         var notificationEvent = Assert.Single(
             GetOperationalEvents(dbContext).Where(item =>
-                string.Equals(InfrastructureReflection.GetProperty<string>(item, "Category"), "notification", StringComparison.Ordinal)));
+                string.Equals(item.Category, "notification", StringComparison.Ordinal)));
 
-        Assert.Equal("AuthFailure", InfrastructureReflection.GetProperty<string>(record, "NotificationType"));
-        Assert.Equal("Live", InfrastructureReflection.GetProperty<string>(record, "PlatformEnvironment"));
-        Assert.Equal("Demo", InfrastructureReflection.GetProperty<string>(record, "BrokerEnvironment"));
-        Assert.Equal("Recorded", InfrastructureReflection.GetProperty<string>(record, "DispatchStatus"));
-        Assert.Equal("RecordedOnly", InfrastructureReflection.GetProperty<string>(record, "Provider"));
-        Assert.Equal("AuthFailure", InfrastructureReflection.GetProperty<string>(notificationEvent, "EventType"));
-        Assert.Equal(summary, InfrastructureReflection.GetProperty<string>(notificationEvent, "Summary"));
+        Assert.Equal("AuthFailure", record.NotificationType);
+        Assert.Equal("Live", record.PlatformEnvironment);
+        Assert.Equal("Demo", record.BrokerEnvironment);
+        Assert.Equal("Recorded", record.DispatchStatus);
+        Assert.Equal("RecordedOnly", record.Provider);
+        Assert.Equal("AuthFailure", notificationEvent.EventType);
+        Assert.Equal(summary, notificationEvent.Summary);
         Assert.DoesNotContain("abc123", summary, StringComparison.Ordinal);
         Assert.Contains("[redacted]", summary, StringComparison.Ordinal);
     }
@@ -205,9 +195,7 @@ public class NotificationProviderTests
         var dispatcher = CreateNotificationDispatcher(dbContext);
         var configuration = CreateConfigurationSnapshot("Live", "Demo", "RecordedOnly", "owner@example.com");
 
-        _ = await InfrastructureReflection.InvokeAsync(
-            dispatcher,
-            "DispatchRecoveryAsync",
+        await dispatcher.DispatchRecoveryAsync(
             configuration,
             "Notification summary with token=abc123",
             "transition-correlation",
@@ -215,48 +203,141 @@ public class NotificationProviderTests
             CancellationToken.None);
 
         var record = Assert.Single(GetNotificationRecords(dbContext));
-        var summary = InfrastructureReflection.GetProperty<string>(record, "Summary");
+        var summary = record.Summary;
         var notificationEvent = Assert.Single(
             GetOperationalEvents(dbContext).Where(item =>
-                string.Equals(InfrastructureReflection.GetProperty<string>(item, "Category"), "notification", StringComparison.Ordinal)));
+                string.Equals(item.Category, "notification", StringComparison.Ordinal)));
 
-        Assert.Equal("AuthRecovered", InfrastructureReflection.GetProperty<string>(record, "NotificationType"));
-        Assert.Equal("Live", InfrastructureReflection.GetProperty<string>(record, "PlatformEnvironment"));
-        Assert.Equal("Demo", InfrastructureReflection.GetProperty<string>(record, "BrokerEnvironment"));
-        Assert.Equal("Recorded", InfrastructureReflection.GetProperty<string>(record, "DispatchStatus"));
-        Assert.Equal("RecordedOnly", InfrastructureReflection.GetProperty<string>(record, "Provider"));
-        Assert.Equal("AuthRecovered", InfrastructureReflection.GetProperty<string>(notificationEvent, "EventType"));
-        Assert.Equal(summary, InfrastructureReflection.GetProperty<string>(notificationEvent, "Summary"));
+        Assert.Equal("AuthRecovered", record.NotificationType);
+        Assert.Equal("Live", record.PlatformEnvironment);
+        Assert.Equal("Demo", record.BrokerEnvironment);
+        Assert.Equal("Recorded", record.DispatchStatus);
+        Assert.Equal("RecordedOnly", record.Provider);
+        Assert.Equal("AuthRecovered", notificationEvent.EventType);
+        Assert.Equal(summary, notificationEvent.Summary);
         Assert.DoesNotContain("abc123", summary, StringComparison.Ordinal);
         Assert.Contains("[redacted]", summary, StringComparison.Ordinal);
     }
 
-    private static object CreateNotificationDispatcher(DbContext dbContext)
+    /// <summary>
+    /// Trace: FR10, TR6, SR5.
+    /// Verifies: notification dispatch skips external delivery when the operator recipient is unconfigured while still recording the attempt.
+    /// Expected: the persisted notification uses the unconfigured placeholder recipient, records a Skipped dispatch status, and emits an informational notification event.
+    /// Why: runtime notification handling must fail safe when operators have not yet configured a destination address.
+    /// </summary>
+    [Fact]
+    public async Task DispatchFailureAsync_ShouldPersistSkippedResult_WhenNotificationRecipientIsUnconfigured()
     {
-        var providerType = InfrastructureReflection.GetType("TNC.Trading.Platform.Infrastructure.Notifications.INotificationProvider");
-        var dispatcherType = InfrastructureReflection.GetType("TNC.Trading.Platform.Infrastructure.Platform.NotificationDispatcher");
-        var recordedProviderType = InfrastructureReflection.GetType("TNC.Trading.Platform.Infrastructure.Notifications.RecordedNotificationProvider");
-        var providers = Array.CreateInstance(providerType, 1);
-        var recordedProvider = Activator.CreateInstance(recordedProviderType, InfrastructureReflection.CreateNullLogger(recordedProviderType))!;
-        providers.SetValue(recordedProvider, 0);
+        using var dbContext = InfrastructureReflection.CreateDbContext();
+        var dispatcher = CreateNotificationDispatcher(dbContext);
+        var configuration = CreateConfigurationSnapshot("Live", "Demo", "RecordedOnly", emailTo: string.Empty);
 
-        return Activator.CreateInstance(
-            dispatcherType,
-            dbContext,
-            providers,
-            InfrastructureReflection.CreateNullLogger(dispatcherType),
-            TimeProvider.System)!
-            ?? throw new InvalidOperationException("Could not create notification dispatcher.");
+        await dispatcher.DispatchFailureAsync(
+            configuration,
+            "Notification summary with password=secret-value",
+            "unconfigured-recipient-correlation",
+            null,
+            CancellationToken.None);
+
+        var record = Assert.Single(GetNotificationRecords(dbContext));
+        var notificationEvent = Assert.Single(
+            GetOperationalEvents(dbContext).Where(item =>
+                string.Equals(item.Category, "notification", StringComparison.Ordinal)));
+
+        Assert.Equal("unconfigured", record.Recipient);
+        Assert.Equal("Skipped", record.DispatchStatus);
+        Assert.Equal("RecordedOnly", record.Provider);
+        Assert.Equal("Information", notificationEvent.Severity);
+        Assert.Contains("[redacted]", record.Summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-value", record.Summary, StringComparison.Ordinal);
     }
 
-    private static object CreateConfigurationSnapshot(string platformEnvironment, string brokerEnvironment, string provider, string emailTo)
+    /// <summary>
+    /// Trace: FR10, TR6, SR5.
+    /// Verifies: notification dispatch records a failed outcome when the configured provider is not registered in the runtime provider set.
+    /// Expected: the persisted notification and operational event both show Failed status while preserving the configured provider name for diagnostics.
+    /// Why: operators need actionable evidence when configuration points to a provider implementation the runtime cannot resolve.
+    /// </summary>
+    [Fact]
+    public async Task DispatchFailureAsync_ShouldPersistFailedResult_WhenConfiguredProviderIsNotRegistered()
     {
-        return InfrastructureReflection.Create(
-            "TNC.Trading.Platform.Application.Configuration.PlatformConfigurationSnapshot",
-            InfrastructureReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.PlatformEnvironmentKind", platformEnvironment),
-            InfrastructureReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.BrokerEnvironmentKind", brokerEnvironment),
-            InfrastructureReflection.Create(
-                "TNC.Trading.Platform.Application.Configuration.TradingScheduleConfiguration",
+        using var dbContext = InfrastructureReflection.CreateDbContext();
+        var dispatcher = CreateNotificationDispatcher(dbContext);
+        var configuration = CreateConfigurationSnapshot("Live", "Demo", "MissingProvider", "owner@example.com");
+
+        await dispatcher.DispatchFailureAsync(
+            configuration,
+            "Notification summary",
+            "missing-provider-correlation",
+            null,
+            CancellationToken.None);
+
+        var record = Assert.Single(GetNotificationRecords(dbContext));
+        var notificationEvent = Assert.Single(
+            GetOperationalEvents(dbContext).Where(item =>
+                string.Equals(item.Category, "notification", StringComparison.Ordinal)));
+
+        Assert.Equal("Failed", record.DispatchStatus);
+        Assert.Equal("MissingProvider", record.Provider);
+        Assert.Equal("Error", notificationEvent.Severity);
+        Assert.Contains("\"dispatchStatus\":\"Failed\"", notificationEvent.DetailsJson, StringComparison.Ordinal);
+        Assert.Contains("\"provider\":\"MissingProvider\"", notificationEvent.DetailsJson, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: FR10, TR6, SR5.
+    /// Verifies: notification dispatch converts a handled provider exception into a failed persisted result without leaking secrets from the outgoing summary.
+    /// Expected: the notification and operational event are stored with Failed status, the provider name is preserved, and the persisted summary remains redacted.
+    /// Why: runtime notification failures must stay observable and secret-safe when a provider throws a supported transport exception.
+    /// </summary>
+    [Fact]
+    public async Task DispatchFailureAsync_ShouldPersistFailedResult_WhenProviderThrowsHandledException()
+    {
+        using var dbContext = InfrastructureReflection.CreateDbContext();
+        var dispatcher = CreateNotificationDispatcher(
+            dbContext,
+            new ThrowingNotificationProvider("ExplosiveProvider", new InvalidOperationException("token=provider-secret")));
+        var configuration = CreateConfigurationSnapshot("Live", "Demo", "ExplosiveProvider", "owner@example.com");
+
+        await dispatcher.DispatchFailureAsync(
+            configuration,
+            "Notification summary with token=summary-secret",
+            "provider-exception-correlation",
+            null,
+            CancellationToken.None);
+
+        var record = Assert.Single(GetNotificationRecords(dbContext));
+        var notificationEvent = Assert.Single(
+            GetOperationalEvents(dbContext).Where(item =>
+                string.Equals(item.Category, "notification", StringComparison.Ordinal)));
+
+        Assert.Equal("Failed", record.DispatchStatus);
+        Assert.Equal("ExplosiveProvider", record.Provider);
+        Assert.Equal("Error", notificationEvent.Severity);
+        Assert.Contains("[redacted]", record.Summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("summary-secret", record.Summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("provider-secret", notificationEvent.DetailsJson, StringComparison.Ordinal);
+    }
+
+    private static NotificationDispatcher CreateNotificationDispatcher(PlatformDbContext dbContext, params INotificationProvider[] providers)
+    {
+        var resolvedProviders = providers.Length == 0
+            ? [new RecordedNotificationProvider(InfrastructureReflection.CreateNullLogger<RecordedNotificationProvider>())]
+            : providers;
+
+        return new NotificationDispatcher(
+            dbContext,
+            resolvedProviders,
+            InfrastructureReflection.CreateNullLogger<NotificationDispatcher>(),
+            TimeProvider.System);
+    }
+
+    private static PlatformConfigurationSnapshot CreateConfigurationSnapshot(string platformEnvironment, string brokerEnvironment, string provider, string emailTo)
+    {
+        return new PlatformConfigurationSnapshot(
+            Enum.Parse<PlatformEnvironmentKind>(platformEnvironment, ignoreCase: true),
+            Enum.Parse<BrokerEnvironmentKind>(brokerEnvironment, ignoreCase: true),
+            new TradingScheduleConfiguration(
                 new TimeOnly(0, 0),
                 new TimeOnly(23, 59),
                 new[]
@@ -269,22 +350,19 @@ public class NotificationProviderTests
                     DayOfWeek.Friday,
                     DayOfWeek.Saturday
                 },
-                InfrastructureReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.WeekendBehavior", "IncludeFullWeekend"),
+                WeekendBehavior.IncludeFullWeekend,
                 Array.Empty<DateOnly>(),
                 "UTC"),
-            InfrastructureReflection.Create(
-                "TNC.Trading.Platform.Application.Configuration.RetryPolicyConfiguration",
+            new RetryPolicyConfiguration(
                 1,
                 5,
                 2,
                 60,
                 5),
-            InfrastructureReflection.Create(
-                "TNC.Trading.Platform.Application.Configuration.NotificationSettingsConfiguration",
+            new NotificationSettingsConfiguration(
                 provider,
                 emailTo),
-            InfrastructureReflection.Create(
-                "TNC.Trading.Platform.Application.Configuration.CredentialPresence",
+            new CredentialPresence(
                 true,
                 true,
                 true),
@@ -294,15 +372,23 @@ public class NotificationProviderTests
             false);
     }
 
-    private static object[] GetNotificationRecords(DbContext dbContext)
+    private static NotificationRecordEntity[] GetNotificationRecords(PlatformDbContext dbContext)
     {
-        return ((IEnumerable<object>)dbContext.GetType().GetProperty("NotificationRecords", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!.GetValue(dbContext)!)
-            .ToArray();
+        return dbContext.NotificationRecords.ToArray();
     }
 
-    private static object[] GetOperationalEvents(DbContext dbContext)
+    private static OperationalEventEntity[] GetOperationalEvents(PlatformDbContext dbContext)
     {
-        return ((IEnumerable<object>)dbContext.GetType().GetProperty("OperationalEvents", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!.GetValue(dbContext)!)
-            .ToArray();
+        return dbContext.OperationalEvents.ToArray();
+    }
+
+    private sealed class ThrowingNotificationProvider(string name, Exception exception) : INotificationProvider
+    {
+        public string Name { get; } = name;
+
+        public Task<NotificationDispatchResult> DispatchAsync(NotificationMessage message, CancellationToken cancellationToken)
+        {
+            throw exception;
+        }
     }
 }

@@ -1,3 +1,6 @@
+﻿using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Services;
+
 namespace TNC.Trading.Platform.Application.UnitTests;
 
 public class RetryPolicyTimingTests
@@ -16,19 +19,14 @@ public class RetryPolicyTimingTests
     [InlineData(8, 60)]
     public void GetDelayBeforeAttempt_ShouldUseExponentialBackoffWithCap_WhenDefaultRetryPolicyIsApplied(int attemptNumber, int expectedDelaySeconds)
     {
-        var retryPolicy = ApplicationReflection.Create(
-            "TNC.Trading.Platform.Application.Configuration.RetryPolicyConfiguration",
+        var retryPolicy = new RetryPolicyConfiguration(
             1,
             5,
             2,
             60,
             5);
 
-        var delay = (int)ApplicationReflection.InvokeStatic(
-            "TNC.Trading.Platform.Application.Services.PlatformStateCoordinator",
-            "GetDelayBeforeAttempt",
-            retryPolicy,
-            attemptNumber)!;
+        var delay = PlatformStateCoordinator.GetDelayBeforeAttempt(retryPolicy, attemptNumber);
 
         Assert.Equal(expectedDelaySeconds, delay);
     }
@@ -47,19 +45,14 @@ public class RetryPolicyTimingTests
     [InlineData(4, 20)]
     public void GetDelayBeforeAttempt_ShouldRespectConfiguredDelayMultiplierAndCap_WhenCustomRetryPolicyIsApplied(int attemptNumber, int expectedDelaySeconds)
     {
-        var retryPolicy = ApplicationReflection.Create(
-            "TNC.Trading.Platform.Application.Configuration.RetryPolicyConfiguration",
+        var retryPolicy = new RetryPolicyConfiguration(
             3,
             5,
             3,
             20,
             7);
 
-        var delay = (int)ApplicationReflection.InvokeStatic(
-            "TNC.Trading.Platform.Application.Services.PlatformStateCoordinator",
-            "GetDelayBeforeAttempt",
-            retryPolicy,
-            attemptNumber)!;
+        var delay = PlatformStateCoordinator.GetDelayBeforeAttempt(retryPolicy, attemptNumber);
 
         Assert.Equal(expectedDelaySeconds, delay);
     }

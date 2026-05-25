@@ -1,5 +1,5 @@
----
-name: run-platform-local
+﻿---
+name: run-aspire
 description: Start this repository with Aspire and open the local API (or Scalar UI) URL in the default browser.
 ---
 

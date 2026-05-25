@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 
@@ -6,15 +7,12 @@ namespace TNC.Trading.Platform.Web.E2ETests.Authentication;
 
 internal sealed class AppHostProcessHandle : IAsyncDisposable
 {
-    private static readonly int[] CandidateWebPorts =
-    [
-        7281,
-        5281
-    ];
-
     private readonly Process process;
     private readonly int[] existingPlatformProcessIds;
     private readonly int[] existingLocalListeningPorts;
+    private readonly ConcurrentDictionary<string, byte> discoveredListeningUris = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Task standardOutputPump;
+    private readonly Task standardErrorPump;
 
     private static readonly string[] PlatformProcessNames =
     [
@@ -32,6 +30,8 @@ internal sealed class AppHostProcessHandle : IAsyncDisposable
         this.process = process;
         this.existingPlatformProcessIds = existingPlatformProcessIds;
         this.existingLocalListeningPorts = existingLocalListeningPorts;
+        standardOutputPump = PumpProcessOutputAsync(process.StandardOutput);
+        standardErrorPump = PumpProcessOutputAsync(process.StandardError);
     }
 
     public Process Process => process;
@@ -50,38 +50,42 @@ internal sealed class AppHostProcessHandle : IAsyncDisposable
 
         while (!timeoutCancellationTokenSource.IsCancellationRequested)
         {
-            foreach (var port in CandidateWebPorts.Concat(CaptureNewLocalListeningPorts()).Distinct())
+            foreach (var signInUri in EnumerateCandidateSignInUris())
             {
-                foreach (var signInUri in EnumerateCandidateSignInUris(port))
+                try
                 {
-                    try
-                    {
-                        using var requestTimeoutCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(timeoutCancellationTokenSource.Token);
-                        requestTimeoutCancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(5));
+                    using var requestTimeoutCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(timeoutCancellationTokenSource.Token);
+                    requestTimeoutCancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(5));
 
-                        using var response = await httpClient.GetAsync(signInUri, requestTimeoutCancellationTokenSource.Token).ConfigureAwait(false);
-                        var keycloakLoginUri = await TryResolveKeycloakLoginUriAsync(httpClient, signInUri, response, requestTimeoutCancellationTokenSource.Token).ConfigureAwait(false);
-                        if (keycloakLoginUri is not null)
-                        {
-                            return signInUri;
-                        }
-                    }
-                    catch (TaskCanceledException)
+                    using var response = await httpClient.GetAsync(signInUri, requestTimeoutCancellationTokenSource.Token).ConfigureAwait(false);
+                    var keycloakLoginUri = await TryResolveKeycloakLoginUriAsync(httpClient, signInUri, response, requestTimeoutCancellationTokenSource.Token).ConfigureAwait(false);
+                    if (keycloakLoginUri is not null)
                     {
+                        return signInUri;
                     }
-                    catch (HttpRequestException)
-                    {
-                    }
-                    catch (InvalidOperationException)
-                    {
-                    }
+                }
+                catch (TaskCanceledException)
+                {
+                }
+                catch (HttpRequestException)
+                {
+                }
+                catch (InvalidOperationException)
+                {
                 }
             }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(500), timeoutCancellationTokenSource.Token).ConfigureAwait(false);
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(500), timeoutCancellationTokenSource.Token).ConfigureAwait(false);
+            }
+            catch (TaskCanceledException)
+            {
+                break;
+            }
         }
 
-        throw new TimeoutException("The AppHost-started Web sign-in URL could not be discovered from runtime listeners before the timeout expired.");
+        throw new TimeoutException($"The AppHost-started Web sign-in URL could not be discovered from runtime listeners before the timeout expired. Discovered listener URIs: {string.Join(", ", discoveredListeningUris.Keys.OrderBy(static value => value, StringComparer.OrdinalIgnoreCase))}. Newly observed local ports: {string.Join(", ", CaptureNewLocalListeningPorts())}.");
     }
 
     public async ValueTask DisposeAsync()
@@ -100,6 +104,8 @@ internal sealed class AppHostProcessHandle : IAsyncDisposable
 
                 await process.WaitForExitAsync().ConfigureAwait(false);
             }
+
+            await Task.WhenAll(standardOutputPump, standardErrorPump).ConfigureAwait(false);
 
             KillSpawnedPlatformProcesses();
         }
@@ -194,12 +200,37 @@ internal sealed class AppHostProcessHandle : IAsyncDisposable
             : null;
     }
 
-    private static IEnumerable<Uri> EnumerateCandidateSignInUris(int port)
+    private IEnumerable<Uri> EnumerateCandidateSignInUris()
     {
-        yield return new Uri($"https://localhost:{port}/authentication/sign-in?returnUrl=%2F");
-        yield return new Uri($"http://localhost:{port}/authentication/sign-in?returnUrl=%2F");
-        yield return new Uri($"https://localhost:{port}/authentication/sign-in?returnUrl=%2Fstatus");
-        yield return new Uri($"http://localhost:{port}/authentication/sign-in?returnUrl=%2Fstatus");
+        foreach (var discoveredListeningUri in discoveredListeningUris.Keys)
+        {
+            if (Uri.TryCreate(discoveredListeningUri, UriKind.Absolute, out var listeningUri))
+            {
+                foreach (var signInUri in CreateCandidateSignInUris(listeningUri))
+                {
+                    yield return signInUri;
+                }
+            }
+        }
+
+        foreach (var port in CaptureNewLocalListeningPorts())
+        {
+            foreach (var signInUri in CreateCandidateSignInUris(new Uri($"https://localhost:{port}")))
+            {
+                yield return signInUri;
+            }
+
+            foreach (var signInUri in CreateCandidateSignInUris(new Uri($"http://localhost:{port}")))
+            {
+                yield return signInUri;
+            }
+        }
+    }
+
+    private static IEnumerable<Uri> CreateCandidateSignInUris(Uri baseUri)
+    {
+        yield return new Uri(baseUri, "/authentication/sign-in?returnUrl=%2F");
+        yield return new Uri(baseUri, "/authentication/sign-in?returnUrl=%2Fstatus");
     }
 
     private static IEnumerable<Process> CapturePlatformProcesses() =>
@@ -212,4 +243,31 @@ internal sealed class AppHostProcessHandle : IAsyncDisposable
             .ToArray();
 
     public static int[] CaptureListeningPorts() => CaptureLocalListeningPorts();
+
+    private async Task PumpProcessOutputAsync(StreamReader reader)
+    {
+        while (true)
+        {
+            var line = await reader.ReadLineAsync().ConfigureAwait(false);
+            if (line is null)
+            {
+                return;
+            }
+
+            const string listeningPrefix = "Now listening on: ";
+            var prefixIndex = line.IndexOf(listeningPrefix, StringComparison.Ordinal);
+            if (prefixIndex < 0)
+            {
+                continue;
+            }
+
+            var uriText = line[(prefixIndex + listeningPrefix.Length)..].Trim();
+            if (Uri.TryCreate(uriText, UriKind.Absolute, out var discoveredUri)
+                && (string.Equals(discoveredUri.Host, "localhost", StringComparison.OrdinalIgnoreCase)
+                    || IPAddress.TryParse(discoveredUri.Host, out var address) && IsLocalEndpoint(address)))
+            {
+                discoveredListeningUris.TryAdd(discoveredUri.GetLeftPart(UriPartial.Authority), 0);
+            }
+        }
+    }
 }

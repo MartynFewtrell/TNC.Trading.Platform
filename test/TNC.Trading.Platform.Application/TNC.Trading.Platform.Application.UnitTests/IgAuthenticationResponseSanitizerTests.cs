@@ -1,4 +1,5 @@
-using System.Text.Json;
+﻿using System.Text.Json;
+using TNC.Trading.Platform.Application.Infrastructure.Ig;
 
 namespace TNC.Trading.Platform.Application.UnitTests;
 
@@ -13,8 +14,7 @@ public class IgAuthenticationResponseSanitizerTests
     [Fact]
     public void Sanitize_ShouldRedactSensitiveHeaders_WhenAuthenticationResponseContainsTokens()
     {
-        var response = ApplicationReflection.Create(
-            "TNC.Trading.Platform.Application.Infrastructure.Ig.IgAuthenticateResponse",
+        var response = new IgAuthenticateResponse(
             "ABC123",
             "https://stream.example.test",
             new DateTimeOffset(2026, 3, 29, 12, 0, 0, TimeSpan.Zero),
@@ -27,15 +27,12 @@ public class IgAuthenticationResponseSanitizerTests
                 ["Version"] = "3"
             });
 
-        var sanitized = ApplicationReflection.InvokeStatic(
-            "TNC.Trading.Platform.Application.Infrastructure.Ig.IgAuthenticationResponseSanitizer",
-            "Sanitize",
-            response);
+        var sanitized = IgAuthenticationResponseSanitizer.Sanitize(response);
 
-        Assert.True(ApplicationReflection.GetProperty<bool>(sanitized!, "HasClientSessionToken"));
-        Assert.True(ApplicationReflection.GetProperty<bool>(sanitized!, "HasAccountSecurityToken"));
+        Assert.True(sanitized.HasClientSessionToken);
+        Assert.True(sanitized.HasAccountSecurityToken);
 
-        var headersJson = JsonSerializer.Serialize(ApplicationReflection.GetProperty<object>(sanitized!, "Headers"));
+        var headersJson = JsonSerializer.Serialize(sanitized.Headers);
         Assert.Contains("[redacted]", headersJson, StringComparison.Ordinal);
         Assert.Contains("\"Version\":\"3\"", headersJson, StringComparison.Ordinal);
         Assert.DoesNotContain("client-session-token", headersJson, StringComparison.Ordinal);
