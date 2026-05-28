@@ -1,7 +1,6 @@
-using System.Collections;
-using System.Reflection;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
+using TNC.Trading.Platform.Infrastructure.Persistence;
+using TNC.Trading.Platform.Infrastructure.Platform;
 
 namespace TNC.Trading.Platform.Infrastructure.UnitTests;
 
@@ -34,72 +33,63 @@ public class OperationalRecordRetentionProcessorTests
             })
             .Build();
 
-        var processorType = InfrastructureReflection.GetType("TNC.Trading.Platform.Infrastructure.Platform.OperationalRecordRetentionProcessor");
-        var processor = Activator.CreateInstance(
-            processorType,
+        var processor = new OperationalRecordRetentionProcessor(
             dbContext,
             configuration,
             new FixedTimeProvider(now),
-            InfrastructureReflection.CreateNullLogger(processorType))!;
+            InfrastructureReflection.CreateNullLogger<OperationalRecordRetentionProcessor>());
 
-        var deletedCount = await InfrastructureReflection.InvokeAsync(processor, "ApplyAsync", CancellationToken.None);
+        var deletedCount = await processor.ApplyAsync(CancellationToken.None);
 
-        Assert.Equal(3, Assert.IsType<int>(deletedCount));
-        Assert.Equal(1, GetDbSetCount(dbContext, "OperationalEvents"));
-        Assert.Equal(1, GetDbSetCount(dbContext, "ConfigurationAudits"));
-        Assert.Equal(1, GetDbSetCount(dbContext, "NotificationRecords"));
+        Assert.Equal(3, deletedCount);
+        Assert.Equal(1, dbContext.OperationalEvents.Count());
+        Assert.Equal(1, dbContext.ConfigurationAudits.Count());
+        Assert.Equal(1, dbContext.NotificationRecords.Count());
     }
 
-    private static object CreateOperationalEvent(DateTimeOffset occurredAtUtc, string summary)
+    private static OperationalEventEntity CreateOperationalEvent(DateTimeOffset occurredAtUtc, string summary)
     {
-        var entity = Activator.CreateInstance(InfrastructureReflection.GetType("TNC.Trading.Platform.Infrastructure.Persistence.OperationalEventEntity"))!;
-        InfrastructureReflection.SetProperty(entity, "OccurredAtUtc", occurredAtUtc);
-        InfrastructureReflection.SetProperty(entity, "Category", "auth");
-        InfrastructureReflection.SetProperty(entity, "EventType", "FailureDetected");
-        InfrastructureReflection.SetProperty(entity, "PlatformEnvironment", "Test");
-        InfrastructureReflection.SetProperty(entity, "BrokerEnvironment", "Demo");
-        InfrastructureReflection.SetProperty(entity, "Severity", "Warning");
-        InfrastructureReflection.SetProperty(entity, "Summary", summary);
-        InfrastructureReflection.SetProperty(entity, "DetailsJson", "{}");
-        return entity;
+        return new OperationalEventEntity
+        {
+            OccurredAtUtc = occurredAtUtc,
+            Category = "auth",
+            EventType = "FailureDetected",
+            PlatformEnvironment = "Test",
+            BrokerEnvironment = "Demo",
+            Severity = "Warning",
+            Summary = summary,
+            DetailsJson = "{}"
+        };
     }
 
-    private static object CreateConfigurationAudit(DateTimeOffset occurredAtUtc, string summary)
+    private static ConfigurationAuditEntity CreateConfigurationAudit(DateTimeOffset occurredAtUtc, string summary)
     {
-        var entity = Activator.CreateInstance(InfrastructureReflection.GetType("TNC.Trading.Platform.Infrastructure.Persistence.ConfigurationAuditEntity"))!;
-        InfrastructureReflection.SetProperty(entity, "ConfigurationId", 1);
-        InfrastructureReflection.SetProperty(entity, "PlatformEnvironment", "Test");
-        InfrastructureReflection.SetProperty(entity, "BrokerEnvironment", "Demo");
-        InfrastructureReflection.SetProperty(entity, "OccurredAtUtc", occurredAtUtc);
-        InfrastructureReflection.SetProperty(entity, "ChangedBy", "unit-test");
-        InfrastructureReflection.SetProperty(entity, "ChangeType", "PlatformConfigurationUpdated");
-        InfrastructureReflection.SetProperty(entity, "Summary", summary);
-        InfrastructureReflection.SetProperty(entity, "DetailsJson", "{}");
-        return entity;
+        return new ConfigurationAuditEntity
+        {
+            ConfigurationId = 1,
+            PlatformEnvironment = "Test",
+            BrokerEnvironment = "Demo",
+            OccurredAtUtc = occurredAtUtc,
+            ChangedBy = "unit-test",
+            ChangeType = "PlatformConfigurationUpdated",
+            Summary = summary,
+            DetailsJson = "{}"
+        };
     }
 
-    private static object CreateNotificationRecord(DateTimeOffset dispatchedAtUtc, string summary)
+    private static NotificationRecordEntity CreateNotificationRecord(DateTimeOffset dispatchedAtUtc, string summary)
     {
-        var entity = Activator.CreateInstance(InfrastructureReflection.GetType("TNC.Trading.Platform.Infrastructure.Persistence.NotificationRecordEntity"))!;
-        InfrastructureReflection.SetProperty(entity, "DispatchedAtUtc", dispatchedAtUtc);
-        InfrastructureReflection.SetProperty(entity, "NotificationType", "AuthFailure");
-        InfrastructureReflection.SetProperty(entity, "PlatformEnvironment", "Test");
-        InfrastructureReflection.SetProperty(entity, "BrokerEnvironment", "Demo");
-        InfrastructureReflection.SetProperty(entity, "Recipient", "owner@example.com");
-        InfrastructureReflection.SetProperty(entity, "Summary", summary);
-        InfrastructureReflection.SetProperty(entity, "DispatchStatus", "Sent");
-        InfrastructureReflection.SetProperty(entity, "Provider", "RecordedOnly");
-        return entity;
-    }
-
-    private static int GetDbSetCount(DbContext dbContext, string propertyName)
-    {
-        var property = dbContext.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException($"Could not find DbSet property {propertyName}.");
-        var set = property.GetValue(dbContext) as IEnumerable
-            ?? throw new InvalidOperationException($"Could not read DbSet property {propertyName}.");
-
-        return set.Cast<object>().Count();
+        return new NotificationRecordEntity
+        {
+            DispatchedAtUtc = dispatchedAtUtc,
+            NotificationType = "AuthFailure",
+            PlatformEnvironment = "Test",
+            BrokerEnvironment = "Demo",
+            Recipient = "owner@example.com",
+            Summary = summary,
+            DispatchStatus = "Sent",
+            Provider = "RecordedOnly"
+        };
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

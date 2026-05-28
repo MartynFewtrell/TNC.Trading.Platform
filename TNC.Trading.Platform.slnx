@@ -12,6 +12,9 @@
     <Project Path="test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.IntegrationTests/TNC.Trading.Platform.Api.IntegrationTests.csproj" />
     <Project Path="test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.UnitTests/TNC.Trading.Platform.Api.UnitTests.csproj" />
   </Folder>
+  <Folder Name="/test/TNC.Trading.Platform.AppHost/">
+    <Project Path="test/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.UnitTests/TNC.Trading.Platform.AppHost.UnitTests.csproj" />
+  </Folder>
   <Folder Name="/test/TNC.Trading.Platform.Application/">
     <Project Path="test/TNC.Trading.Platform.Application/TNC.Trading.Platform.Application.UnitTests/TNC.Trading.Platform.Application.UnitTests.csproj" />
   </Folder>

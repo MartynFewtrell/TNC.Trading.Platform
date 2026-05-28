@@ -8,22 +8,25 @@ public class PlatformAuthorizationRedirectResolverTests
 {
     /// <summary>
     /// Trace: FR5, TR1.
-    /// Verifies: the redirect resolver sends anonymous users to the sign-in entry point and preserves the current protected return URL.
-    /// Expected: the resolved destination targets `/authentication/sign-in` and encodes the original route and query string in `returnUrl`.
-    /// Why: the protected route pipeline must challenge anonymous users consistently before they can access operator-only UI surfaces.
+    /// Verifies: the redirect resolver sends anonymous users on each protected route family to the sign-in entry point and preserves the current protected return URL.
+    /// Expected: the resolved destination targets `/authentication/sign-in` and encodes the original route or query string in `returnUrl` for viewer, operator, and administrator route entry points.
+    /// Why: the protected route pipeline must challenge anonymous users consistently before they can access operator-only UI surfaces, without requiring a high-cost distributed check for each route shape.
     /// </summary>
-    [Fact]
-    public void CreateDecision_ShouldReturnSignInDestination_WhenUserIsAnonymous()
+    [Theory]
+    [InlineData("https://localhost/status?tab=recent", "/status?tab=recent", "/authentication/sign-in?returnUrl=%2Fstatus%3Ftab%3Drecent&prompt=login")]
+    [InlineData("https://localhost/configuration", "/configuration", "/authentication/sign-in?returnUrl=%2Fconfiguration&prompt=login")]
+    [InlineData("https://localhost/administration/authentication", "/administration/authentication", "/authentication/sign-in?returnUrl=%2Fadministration%2Fauthentication&prompt=login")]
+    public void CreateDecision_ShouldReturnSignInDestination_WhenUserIsAnonymous(string currentUri, string expectedReturnUrl, string expectedDestination)
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity());
 
         var result = PlatformAuthorizationRedirectResolver.CreateDecision(
-            "https://localhost/status?tab=recent",
+            currentUri,
             "https://localhost/",
             principal);
 
-        Assert.Equal("/status?tab=recent", result.ReturnUrl);
-        Assert.Equal("/authentication/sign-in?returnUrl=%2Fstatus%3Ftab%3Drecent&prompt=login", result.Destination);
+        Assert.Equal(expectedReturnUrl, result.ReturnUrl);
+        Assert.Equal(expectedDestination, result.Destination);
         Assert.False(result.ShouldRecordAccessDenied);
     }
 

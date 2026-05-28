@@ -1,7 +1,8 @@
-using System.Reflection;
-using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
+﻿using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Infrastructure.Persistence;
+using TNC.Trading.Platform.Infrastructure.Platform;
 
 namespace TNC.Trading.Platform.Infrastructure.UnitTests;
 
@@ -42,13 +43,11 @@ public class SqlPlatformConfigurationStoreTests
 
         var store = CreateConfigurationStore(dbContext, configuration);
 
-        var snapshot = await InfrastructureReflection.InvokeAsync(store, "GetCurrentAsync", CancellationToken.None);
-        var notificationSettings = InfrastructureReflection.GetProperty<object>(snapshot!, "NotificationSettings");
-        var tradingSchedule = InfrastructureReflection.GetProperty<object>(snapshot!, "TradingSchedule");
+        var snapshot = await store.GetCurrentAsync(CancellationToken.None);
 
-        Assert.Equal("Smtp", InfrastructureReflection.GetProperty<string>(notificationSettings, "Provider"));
-        Assert.Equal(new TimeOnly(9, 0), InfrastructureReflection.GetProperty<TimeOnly>(tradingSchedule, "StartOfDay"));
-        Assert.Equal("Demo", InfrastructureReflection.GetProperty<object>(snapshot!, "BrokerEnvironment").ToString());
+        Assert.Equal("Smtp", snapshot.NotificationSettings.Provider);
+        Assert.Equal(new TimeOnly(9, 0), snapshot.TradingSchedule.StartOfDay);
+        Assert.Equal(BrokerEnvironmentKind.Demo, snapshot.BrokerEnvironment);
     }
 
     /// <summary>
@@ -71,7 +70,7 @@ public class SqlPlatformConfigurationStoreTests
                 ["Bootstrap:TradingSchedule:EndOfDay"] = "16:30"
             }));
 
-        _ = await InfrastructureReflection.InvokeAsync(initialStore, "GetCurrentAsync", CancellationToken.None);
+        _ = await initialStore.GetCurrentAsync(CancellationToken.None);
 
         var subsequentStore = CreateConfigurationStore(
             dbContext,
@@ -83,11 +82,10 @@ public class SqlPlatformConfigurationStoreTests
                 ["Bootstrap:TradingSchedule:EndOfDay"] = "18:00"
             }));
 
-        var snapshot = await InfrastructureReflection.InvokeAsync(subsequentStore, "GetCurrentAsync", CancellationToken.None);
-        var tradingSchedule = InfrastructureReflection.GetProperty<object>(snapshot!, "TradingSchedule");
+        var snapshot = await subsequentStore.GetCurrentAsync(CancellationToken.None);
 
-        Assert.Equal("Demo", InfrastructureReflection.GetProperty<object>(snapshot!, "BrokerEnvironment").ToString());
-        Assert.Equal(new TimeOnly(8, 0), InfrastructureReflection.GetProperty<TimeOnly>(tradingSchedule, "StartOfDay"));
+        Assert.Equal(BrokerEnvironmentKind.Demo, snapshot.BrokerEnvironment);
+        Assert.Equal(new TimeOnly(8, 0), snapshot.TradingSchedule.StartOfDay);
     }
 
     /// <summary>
@@ -109,7 +107,7 @@ public class SqlPlatformConfigurationStoreTests
                 ["Bootstrap:NotificationSettings:EmailTo"] = "owner@example.com"
             }));
 
-        _ = await InfrastructureReflection.InvokeAsync(store, "GetCurrentAsync", CancellationToken.None);
+        _ = await store.GetCurrentAsync(CancellationToken.None);
 
         var update = CreateConfigurationUpdate(
             platformEnvironment: "Live",
@@ -121,19 +119,19 @@ public class SqlPlatformConfigurationStoreTests
             password: "rotated-password",
             changedBy: "unit-test");
 
-        var result = await InfrastructureReflection.InvokeAsync(store, "UpdateAsync", update, CancellationToken.None);
+        var result = await store.UpdateAsync(update, CancellationToken.None);
         var audit = Assert.Single(GetConfigurationAudits(dbContext));
-        var detailsJson = InfrastructureReflection.GetProperty<string>(audit, "DetailsJson");
+        var detailsJson = audit.DetailsJson;
 
-        Assert.True(InfrastructureReflection.GetProperty<bool>(result!, "RestartRequired"));
-        Assert.Equal("Live", InfrastructureReflection.GetProperty<string>(audit, "PlatformEnvironment"));
-        Assert.Equal("Demo", InfrastructureReflection.GetProperty<string>(audit, "BrokerEnvironment"));
-        Assert.Equal("unit-test", InfrastructureReflection.GetProperty<string>(audit, "ChangedBy"));
-        Assert.Equal("PlatformConfigurationUpdated", InfrastructureReflection.GetProperty<string>(audit, "ChangeType"));
+        Assert.True(result.RestartRequired);
+        Assert.Equal("Live", audit.PlatformEnvironment);
+        Assert.Equal("Demo", audit.BrokerEnvironment);
+        Assert.Equal("unit-test", audit.ChangedBy);
+        Assert.Equal("PlatformConfigurationUpdated", audit.ChangeType);
         Assert.Equal(
             "Platform configuration updated. Startup-fixed changes will apply on next restart.",
-            InfrastructureReflection.GetProperty<string>(audit, "Summary"));
-        Assert.False(string.IsNullOrWhiteSpace(InfrastructureReflection.GetProperty<string>(audit, "CorrelationId")));
+            audit.Summary);
+        Assert.False(string.IsNullOrWhiteSpace(audit.CorrelationId));
         Assert.DoesNotContain("rotated-api-key", detailsJson, StringComparison.Ordinal);
         Assert.DoesNotContain("rotated-identifier", detailsJson, StringComparison.Ordinal);
         Assert.DoesNotContain("rotated-password", detailsJson, StringComparison.Ordinal);
@@ -161,11 +159,9 @@ public class SqlPlatformConfigurationStoreTests
                 ["Bootstrap:NotificationSettings:EmailTo"] = "owner@example.com"
             }));
 
-        _ = await InfrastructureReflection.InvokeAsync(store, "GetCurrentAsync", CancellationToken.None);
+        _ = await store.GetCurrentAsync(CancellationToken.None);
 
-        _ = await InfrastructureReflection.InvokeAsync(
-            store,
-            "UpdateAsync",
+        _ = await store.UpdateAsync(
             CreateConfigurationUpdate(
                 platformEnvironment: "Live",
                 brokerEnvironment: "Demo",
@@ -177,9 +173,7 @@ public class SqlPlatformConfigurationStoreTests
                 changedBy: "demo-operator"),
             CancellationToken.None);
 
-        _ = await InfrastructureReflection.InvokeAsync(
-            store,
-            "UpdateAsync",
+        _ = await store.UpdateAsync(
             CreateConfigurationUpdate(
                 platformEnvironment: "Live",
                 brokerEnvironment: "Live",
@@ -195,14 +189,14 @@ public class SqlPlatformConfigurationStoreTests
         Assert.Equal(2, audits.Length);
 
         var demoAudit = Assert.Single(audits.Where(item =>
-            string.Equals(InfrastructureReflection.GetProperty<string>(item, "BrokerEnvironment"), "Demo", StringComparison.Ordinal)));
+            string.Equals(item.BrokerEnvironment, "Demo", StringComparison.Ordinal)));
         var liveAudit = Assert.Single(audits.Where(item =>
-            string.Equals(InfrastructureReflection.GetProperty<string>(item, "BrokerEnvironment"), "Live", StringComparison.Ordinal)));
+            string.Equals(item.BrokerEnvironment, "Live", StringComparison.Ordinal)));
 
-        Assert.Equal("demo-operator", InfrastructureReflection.GetProperty<string>(demoAudit, "ChangedBy"));
-        Assert.Equal("live-operator", InfrastructureReflection.GetProperty<string>(liveAudit, "ChangedBy"));
-        Assert.Contains("demo-owner@example.com", InfrastructureReflection.GetProperty<string>(demoAudit, "DetailsJson"), StringComparison.Ordinal);
-        Assert.Contains("live-owner@example.com", InfrastructureReflection.GetProperty<string>(liveAudit, "DetailsJson"), StringComparison.Ordinal);
+        Assert.Equal("demo-operator", demoAudit.ChangedBy);
+        Assert.Equal("live-operator", liveAudit.ChangedBy);
+        Assert.Contains("demo-owner@example.com", demoAudit.DetailsJson, StringComparison.Ordinal);
+        Assert.Contains("live-owner@example.com", liveAudit.DetailsJson, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -223,11 +217,9 @@ public class SqlPlatformConfigurationStoreTests
                 ["Bootstrap:BrokerEnvironment"] = "Demo"
             }));
 
-        _ = await InfrastructureReflection.InvokeAsync(store, "GetCurrentAsync", CancellationToken.None);
+        _ = await store.GetCurrentAsync(CancellationToken.None);
 
-        _ = await InfrastructureReflection.InvokeAsync(
-            store,
-            "UpdateAsync",
+        _ = await store.UpdateAsync(
             CreateConfigurationUpdate(
                 platformEnvironment: "Live",
                 brokerEnvironment: "Live",
@@ -239,21 +231,19 @@ public class SqlPlatformConfigurationStoreTests
                 changedBy: "unit-test"),
             CancellationToken.None);
 
-        var runtimeBeforeRestart = await InfrastructureReflection.InvokeAsync(
-            store,
-            "GetRuntimeAsync",
-            InfrastructureReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.PlatformEnvironmentKind", "Test"),
-            InfrastructureReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.BrokerEnvironmentKind", "Demo"),
+        var runtimeBeforeRestart = await store.GetRuntimeAsync(
+            PlatformEnvironmentKind.Test,
+            BrokerEnvironmentKind.Demo,
             CancellationToken.None);
 
-        var startupApplied = await InfrastructureReflection.InvokeAsync(store, "ApplyStartupConfigurationAsync", CancellationToken.None);
+        var startupApplied = await store.ApplyStartupConfigurationAsync(CancellationToken.None);
 
-        Assert.True(InfrastructureReflection.GetProperty<bool>(runtimeBeforeRestart!, "RestartRequired"));
-        Assert.Equal("Test", InfrastructureReflection.GetProperty<object>(runtimeBeforeRestart!, "PlatformEnvironment").ToString());
-        Assert.Equal("Demo", InfrastructureReflection.GetProperty<object>(runtimeBeforeRestart!, "BrokerEnvironment").ToString());
-        Assert.False(InfrastructureReflection.GetProperty<bool>(startupApplied!, "RestartRequired"));
-        Assert.Equal("Live", InfrastructureReflection.GetProperty<object>(startupApplied!, "PlatformEnvironment").ToString());
-        Assert.Equal("Live", InfrastructureReflection.GetProperty<object>(startupApplied!, "BrokerEnvironment").ToString());
+        Assert.True(runtimeBeforeRestart.RestartRequired);
+        Assert.Equal(PlatformEnvironmentKind.Test, runtimeBeforeRestart.PlatformEnvironment);
+        Assert.Equal(BrokerEnvironmentKind.Demo, runtimeBeforeRestart.BrokerEnvironment);
+        Assert.False(startupApplied.RestartRequired);
+        Assert.Equal(PlatformEnvironmentKind.Live, startupApplied.PlatformEnvironment);
+        Assert.Equal(BrokerEnvironmentKind.Live, startupApplied.BrokerEnvironment);
     }
 
     private static IConfiguration CreateConfiguration(IReadOnlyDictionary<string, string?> values) =>
@@ -261,23 +251,21 @@ public class SqlPlatformConfigurationStoreTests
             .AddInMemoryCollection(values)
             .Build();
 
-    private static object CreateConfigurationStore(DbContext dbContext, IConfiguration configuration)
+    private static SqlPlatformConfigurationStore CreateConfigurationStore(PlatformDbContext dbContext, IConfiguration configuration)
     {
-        var protectedCredentialService = InfrastructureReflection.Create(
-            "TNC.Trading.Platform.Infrastructure.Platform.ProtectedCredentialService",
+        var protectedCredentialService = new ProtectedCredentialService(
             dbContext,
             InfrastructureReflection.CreateDataProtectionProvider(),
             TimeProvider.System);
 
-        return InfrastructureReflection.Create(
-            "TNC.Trading.Platform.Infrastructure.Platform.SqlPlatformConfigurationStore",
+        return new SqlPlatformConfigurationStore(
             dbContext,
             configuration,
             protectedCredentialService,
             TimeProvider.System);
     }
 
-    private static object CreateConfigurationUpdate(
+    private static PlatformConfigurationUpdate CreateConfigurationUpdate(
         string platformEnvironment,
         string brokerEnvironment,
         string provider,
@@ -287,12 +275,10 @@ public class SqlPlatformConfigurationStoreTests
         string? password,
         string changedBy)
     {
-        return InfrastructureReflection.Create(
-            "TNC.Trading.Platform.Application.Configuration.PlatformConfigurationUpdate",
-            InfrastructureReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.PlatformEnvironmentKind", platformEnvironment),
-            InfrastructureReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.BrokerEnvironmentKind", brokerEnvironment),
-            InfrastructureReflection.Create(
-                "TNC.Trading.Platform.Application.Configuration.TradingScheduleConfiguration",
+        return new PlatformConfigurationUpdate(
+            Enum.Parse<PlatformEnvironmentKind>(platformEnvironment, ignoreCase: true),
+            Enum.Parse<BrokerEnvironmentKind>(brokerEnvironment, ignoreCase: true),
+            new TradingScheduleConfiguration(
                 new TimeOnly(8, 0),
                 new TimeOnly(16, 30),
                 new[]
@@ -303,18 +289,16 @@ public class SqlPlatformConfigurationStoreTests
                     DayOfWeek.Thursday,
                     DayOfWeek.Friday
                 },
-                InfrastructureReflection.ParseEnum("TNC.Trading.Platform.Application.Configuration.WeekendBehavior", "ExcludeWeekends"),
+                WeekendBehavior.ExcludeWeekends,
                 Array.Empty<DateOnly>(),
                 "UTC"),
-            InfrastructureReflection.Create(
-                "TNC.Trading.Platform.Application.Configuration.RetryPolicyConfiguration",
+            new RetryPolicyConfiguration(
                 1,
                 5,
                 2,
                 60,
                 5),
-            InfrastructureReflection.Create(
-                "TNC.Trading.Platform.Application.Configuration.NotificationSettingsConfiguration",
+            new NotificationSettingsConfiguration(
                 provider,
                 emailTo),
             apiKey,
@@ -323,9 +307,8 @@ public class SqlPlatformConfigurationStoreTests
             changedBy);
     }
 
-    private static object[] GetConfigurationAudits(DbContext dbContext)
+    private static ConfigurationAuditEntity[] GetConfigurationAudits(PlatformDbContext dbContext)
     {
-        return ((IEnumerable<object>)dbContext.GetType().GetProperty("ConfigurationAudits", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!.GetValue(dbContext)!)
-            .ToArray();
+        return dbContext.ConfigurationAudits.ToArray();
     }
 }

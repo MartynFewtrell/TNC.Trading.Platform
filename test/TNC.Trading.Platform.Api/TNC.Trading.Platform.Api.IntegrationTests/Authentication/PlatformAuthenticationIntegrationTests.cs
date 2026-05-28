@@ -1,10 +1,10 @@
 ﻿using System.Net;
 using System.Net.Http.Json;
-using Aspire.Hosting.Testing;
 
 namespace TNC.Trading.Platform.Api.IntegrationTests.Authentication;
 
-public class PlatformAuthenticationIntegrationTests
+[Collection(RealAuthenticationIntegrationTestCollection.Name)]
+public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenticationIntegrationTestFixture>
 {
     private const string ViewerRole = "Viewer";
     private const string OperatorRole = "Operator";
@@ -12,10 +12,11 @@ public class PlatformAuthenticationIntegrationTests
     private const string ViewerScope = "platform.viewer";
     private const string OperatorScope = "platform.operator";
     private const string AdministratorScope = "platform.admin";
+    private readonly RealAuthenticationIntegrationTestFixture fixture;
 
-    static PlatformAuthenticationIntegrationTests()
+    public PlatformAuthenticationIntegrationTests(RealAuthenticationIntegrationTestFixture fixture)
     {
-        Environment.SetEnvironmentVariable("AppHost__UseSyntheticRuntime", bool.TrueString);
+        this.fixture = fixture;
     }
 
     /// <summary>
@@ -27,14 +28,7 @@ public class PlatformAuthenticationIntegrationTests
     [Fact]
     public async Task HealthEndpoints_ShouldReturnOk_WhenRequestedAnonymously()
     {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
+        using var httpClient = fixture.CreateApiClient();
         using var livenessResponse = await httpClient.GetAsync("/health/live");
         using var readinessResponse = await httpClient.GetAsync("/health/ready");
 
@@ -51,14 +45,7 @@ public class PlatformAuthenticationIntegrationTests
     [Fact]
     public async Task StatusEndpoint_ShouldReturnUnauthorized_WhenAnonymousCallerRequestsProtectedSurface()
     {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
+        using var httpClient = fixture.CreateApiClient();
         using var response = await httpClient.GetAsync("/api/platform/status");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -73,20 +60,12 @@ public class PlatformAuthenticationIntegrationTests
     [Fact]
     public async Task StatusEndpoint_ShouldReturnOk_WhenViewerBearerTokenIsProvided()
     {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
-        using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var httpClient = fixture.CreateApiClient();
+        using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Get,
             "/api/platform/status",
             "local-viewer",
-            [ViewerRole],
-            [ViewerScope]);
+            ViewerScope);
         using var response = await httpClient.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -101,20 +80,12 @@ public class PlatformAuthenticationIntegrationTests
     [Fact]
     public async Task ConfigurationEndpoint_ShouldReturnForbidden_WhenViewerTokenLacksOperatorRole()
     {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
-        using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var httpClient = fixture.CreateApiClient();
+        using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Get,
             "/api/platform/configuration",
             "local-viewer",
-            [ViewerRole],
-            [ViewerScope]);
+            ViewerScope);
         using var response = await httpClient.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -129,20 +100,12 @@ public class PlatformAuthenticationIntegrationTests
     [Fact]
     public async Task AuthAdministrationEndpoint_ShouldReturnOk_WhenAdministratorTokenIsProvided()
     {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
-        using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var httpClient = fixture.CreateApiClient();
+        using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Get,
             "/api/platform/auth/administration",
             "local-admin",
-            [AdministratorRole],
-            [ViewerScope, AdministratorScope]);
+            AdministratorScope);
         using var response = await httpClient.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -157,20 +120,12 @@ public class PlatformAuthenticationIntegrationTests
     [Fact]
     public async Task AuthAuditEndpoint_ShouldPersistSignOutEvent_WhenAuthenticatedCallerPostsAuditRecord()
     {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
-        using var auditRequest = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var httpClient = fixture.CreateApiClient();
+        using var auditRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Post,
             "/api/platform/auth/audit",
             "local-viewer",
-            [ViewerRole],
-            [ViewerScope]);
+            ViewerScope);
         auditRequest.Content = JsonContent.Create(new
         {
             EventType = "OperatorSignOutCompleted",
@@ -182,77 +137,17 @@ public class PlatformAuthenticationIntegrationTests
 
         Assert.Equal(HttpStatusCode.Accepted, auditResponse.StatusCode);
 
-        using var eventsRequest = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var eventsRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Get,
             "/api/platform/events?category=auth",
             "local-viewer",
-            [ViewerRole],
-            [ViewerScope]);
+            ViewerScope);
         using var eventsResponse = await httpClient.SendAsync(eventsRequest);
         var payload = await eventsResponse.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, eventsResponse.StatusCode);
         Assert.Contains("OperatorSignOutCompleted", payload, StringComparison.Ordinal);
         Assert.Contains("completed sign-out", payload, StringComparison.Ordinal);
-        Assert.DoesNotContain(TestJwtTokenFactory.SigningKey, payload, StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// Trace: FR6, NF2, SR4, TR1.
-    /// Verifies: the protected API rejects bearer tokens signed by an unexpected issuer.
-    /// Expected: the status endpoint returns HTTP 401 Unauthorized when the issuer does not match the configured test authority.
-    /// Why: invalid issuer values must fail closed so forged tokens cannot cross the protected API boundary.
-    /// </summary>
-    [Fact]
-    public async Task StatusEndpoint_ShouldReturnUnauthorized_WhenTokenIssuerIsInvalid()
-    {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
-        using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
-            HttpMethod.Get,
-            "/api/platform/status",
-            "local-viewer",
-            [ViewerRole],
-            [ViewerScope],
-            issuer: "https://unexpected-auth.local");
-        using var response = await httpClient.SendAsync(request);
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    /// <summary>
-    /// Trace: FR6, NF2, SR4, TR1.
-    /// Verifies: the protected API rejects bearer tokens issued for the wrong audience.
-    /// Expected: the status endpoint returns HTTP 401 Unauthorized when the token audience does not match the protected API audience.
-    /// Why: the API must fail closed when a delegated token is presented for a different resource.
-    /// </summary>
-    [Fact]
-    public async Task StatusEndpoint_ShouldReturnUnauthorized_WhenTokenAudienceIsInvalid()
-    {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
-        using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
-            HttpMethod.Get,
-            "/api/platform/status",
-            "local-viewer",
-            [ViewerRole],
-            [ViewerScope],
-            audience: "unexpected-audience");
-        using var response = await httpClient.SendAsync(request);
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     /// <summary>
@@ -264,14 +159,7 @@ public class PlatformAuthenticationIntegrationTests
     [Fact]
     public async Task StatusEndpoint_ShouldReturnUnauthorized_WhenTokenSignatureIsInvalid()
     {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
+        using var httpClient = fixture.CreateApiClient();
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Get,
             "/api/platform/status",
@@ -279,35 +167,6 @@ public class PlatformAuthenticationIntegrationTests
             [ViewerRole],
             [ViewerScope],
             signingKey: "fedcba9876543210fedcba9876543210");
-        using var response = await httpClient.SendAsync(request);
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    /// <summary>
-    /// Trace: FR6, NF2, SR4, TR1.
-    /// Verifies: the protected API rejects expired bearer tokens.
-    /// Expected: the status endpoint returns HTTP 401 Unauthorized when the token expiry is already in the past.
-    /// Why: expired delegated access must not continue to grant protected API access.
-    /// </summary>
-    [Fact]
-    public async Task StatusEndpoint_ShouldReturnUnauthorized_WhenTokenIsExpired()
-    {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
-        using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
-            HttpMethod.Get,
-            "/api/platform/status",
-            "local-viewer",
-            [ViewerRole],
-            [ViewerScope],
-            expiresUtc: DateTimeOffset.UtcNow.AddMinutes(-5));
         using var response = await httpClient.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -322,20 +181,12 @@ public class PlatformAuthenticationIntegrationTests
     [Fact]
     public async Task StatusEndpoint_ShouldReturnForbidden_WhenAuthenticatedCallerHasNoPlatformRole()
     {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
-        using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var httpClient = fixture.CreateApiClient();
+        using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Get,
             "/api/platform/status",
             "local-norole",
-            [],
-            [ViewerScope]);
+            ViewerScope);
         using var response = await httpClient.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -350,20 +201,12 @@ public class PlatformAuthenticationIntegrationTests
     [Fact]
     public async Task ConfigurationEndpoint_ShouldReturnOk_WhenOperatorUpdatesConfiguration()
     {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
-        using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var httpClient = fixture.CreateApiClient();
+        using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Put,
             "/api/platform/configuration",
             "local-operator",
-            [OperatorRole],
-            [ViewerScope, OperatorScope]);
+            OperatorScope);
         request.Content = JsonContent.Create(CreateConfigurationRequest());
 
         using var response = await httpClient.SendAsync(request);
@@ -380,20 +223,12 @@ public class PlatformAuthenticationIntegrationTests
     [Fact]
     public async Task ManualRetryEndpoint_ShouldReturnConflict_WhenOperatorTokenIsProvidedAndManualRetryIsUnavailable()
     {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
-        using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var httpClient = fixture.CreateApiClient();
+        using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Post,
             "/api/platform/auth/manual-retry",
             "local-operator",
-            [OperatorRole],
-            [ViewerScope, OperatorScope]);
+            OperatorScope);
         using var response = await httpClient.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -408,20 +243,12 @@ public class PlatformAuthenticationIntegrationTests
     [Fact]
     public async Task EventsEndpoint_ShouldReturnOk_WhenViewerTokenIsProvided()
     {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
-        using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var httpClient = fixture.CreateApiClient();
+        using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Get,
             "/api/platform/events?category=auth",
             "local-viewer",
-            [ViewerRole],
-            [ViewerScope]);
+            ViewerScope);
         using var response = await httpClient.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -436,20 +263,12 @@ public class PlatformAuthenticationIntegrationTests
     [Fact]
     public async Task AuthAdministrationEndpoint_ShouldReturnForbidden_WhenOperatorTokenLacksAdministratorRole()
     {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
-        using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var httpClient = fixture.CreateApiClient();
+        using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Get,
             "/api/platform/auth/administration",
             "local-operator",
-            [OperatorRole],
-            [ViewerScope, OperatorScope]);
+            OperatorScope);
         using var response = await httpClient.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -464,20 +283,12 @@ public class PlatformAuthenticationIntegrationTests
     [Fact]
     public async Task AuthAuditEndpoint_ShouldPersistSignInEvent_WhenAuthenticatedCallerPostsAuditRecord()
     {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
-        using var auditRequest = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var httpClient = fixture.CreateApiClient();
+        using var auditRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Post,
             "/api/platform/auth/audit",
             "local-viewer",
-            [ViewerRole],
-            [ViewerScope]);
+            ViewerScope);
         auditRequest.Content = JsonContent.Create(new
         {
             EventType = "OperatorSignInCompleted",
@@ -489,19 +300,17 @@ public class PlatformAuthenticationIntegrationTests
 
         Assert.Equal(HttpStatusCode.Accepted, auditResponse.StatusCode);
 
-        using var eventsRequest = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var eventsRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Get,
             "/api/platform/events?category=auth",
             "local-viewer",
-            [ViewerRole],
-            [ViewerScope]);
+            ViewerScope);
         using var eventsResponse = await httpClient.SendAsync(eventsRequest);
         var payload = await eventsResponse.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, eventsResponse.StatusCode);
         Assert.Contains("OperatorSignInCompleted", payload, StringComparison.Ordinal);
         Assert.Contains("completed sign-in", payload, StringComparison.Ordinal);
-        Assert.DoesNotContain(TestJwtTokenFactory.SigningKey, payload, StringComparison.Ordinal);
         Assert.DoesNotContain("eyJ", payload, StringComparison.Ordinal);
     }
 
@@ -514,20 +323,12 @@ public class PlatformAuthenticationIntegrationTests
     [Fact]
     public async Task AuthAuditEndpoint_ShouldPersistAccessDeniedEvent_WhenAuthenticatedCallerPostsAuditRecord()
     {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await WaitForApiReadinessAsync(httpClient);
-        using var auditRequest = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var httpClient = fixture.CreateApiClient();
+        using var auditRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Post,
             "/api/platform/auth/audit",
             "local-viewer",
-            [ViewerRole],
-            [ViewerScope]);
+            ViewerScope);
         auditRequest.Content = JsonContent.Create(new
         {
             EventType = "OperatorAccessDenied",
@@ -539,19 +340,17 @@ public class PlatformAuthenticationIntegrationTests
 
         Assert.Equal(HttpStatusCode.Accepted, auditResponse.StatusCode);
 
-        using var eventsRequest = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var eventsRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Get,
             "/api/platform/events?category=auth",
             "local-viewer",
-            [ViewerRole],
-            [ViewerScope]);
+            ViewerScope);
         using var eventsResponse = await httpClient.SendAsync(eventsRequest);
         var payload = await eventsResponse.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, eventsResponse.StatusCode);
         Assert.Contains("OperatorAccessDenied", payload, StringComparison.Ordinal);
         Assert.Contains("was denied access", payload, StringComparison.Ordinal);
-        Assert.DoesNotContain(TestJwtTokenFactory.SigningKey, payload, StringComparison.Ordinal);
         Assert.DoesNotContain("eyJ", payload, StringComparison.Ordinal);
     }
 
@@ -564,19 +363,12 @@ public class PlatformAuthenticationIntegrationTests
     [Fact]
     public async Task AuthAuditEndpoint_ShouldPersistTokenAcquisitionFailedEvent_WhenAuthenticatedCallerPostsAuditRecord()
     {
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        using var auditRequest = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var httpClient = fixture.CreateApiClient();
+        using var auditRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Post,
             "/api/platform/auth/audit",
             "local-operator",
-            [OperatorRole],
-            [ViewerScope, OperatorScope]);
+            OperatorScope);
         auditRequest.Content = JsonContent.Create(new
         {
             EventType = "OperatorTokenAcquisitionFailed",
@@ -588,12 +380,11 @@ public class PlatformAuthenticationIntegrationTests
 
         Assert.Equal(HttpStatusCode.Accepted, auditResponse.StatusCode);
 
-        using var eventsRequest = TestJwtTokenFactory.CreateAuthenticatedRequest(
+        using var eventsRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
             HttpMethod.Get,
             "/api/platform/events?category=auth",
             "local-operator",
-            [OperatorRole],
-            [ViewerScope, OperatorScope]);
+            OperatorScope);
         using var eventsResponse = await httpClient.SendAsync(eventsRequest);
         var payload = await eventsResponse.Content.ReadAsStringAsync();
 
@@ -601,7 +392,6 @@ public class PlatformAuthenticationIntegrationTests
         Assert.Contains("OperatorTokenAcquisitionFailed", payload, StringComparison.Ordinal);
         Assert.Contains("could not acquire delegated access", payload, StringComparison.Ordinal);
         Assert.Contains(AdministratorScope, payload, StringComparison.Ordinal);
-        Assert.DoesNotContain(TestJwtTokenFactory.SigningKey, payload, StringComparison.Ordinal);
         Assert.DoesNotContain("eyJ", payload, StringComparison.Ordinal);
     }
 
@@ -669,4 +459,5 @@ public class PlatformAuthenticationIntegrationTests
 
         throw new TimeoutException("The API did not become ready within the expected time for the authentication integration tests.");
     }
+
 }

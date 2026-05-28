@@ -16,7 +16,7 @@ public class PlatformThemeStateTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("unexpected")]
-    public void ParseThemeMode_NoStoredPreference_ReturnsDarkTheme(string? storedValue)
+    public void ParseThemeMode_ShouldReturnDark_WhenStoredPreferenceIsMissingOrUnknown(string? storedValue)
     {
         var result = PlatformThemeState.ParseThemeMode(storedValue);
 
@@ -30,7 +30,7 @@ public class PlatformThemeStateTests
     /// Why: the shared shell must restore the operator's explicit light-theme selection accurately.
     /// </summary>
     [Fact]
-    public void ParseThemeMode_LightPreference_ReturnsLightTheme()
+    public void ParseThemeMode_ShouldReturnLight_WhenStoredPreferenceIsLight()
     {
         var result = PlatformThemeState.ParseThemeMode("light");
 
@@ -44,20 +44,20 @@ public class PlatformThemeStateTests
     /// Why: the UI foundation depends on a stable Radzen theme mapping across the shared shell and refreshed pages.
     /// </summary>
     [Fact]
-    public void GetRadzenThemeName_SelectedTheme_ReturnsExpectedSoftwareTheme()
+    public void GetRadzenThemeName_ShouldReturnSoftwareThemeName_WhenThemeModeIsMapped()
     {
         Assert.Equal("software-dark", PlatformThemeState.GetRadzenThemeName(PlatformThemeMode.Dark));
         Assert.Equal("software", PlatformThemeState.GetRadzenThemeName(PlatformThemeMode.Light));
     }
 
     /// <summary>
-    /// Trace: regression.
+    /// Trace: FR6, FR7, NF10, NF11, TR2.
     /// Verifies: theme initialization can recover after JavaScript interop is unavailable on the first attempt.
     /// Expected: the first initialization attempt leaves the state uninitialized, and the next successful attempt restores and applies the stored browser theme.
     /// Why: interactive server rendering can delay browser storage access, so the shared shell must retry until the operator's saved theme is restored.
     /// </summary>
     [Fact]
-    public async Task EnsureInitializedAsync_InteropUnavailableInitially_RetriesSuccessfully()
+    public async Task EnsureInitializedAsync_ShouldRetryAndRestoreStoredTheme_WhenInteropIsUnavailableInitially()
     {
         var jsRuntime = new SequencedJsRuntime(
             (_, _) => throw new InvalidOperationException("JavaScript interop is not ready."),

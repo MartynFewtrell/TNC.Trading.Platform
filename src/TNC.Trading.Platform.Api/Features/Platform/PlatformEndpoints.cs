@@ -125,7 +125,7 @@ internal static class PlatformEndpoints
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
-        if (!TryResolveAuthAuditEvent(request, user, out var record))
+        if (!PlatformAuthAuditEventResolver.TryResolve(request, user, out var record))
         {
             return TypedResults.ValidationProblem(new Dictionary<string, string[]>
             {
@@ -146,7 +146,7 @@ internal static class PlatformEndpoints
                 Summary: record.Summary,
                 Details: new
                 {
-                    UserName = ResolveUserName(user),
+                    record.UserName,
                     Subject = user.FindFirstValue(ClaimTypes.NameIdentifier),
                     request.Path,
                     request.Scope,
@@ -165,37 +165,4 @@ internal static class PlatformEndpoints
             authenticationOptions.Value.Provider,
             authenticationOptions.Value.Authorization.RoleClaimType,
             authenticationOptions.Value.ApiAudience));
-
-    private static bool TryResolveAuthAuditEvent(
-        RecordAuthAuditEventRequest request,
-        ClaimsPrincipal user,
-        out (string Summary, string Severity) record)
-    {
-        var userName = ResolveUserName(user);
-
-        switch (request.EventType)
-        {
-            case var eventType when string.Equals(eventType, PlatformAuthenticationDefaults.AuditEvents.SignInCompleted, StringComparison.Ordinal):
-                record = ($"Operator {userName} completed sign-in.", "Information");
-                return true;
-            case var eventType when string.Equals(eventType, PlatformAuthenticationDefaults.AuditEvents.SignOutCompleted, StringComparison.Ordinal):
-                record = ($"Operator {userName} completed sign-out.", "Information");
-                return true;
-            case var eventType when string.Equals(eventType, PlatformAuthenticationDefaults.AuditEvents.AccessDenied, StringComparison.Ordinal):
-                record = ($"Operator {userName} was denied access to {request.Path ?? "a protected platform surface"}.", "Warning");
-                return true;
-            case var eventType when string.Equals(eventType, PlatformAuthenticationDefaults.AuditEvents.TokenAcquisitionFailed, StringComparison.Ordinal):
-                record = ($"Operator {userName} could not acquire delegated access for {request.Scope ?? "the requested scope set"}.", "Warning");
-                return true;
-            default:
-                record = default;
-                return false;
-        }
-    }
-
-    private static string ResolveUserName(ClaimsPrincipal user) =>
-        user.FindFirstValue(PlatformAuthenticationDefaults.Claims.PreferredUserName)
-        ?? user.FindFirstValue(PlatformAuthenticationDefaults.Claims.Name)
-        ?? user.Identity?.Name
-        ?? "unknown-operator";
 }

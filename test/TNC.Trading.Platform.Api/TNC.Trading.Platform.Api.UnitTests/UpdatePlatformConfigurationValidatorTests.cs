@@ -1,4 +1,5 @@
-using System.Reflection;
+﻿using TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration;
+using TNC.Trading.Platform.Api.Infrastructure.Platform;
 
 namespace TNC.Trading.Platform.Api.UnitTests;
 
@@ -13,13 +14,12 @@ public class UpdatePlatformConfigurationValidatorTests
     [Fact]
     public void Validate_ShouldThrowPlatformValidationException_WhenPlatformIsTestAndBrokerIsLive()
     {
-        var validator = ApiReflection.Create("TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration.UpdatePlatformConfigurationValidator");
+        var validator = new UpdatePlatformConfigurationValidator();
         var request = CreateRequest("Test", "Live", new TimeOnly(8, 0), new TimeOnly(16, 30));
 
-        var exception = Assert.ThrowsAny<Exception>(() => ApiReflection.Invoke(validator, "Validate", request));
-        Assert.Equal("PlatformValidationException", exception.GetType().Name);
+        var exception = Assert.Throws<PlatformValidationException>(() => validator.Validate(request));
 
-        var errors = (IReadOnlyDictionary<string, string[]>)exception.GetType().GetProperty("Errors")!.GetValue(exception)!;
+        var errors = exception.Errors;
         Assert.Contains("BrokerEnvironment", errors.Keys);
     }
 
@@ -32,20 +32,18 @@ public class UpdatePlatformConfigurationValidatorTests
     [Fact]
     public void Validate_ShouldThrowPlatformValidationException_WhenTradingWindowIsInvalid()
     {
-        var validator = ApiReflection.Create("TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration.UpdatePlatformConfigurationValidator");
+        var validator = new UpdatePlatformConfigurationValidator();
         var request = CreateRequest("Live", "Demo", new TimeOnly(16, 30), new TimeOnly(8, 0));
 
-        var exception = Assert.ThrowsAny<Exception>(() => ApiReflection.Invoke(validator, "Validate", request));
-        Assert.Equal("PlatformValidationException", exception.GetType().Name);
+        var exception = Assert.Throws<PlatformValidationException>(() => validator.Validate(request));
 
-        var errors = (IReadOnlyDictionary<string, string[]>)exception.GetType().GetProperty("Errors")!.GetValue(exception)!;
+        var errors = exception.Errors;
         Assert.Contains("TradingSchedule", errors.Keys.Single());
     }
 
-    private static object CreateRequest(string platformEnvironment, string brokerEnvironment, TimeOnly startOfDay, TimeOnly endOfDay)
+    private static UpdatePlatformConfigurationRequest CreateRequest(string platformEnvironment, string brokerEnvironment, TimeOnly startOfDay, TimeOnly endOfDay)
     {
-        var tradingSchedule = ApiReflection.Create(
-            "TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration.UpdateTradingScheduleRequest",
+        var tradingSchedule = new UpdateTradingScheduleRequest(
             startOfDay,
             endOfDay,
             new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday },
@@ -53,27 +51,23 @@ public class UpdatePlatformConfigurationValidatorTests
             Array.Empty<DateOnly>(),
             "UTC");
 
-        var retryPolicy = ApiReflection.Create(
-            "TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration.UpdateRetryPolicyRequest",
+        var retryPolicy = new UpdateRetryPolicyRequest(
             1,
             5,
             2,
             60,
             5);
 
-        var notificationSettings = ApiReflection.Create(
-            "TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration.UpdateNotificationSettingsRequest",
+        var notificationSettings = new UpdateNotificationSettingsRequest(
             "RecordedOnly",
             "owner@example.com");
 
-        var credentials = ApiReflection.Create(
-            "TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration.UpdateIgCredentialsRequest",
+        var credentials = new UpdateIgCredentialsRequest(
             "api-key",
             "identifier",
             "password");
 
-        return ApiReflection.Create(
-            "TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration.UpdatePlatformConfigurationRequest",
+        return new UpdatePlatformConfigurationRequest(
             platformEnvironment,
             brokerEnvironment,
             tradingSchedule,

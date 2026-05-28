@@ -11,6 +11,8 @@ This document explains how to build, run, validate, and troubleshoot the current
 
 The supported local runtime uses Docker-managed infrastructure.
 
+The AppHost remains the single local composition root, but its responsibilities are now split into focused support files for infrastructure registration, project registration, and shared environment wiring. The top-level `AppHost.cs` stays limited to builder creation, composition calls, and `Build().Run()`.
+
 AppHost starts:
 
 - SQL Server
@@ -20,7 +22,7 @@ AppHost starts:
 
 This mode is required because Keycloak is part of the local authentication stack and the in-memory SQL option is no longer a supported application runtime.
 
-Synthetic authentication and in-memory persistence remain available only for isolated automated tests. They are not a supported local application runtime. The synthetic interactive Web sign-in surface is enabled only by explicit test-harness configuration in the automated Web auth suites that require it.
+The distributed auth test suites use the real Aspire-managed AppHost and Keycloak runtime. There is no supported synthetic AppHost runtime path for local application startup or AppHost-backed distributed validation, although some lower-level unit tests still use dedicated test helpers that do not go through AppHost.
 
 ## Build
 
@@ -85,6 +87,8 @@ When the application is running, AppHost exposes links for:
 - Scalar UI in development
 - Mailpit UI
 
+Those links are part of the manual validation surface for this repository. After AppHost starts, confirm that each dashboard link resolves and that the Web UI endpoint matches the runtime listener output rather than a fixed launch-settings assumption.
+
 The operator UI entry point is `/` on the web application. In a signed-out browser session, that route immediately redirects to sign-in.
 
 Keycloak is exposed directly on its stable local port so browser-based authentication and the Keycloak admin console use the same origin as the Keycloak server itself. The AppHost dashboard Keycloak link opens the direct admin console endpoint at `http://localhost:8080/admin/master/console/`. Sign in there with the Keycloak admin username `keycloak-admin` and the Aspire-managed Keycloak admin password. Use `http://localhost:8080/` when you need the Keycloak server root instead.
@@ -114,12 +118,31 @@ If a local machine hits intermittent MSBuild child-node exits during repository-
 dotnet test -m:1
 ```
 
-The auth work package now also includes a dedicated Web unit test project for policy registration and operator-context mapping. It is included in the repository-wide `dotnet test` run.
+The auth work package now also includes a dedicated Web unit test project for policy registration, direct `PlatformApiClient` boundary coverage, and bUnit component coverage for the refreshed Blazor shell and operator pages. It is included in the repository-wide `dotnet test` run.
+
+The AppHost-backed Web functional and Web end-to-end auth suites validate the delivered Docker plus Keycloak topology directly. The API integration suite still prefers real Keycloak-issued bearer tokens for protected-route coverage, but it also retains a narrow synthetic slice that temporarily switches only the API project to the test auth provider so invalid JWT and claim-shape negatives can reach the API boundary deterministically. Web functional and browser suites use real sign-in helpers that discover listener URLs from AppHost runtime output instead of relying on fixed launch-settings ports, and each auth collection now reuses one AppHost-plus-Keycloak runtime so the retained distributed checks stay narrower and less flaky.
+
+The retained real-runtime auth matrix is intentionally small:
+
+- one Web E2E sign-in smoke from listener discovery to protected UI content
+- one Web functional post-sign-out fail-closed smoke
+- one Web functional insufficient-role route-denial smoke
+- one Web functional sign-out CSRF negative
 
 ### Manual validation
 
+Use the AppHost dashboard links or the runtime listener URLs emitted in AppHost output, then walk through this validation sequence:
+
+1. Confirm the AppHost links for the Web UI, API, Keycloak, Mailpit, and Scalar UI all resolve.
+2. Verify API liveness and readiness from the AppHost-exposed API listener.
+3. Open the Web UI root route and confirm the signed-out browser is redirected to the Keycloak-backed sign-in flow.
+4. Sign in with a seeded local account and confirm the expected protected Web experience loads for that role.
+5. Exercise one protected API route and one protected Web route through the real AppHost-managed runtime.
+6. Open Mailpit and confirm the UI is reachable.
+
 Verify these paths through the AppHost-exposed service URLs:
 
+- AppHost dashboard links for the Web UI, API, Keycloak, Mailpit, and Scalar UI
 - API liveness: `GET /health/live`
 - API readiness: `GET /health/ready`
 - Web UI entry route: `GET /`
@@ -128,6 +151,10 @@ Verify these paths through the AppHost-exposed service URLs:
 - protected Web configuration page: `GET /configuration`
 
 In development, also check the Scalar link from AppHost.
+
+When validating the Web UI manually, prefer the runtime listener URLs surfaced by the AppHost dashboard or console output rather than assuming `launchSettings.json` ports.
+
+For AppHost-backed distributed validation, use the same Docker plus Keycloak local runtime that the automated integration, functional, and end-to-end suites use. There is no supported synthetic AppHost runtime path for local startup or for AppHost-backed manual checks.
 
 ### Local authentication validation
 
@@ -189,6 +216,12 @@ Expected behavior:
 - open Keycloak through the direct local endpoint instead of an older proxied dashboard URL
 - use the AppHost Keycloak link after restarting AppHost, or browse to `http://localhost:8080/admin/master/console/`
 - if the problem persists after a branch change, reset the persisted local `keycloak` resource and retry
+
+### AppHost-backed auth tests fail to find the Web listener
+
+- confirm AppHost reached the running state and emitted the Web authentication entry URL in its console output
+- confirm Docker, Keycloak, and SQL containers are healthy before rerunning the suite
+- rerun after stopping stale AppHost processes so the real-runtime test helpers can discover the current listener set cleanly
 
 ### The UI shows degraded status
 

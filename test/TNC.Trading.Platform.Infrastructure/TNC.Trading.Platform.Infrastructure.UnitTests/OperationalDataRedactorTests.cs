@@ -1,4 +1,5 @@
-using System.Text.Json;
+﻿using System.Text.Json;
+using TNC.Trading.Platform.Infrastructure.Platform;
 
 namespace TNC.Trading.Platform.Infrastructure.UnitTests;
 
@@ -28,10 +29,7 @@ public class OperationalDataRedactorTests
             }
         };
 
-        var serialized = (string)InfrastructureReflection.InvokeStatic(
-            "TNC.Trading.Platform.Infrastructure.Platform.OperationalDataRedactor",
-            "Serialize",
-            payload)!;
+        var serialized = OperationalDataRedactor.Serialize(payload);
 
         using var json = JsonDocument.Parse(serialized);
         var items = json.RootElement.GetProperty("items").EnumerateArray().ToArray();
@@ -52,9 +50,7 @@ public class OperationalDataRedactorTests
     [Fact]
     public void RedactText_ShouldRedactSensitiveAssignments_WhenPlainTextContainsSecrets()
     {
-        var redacted = (string?)InfrastructureReflection.InvokeStatic(
-            "TNC.Trading.Platform.Infrastructure.Platform.OperationalDataRedactor",
-            "RedactText",
+        var redacted = OperationalDataRedactor.RedactText(
             "Authentication failed with password=super-secret and Authorization: Bearer abc123");
 
         Assert.NotNull(redacted);

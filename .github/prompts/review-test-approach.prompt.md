@@ -46,18 +46,25 @@ ${REVIEW_DEPTH="standard"} <!-- quick | standard | deep: controls how much detai
 - MUST: Review `requirements.md` in the target work package.
 - MUST: Review `technical-specification.md` when it exists in the target work package.
 - SHOULD: Review the existing numbered plan files in the target work package `plans/` folder when they exist.
+- MUST: Create the final review report as a physical markdown file on disk before returning the final answer.
+- MUST: Verify the target report file exists after writing it.
 - MUST: Never overwrite an existing review report file unless the user explicitly requests overwrite behavior.
 - MUST: Use an incremental three-digit numeric prefix for review report files, for example `001-work-package-test-review-report.md`, `002-work-package-test-review-report.md`, `003-work-package-test-review-report.md`.
 - MUST: Prefer the provided work-package artifacts and explicitly supplied paths before discovering additional repository files.
 - MUST: Inspect the current automated tests that relate to the work package and cite specific evidence using repository paths and, when practical, test class or method names.
+- MUST: Use the `run-coverlet` skill on appropriate test projects that materially support the reviewed work package, unless no suitable test project exists; if not run, explicitly state why.
+- MUST: Use the `run-stryker` skill on appropriate unit test projects that materially support the reviewed work package, unless no suitable unit test project exists; if not run, explicitly state why.
 - MUST: Map documented requirements and acceptance criteria to current tests, partial coverage, or missing coverage.
 - MUST: Identify where existing tests are too weak, including gaps in assertions, missing negative cases, boundary coverage, determinism, isolation, cleanup, requirement traceability, or test documentation comments.
 - MUST: Classify findings by test level where relevant (`unit`, `integration`, `E2E`, `functional`) and align recommendations with the repository testing approach.
 - MUST: Prefer strengthening or adding lower-level tests before recommending higher-level tests when the behavior can be validated without additional infrastructure.
 - MUST: Call out risks that are currently untested or under-tested, including security, authentication, authorization, configuration, data validation, error handling, and regression-prone flows when applicable.
+- MUST: Combine the relevant Coverlet coverage output into the final report, including the projects analyzed, report paths, and the material coverage findings that affect the review conclusions.
+- MUST: Combine the relevant Stryker mutation-testing output into the final report, including the projects analyzed, report paths, mutation score details when available, and any findings that materially affect the review conclusions.
 - MUST: Separate confirmed evidence from assumptions or missing-information notes.
 - MUST: Give each significant gap or risk a stable identifier such as `F1`, `F2`, and reuse those identifiers in recommendations and suggested next steps where practical.
 - MUST: Keep recommendations implementation-oriented enough that they can be converted into mitigation work items without re-discovering the core issue.
+- MUST: Explicitly fail the task when a physical markdown file cannot be created with the available tools.
 - MUST NOT: Claim a test exists unless you can point to the relevant file or symbol.
 - MUST NOT: Invent undocumented requirements or pretend coverage is complete when artifacts are missing.
 - MUST NOT: Recommend flaky patterns such as arbitrary time-based waits as a primary testing strategy.
@@ -77,23 +84,29 @@ ${REVIEW_DEPTH="standard"} <!-- quick | standard | deep: controls how much detai
 4. Discover the related implementation and automated test files under `src/` and `test/`.
    - Prefer files explicitly referenced by the work-package artifacts.
    - Expand the search only when needed to confirm or refute coverage.
-5. Build a requirement-to-test traceability view that shows covered, partially covered, and uncovered areas.
-6. Assess the quality of the existing tests, including assertion strength, negative-path coverage, determinism, test isolation, naming, documentation comments, and maintainability.
-7. Identify testing gaps, weak spots, and risks, assign stable finding identifiers, and prioritize them by impact and likelihood.
-8. Recommend concrete improvements, including where to strengthen existing tests, where to add new tests, and which test level is most appropriate for each recommendation.
+5. Identify appropriate test projects that materially support the reviewed work package, preferring focused unit test suites first and expanding to broader suites only when needed to establish meaningful coverage evidence.
+6. Use the `run-coverlet` skill for those appropriate test projects and capture the coverage output paths and material coverage findings.
+7. Identify appropriate unit test projects for mutation testing, preferring focused unit test suites over broader infrastructure-heavy suites unless mutation testing those broader suites is explicitly needed.
+8. Use the `run-stryker` skill for those appropriate unit test projects and capture mutation score details, notable survived mutant themes, blocking issues, and report output paths.
+9. Build a requirement-to-test traceability view that shows covered, partially covered, and uncovered areas.
+10. Assess the quality of the existing tests, including assertion strength, negative-path coverage, determinism, test isolation, naming, documentation comments, maintainability, code-coverage signal from the Coverlet runs, and mutation-testing signal from the Stryker runs.
+11. Identify testing gaps, weak spots, and risks, assign stable finding identifiers, and prioritize them by impact and likelihood.
+12. Recommend concrete improvements, including where to strengthen existing tests, where to add new tests, and which test level is most appropriate for each recommendation.
    - Reuse the finding identifiers in the recommendations and suggested next steps where practical.
-9. Write the final markdown report to a physical markdown file in the target work package.
+13. Write the final markdown report to a physical markdown file in the target work package.
    - Default path: `./docs/00x-work/001-work-package-test-review-report.md`
    - If one or more numbered review reports already exist, write to the next available prefixed file name such as `002-work-package-test-review-report.md` or `003-work-package-test-review-report.md`.
    - If the user provided a report path, use it only when it does not already exist; otherwise create a new report in the same folder using the next available three-digit prefix and the base file name.
    - Never overwrite an existing report file unless the user explicitly asks for overwrite behavior.
-   - Ensure the file content exactly matches the final output.
+   - Verify the file exists after writing.
+14. Return the final answer only after the physical markdown file has been created successfully.
+15. Ensure the final answer exactly matches the written file content.
 
 ## Output format
 
 Return a single markdown report that follows `.github/templates/test-review-report.template.md`.
 
-Where the template allows, format gaps, risks, recommendations, and suggested next steps so they can be consumed directly by the mitigation planning prompt. Reuse finding identifiers and requirement references consistently.
+Where the template allows, format gaps, risks, recommendations, and suggested next steps so they can be consumed directly by the mitigation planning prompt. Reuse finding identifiers and requirement references consistently. Include a coverage summary that combines the relevant Coverlet run output with the broader review findings. Include a mutation-testing summary that combines the relevant Stryker run output with the broader review findings.
 
 Also create a physical markdown file for the report inside the target work package.
 
@@ -101,6 +114,7 @@ Also create a physical markdown file for the report inside the target work packa
 - Default location: the target `./docs/00x-work/` folder being reviewed
 - If numbered review reports already exist, create the next available file using the same `NNN-work-package-test-review-report.md` naming pattern
 - If a report file path is provided and already exists, create a new sibling report using the next available `NNN-` prefix instead of overwriting
+- If a physical markdown file cannot be created, fail explicitly instead of returning a chat-only report
 
 The physical markdown file content must exactly match the final output.
 

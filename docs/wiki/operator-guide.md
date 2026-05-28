@@ -1,4 +1,4 @@
-﻿# Operator guide
+# Operator guide
 
 This guide explains how the current Blazor operator UI works, what information each page shows, and how the existing workflows behave.
 
@@ -31,7 +31,7 @@ The left navigation still changes based on the signed-in operator role.
 | `/configuration` | Operator-managed configuration, notification settings, trading-schedule values, and write-only IG credential updates. |
 | `/administration/authentication` | Administrator-only summary of the configured auth provider, role claim type, and protected API audience. |
 | `/authentication/sign-in` | Starts sign-in. In automated local tests this also lists the seeded local test users. |
-| `/authentication/sign-out` | Accepts an antiforgery-protected POST from the shared header and ends the platform session before returning to the UI entry route, which prompts for sign-in again. |
+| `/authentication/sign-out` | Requires an authenticated browser session, accepts an antiforgery-protected POST from the shared header, and ends the platform session before returning to the UI entry route, which prompts for sign-in again. |
 | `/authentication/access-denied` | Dedicated denied-access page for signed-in users who lack the required platform role. |
 
 ## Sign-in and sign-out
@@ -44,7 +44,7 @@ If the browser still has an authenticated platform cookie but no longer has a us
 
 - in lightweight local test runs, `/authentication/sign-in` lists the seeded local users used by automated tests
 - in container-assisted local runs, sign-in redirects the browser to Keycloak
-- sign-out submits an antiforgery-protected POST from the shared header, clears the platform cookie, and, for OpenID Connect providers, ends the identity-provider session before returning the operator to `/`
+- sign-out requires an authenticated browser session, submits an antiforgery-protected POST from the shared header, clears the platform cookie, and, for OpenID Connect providers, ends the identity-provider session before returning the operator to `/`
 
 If a pre-provisioned user authenticates without a platform role, the UI routes the user to `/authentication/access-denied`.
 
@@ -327,3 +327,4 @@ This usually means one of these conditions is true:
 - [Application overview](application-overview.md)
 - [API reference](api-reference.md)
 - [Runtime behavior](runtime-behavior.md)
+
