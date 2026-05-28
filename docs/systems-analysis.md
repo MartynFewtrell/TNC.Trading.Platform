@@ -368,9 +368,24 @@ Use `NFR1`, `NFR2`, ... for quality attributes.
 
 None at this stage.
 
-## 12. Work Package Candidates
+## 12. Work Packages
 
-List candidate work packages suggested by this analysis. Keep these as outcomes/capabilities, not implementation tasks. These are candidates only and may be merged, split, or re-ordered during delivery.
+This section tracks both the actual work packages created for delivery and the remaining candidate work packages suggested by this analysis. Actual delivery work packages may diverge from the original candidate list as discovery continues.
+
+### 12.1 Delivery status
+
+| Work package | Status | Summary | Notes |
+| --- | --- | --- | --- |
+| 001-project-scaffolding-and-devex | Complete | Established the baseline solution structure and local development workflow. | Completed delivery work package. |
+| 002-environment-and-auth-foundation | Complete | Established the environment and authentication foundation for the platform. | Completed delivery work package. |
+| 003-authentication-and-authorisation | Complete | Delivered local platform authentication and authorisation for operator access. | Completed delivery work package. |
+| 004-ui-update-and-refactor | Complete | Refreshed and refactored the operator UI. | Completed delivery work package. |
+| 005-refactor-app-host | Complete | Refactored the Aspire AppHost composition and aligned distributed validation with the real runtime topology. | Delivered as a focused refactoring slice in place of the original candidate `005-audit-ledger-and-record-retention`. |
+| 006-ig-login | In progress | Establish `IG` login and authenticated session continuity as a dedicated delivery slice. | Split from the earlier environment and broker-auth candidate scope to isolate the next increment of delivery work. |
+
+### 12.2 Candidate work packages
+
+List candidate work packages suggested by this analysis that remain useful for planning. These are capability-oriented candidates only and may still be merged, split, re-numbered, or superseded during delivery.
 
 | Candidate work package | Summary | Related BR IDs | Related UC IDs | Related SAR IDs | Related NFR IDs | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -391,7 +406,7 @@ List candidate work packages suggested by this analysis. Keep these as outcomes/
 | 015-operator-ui-and-ops-console | Provide an operator interface to select environment, manage tracked instruments, view operational status, and apply pause/resume/stop controls. | BR1, BR4, BR8, BR11 | UC1, UC3, UC8, UC9 |  | NFR2 | Initial scope is personal/internal use; no manual trading UX required. |
 | 016-end-of-day-flattening | Implement intraday-only end-of-day behavior to flatten positions, record outcomes, and stop and notify if flattening cannot be completed. | BR8, BR9, BR10, BR11 | UC11, UC10 | SAR7 | NFR2, NFR3 | End-of-day cut-off is fixed daily and configurable. |
 
-### 12.1 Suggested sequencing
+### 12.3 Suggested sequencing
 
 The following sequencing is informative only and is intended to reduce delivery risk:
 
