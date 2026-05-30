@@ -112,7 +112,7 @@ Returns HTTP `200 OK` when the service is ready to serve traffic.
 
 ## GET /api/platform/status
 
-Returns the current platform runtime state together with the current IG login projection and the latest stored non-secret successful login payload.
+Returns the current platform runtime state together with the current IG login projection, the latest stored non-secret successful login payload, and the latest read-only IG proof data snapshot.
 
 ### Response shape
 
@@ -147,7 +147,7 @@ Returns the current platform runtime state together with the current IG login pr
     "manualRetryAvailable": false
   },
   "updatedAtUtc": "2026-04-01T10:00:00+00:00",
-  "igLogin": {
+  "igLoginStatus": {
     "currentState": "Active",
     "scheduleState": {
       "isActive": true,
@@ -175,6 +175,13 @@ Returns the current platform runtime state together with the current IG login pr
         "Version": "3"
       },
       "rawNonSecretPayloadJson": "{\"currentAccountId\":\"configured-demo-session\",\"lightstreamerEndpoint\":null,\"expiresAtUtc\":null,\"headers\":{\"Version\":\"3\"}}"
+    },
+    "igProofData": {
+      "preferredAccountName": "Demo Account",
+      "preferredAccountId": "ACC12345",
+      "balance": 5000.00,
+      "openPositionCount": 2,
+      "retrievedAtUtc": "2026-04-01T09:59:46+00:00"
     }
   }
 }
@@ -192,16 +199,44 @@ Returns the current platform runtime state together with the current IG login pr
 | `authState.sessionStatus` | Current auth-related runtime state. |
 | `retryState.phase` | Current retry phase, such as `None`, `InitialAutomatic`, or `Periodic`. |
 | `retryState.manualRetryAvailable` | Indicates whether the manual retry command may currently be used. |
-| `igLogin.currentState` | Current IG login label source used by the UI to distinguish active, retrying, failed, blocked, and out-of-schedule states. |
-| `igLogin.scheduleState` | IG-specific copy of the current schedule context kept inside the status response so the UI can show current login state without another read call. |
-| `igLogin.retryState` | IG-specific retry context used for the current login-state presentation. |
-| `igLogin.latestSnapshot` | The latest stored successful non-secret IG login payload, including summary fields, non-secret response headers, and the raw non-secret JSON payload. |
+| `igLoginStatus.currentState` | Current IG login label source used by the UI to distinguish active, retrying, failed, blocked, and out-of-schedule states. |
+| `igLoginStatus.scheduleState` | IG-specific copy of the current schedule context kept inside the status response so the UI can show current login state without another read call. |
+| `igLoginStatus.retryState` | IG-specific retry context used for the current login-state presentation. |
+| `igLoginStatus.latestSnapshot` | The latest stored successful non-secret IG login payload, including summary fields, non-secret response headers, and the raw non-secret JSON payload. |
+| `igLoginStatus.igProofData` | The latest read-only IG Demo proof data snapshot, or `null` when no proof data has been captured yet. |
 
 ### Secret-safety notes
 
-- The `igLogin.latestSnapshot` object excludes credentials, session tokens, account-security tokens, and equivalent protected values.
+- The `igLoginStatus.latestSnapshot` object excludes credentials, session tokens, account-security tokens, and equivalent protected values.
+- The `igLoginStatus.igProofData` object is read-only and excludes credentials, session tokens, account-security tokens, and any write-capable context.
 - Only approved non-secret response headers are returned.
 - The UI expands the latest payload locally from this response; there is no separate latest-payload endpoint.
+
+### igLoginStatus.igProofData
+
+When proof data has been successfully retrieved after a Demo session, the `igProofData` field is populated:
+
+```json
+"igLoginStatus": {
+  "igProofData": {
+    "preferredAccountName": "Demo Account",
+    "preferredAccountId": "ACC12345",
+    "balance": 5000.00,
+    "openPositionCount": 2,
+    "retrievedAtUtc": "2025-01-15T10:30:00+00:00"
+  }
+}
+```
+
+When no proof data has been retrieved yet (for example, on first startup before an auth tick has completed), the field is `null`:
+
+```json
+"igLoginStatus": {
+  "igProofData": null
+}
+```
+
+The `igProofData` object is read-only and derived from IG Demo account and position queries. It does not contain session tokens, credentials, or any write-capable context.
 
 ## GET /api/platform/ig-login/history
 

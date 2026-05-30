@@ -9,10 +9,11 @@
 - **Business requirements**: `../business-requirements.md`
 - **Owner**: TNC Trading
 - **Date**: 2026-05-28
-- **Status**: draft
+- **Status**: active
 - **Outputs**:
   - `technical-specification.md`
   - `plans/001-delivery-plan.md`
+  - `plans/002-real-ig-demo-connection-delivery-plan.md`
 
 ### 1.1 Links
 
@@ -32,6 +33,8 @@
 
 This work package establishes authenticated access to the `IG` Test environment so the platform can safely connect to broker services and make the resulting broker session information available to the operator. It aligns primarily to `BR2` and `BR12` in `../business-requirements.md`, and to `UC2`, `UC9`, `SAR2`, `SAR8`, `NFR1`, `NFR2`, and `NFR3` in `../systems-analysis.md`.
 
+This work package has been clarified to target real IG Demo connectivity rather than a simulation-only outcome. The platform must make real outbound calls to `https://demo-api.ig.com/gateway/deal`, establish a genuine authenticated session, and retrieve read-only proof data (such as account context and open positions) to prove real Demo connectivity safely, without placing trades.
+
 The user has identified a concrete need to authenticate against the `IG` Test environment, capture the information returned from a successful login, store the required non-secret login response details, and make that stored information available for display on the UI. For this work package, the stored and displayed field set is the full non-secret login payload returned by `IG`, excluding credentials, secret/session tokens, and any equivalent protected authentication material. The platform must initiate login automatically on startup, maintain the `IG` login afterward, and expose the resulting status to the UI when it connects. The platform must also retain the latest successful payload and keep the first successful login payload of each day for 90 days. Retry behavior for failed startup or runtime login must follow the earlier auth foundation work package rather than being redefined here, and login maintenance must also follow the earlier trading-schedule rules for when the backend is allowed to maintain an `IG` login. This work package therefore covers startup login, maintained session state, failed login handling, observable status, and persistence of broker-returned account/session metadata that is safe to retain.
 
 ## 3. Scope
@@ -46,6 +49,8 @@ The user has identified a concrete need to authenticate against the `IG` Test en
 - Capture of the successful login response returned by `IG`.
 - Storage of the latest successful full non-secret login response payload and retention of the first successful login payload of each day for 90 days.
 - UI display of stored login, session, account, and account-list summary information after a successful login.
+- Real outbound IG Demo REST API calls using a typed `HttpClient` registered for the Demo base URL `https://demo-api.ig.com/gateway/deal`.
+- Read-only proof-data retrieval after successful login (for example, account/session context or open positions snapshot) to prove real Demo connectivity without trade placement.
 - UI access to current `IG` login status when the UI connects, including distinction between active, retrying, failed, and out-of-schedule states.
 - UI access to retained daily historical non-secret login payloads within the 90-day retention window.
 - Secret-safe recording of login outcomes and notable session state changes.
@@ -59,6 +64,7 @@ The user has identified a concrete need to authenticate against the `IG` Test en
 - Instrument discovery, market data subscriptions, or pricing freshness enforcement.
 - Strategy creation, execution, or trading automation.
 - Manual UI-initiated login as the primary login flow for this work package.
+- Simulation-only login paths — these are replaced by real IG Demo REST calls in this work package.
 - Live `IG` environment enablement.
 - Reporting features unrelated to login/session/account summary visibility.
 
@@ -140,7 +146,7 @@ The user has identified a concrete need to authenticate against the `IG` Test en
 
 ### 11.1 Assumptions
 
-- A valid `IG` Test account and API access are available for development and validation.
+- A valid IG Demo account, API key, and network connectivity to `https://demo-api.ig.com/gateway/deal` are available for development and validation.
 - The platform already has, or will provide in this work package, an operator-facing UI capable of showing login-related information.
 - The successful `IG` login response contains both protected values and non-secret account/session summary values, and the full non-secret subset is in scope for storage and display.
 - Retaining one historical payload per day for 90 days is sufficient for operator review needs.
@@ -158,6 +164,8 @@ The user has identified a concrete need to authenticate against the `IG` Test en
   - **Mitigation**: display current login state separately from stored login-summary data and make stale or failed states explicit.
 - **Startup dependency risk**: backend startup health may be affected if `IG` is unavailable when login is attempted.
   - **Mitigation**: reuse the earlier retry behavior, surface an explicit login state to the UI, and keep failure handling observable without exposing secrets.
+- **External dependency risk**: the IG Demo API may reject, throttle, or be unreachable during development or validation.
+  - **Mitigation**: deterministic automated tests use fake `HttpMessageHandler` implementations so `dotnet test` remains reliable; real-IG validation is explicit and opt-in, gated by user secrets or environment variables that are not committed to source control.
 
 ### 11.3 Dependencies
 

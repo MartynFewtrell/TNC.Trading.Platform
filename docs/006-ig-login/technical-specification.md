@@ -5,15 +5,15 @@ This document describes how work package `006-ig-login` will be implemented so t
 ## 1. Summary
 
 - **Source**: See `requirements.md` for canonical work metadata, scope, and requirement identifiers. See `../business-requirements.md` for project-level business context.
-- **Status**: draft
+- **Status**: active
 - **Input**: `requirements.md`, `../business-requirements.md`, `../systems-analysis.md`, and `../002-environment-and-auth-foundation/requirements.md`
-- **Output**: `plans/001-delivery-plan.md`
+- **Output**: `plans/001-delivery-plan.md`, `plans/002-real-ig-demo-connection-delivery-plan.md`
 
 ## 2. Problem and Context
 
 ### 2.1 Problem statement
 
-The platform needs a startup-driven `IG` Test login that is maintained by the backend, remains observable to the operator, and safely retains the broker-returned non-secret login payload for current review and short-term historical troubleshooting. This work package extends the existing environment/auth foundation rather than redefining retry, schedule, or secret-handling behavior.
+The platform must make real authenticated calls to the IG Demo REST API (`https://demo-api.ig.com/gateway/deal`) to establish a genuine session and retrieve read-only proof data. The simulated login path is replaced by this work package. The platform needs a startup-driven `IG` Test login that is maintained by the backend, remains observable to the operator, and safely retains the broker-returned non-secret login payload for current review and short-term historical troubleshooting. This work package extends the existing environment/auth foundation rather than redefining retry, schedule, or secret-handling behavior.
 
 ### 2.2 Assumptions
 
@@ -25,12 +25,15 @@ The platform needs a startup-driven `IG` Test login that is maintained by the ba
 - The dedicated `IG` login history page will show retained daily historical payloads only; the latest successful payload will remain on `/status`.
 - `/status` will show the latest successful login information as a compact summary with an expandable details section on the same page.
 - The full latest non-secret payload will be included in the existing `GET /api/platform/status` response so the UI can expand and collapse details locally without an additional read call.
+- A typed `HttpClient` named `IgDemoRestClient` targeting `https://demo-api.ig.com/gateway/deal` is registered via dependency injection and used exclusively in Test platform environments.
+- Live base URL calls remain blocked by the existing platform-environment guard; the Demo base URL is the only permitted outbound IG target in this environment.
 
 ### 2.3 Constraints
 
 - The implementation must satisfy `FR1`-`FR10`, `NF1`-`NF5`, `SR1`-`SR4`, `DR1`-`DR3`, `IR1`-`IR4`, `TR1`-`TR10`, and `OR1`-`OR3`.
 - Retry and schedule behavior must be reused from `../002-environment-and-auth-foundation/requirements.md`.
 - Unsupported live-environment login must remain blocked in constrained platform environments.
+- A real IG Demo HTTP client must be registered as a typed `HttpClient`; the Demo base URL `https://demo-api.ig.com/gateway/deal` is the only permitted outbound IG target in Test platform environments. Live base URL calls remain blocked.
 - Secrets, tokens, and equivalent protected authentication material must not be persisted, logged, serialized, or rendered.
 - API changes should follow the repository’s Minimal API plus vertical-slice request/response approach.
 - UI changes should align to the existing Blazor operator experience, with current-state information on `/status`, expandable latest-login details on the same page, and retained daily history on a dedicated page.
@@ -43,7 +46,7 @@ The platform needs a startup-driven `IG` Test login that is maintained by the ba
 Implement `IG` login as an extension of the current platform state supervision pipeline with four capabilities:
 
 1. **Startup and maintenance login execution**  
-   Extend the broker-auth workflow so startup login occurs automatically during permitted schedule periods and runtime session loss reuses the inherited recovery behavior.
+   Replace the simulated login path with a real `POST /session` call to the IG Demo REST API. Schedule gating, retry timing, degraded transitions, and blocked-live behavior remain unchanged from the inherited auth foundation.
 
 2. **Sanitized login snapshot capture**  
    Map each successful `IG` login response into an application-owned, secret-safe login snapshot model with an explicit allow-list of non-secret fields.
@@ -55,6 +58,9 @@ Implement `IG` login as an extension of the current platform state supervision p
 
 4. **Operator-facing read surfaces**  
    Extend the status surface for current login state and latest-success information, including expandable full latest-payload details on `/status`, and add a dedicated `IG` login history page for retained daily payload review.
+
+5. **Read-only proof-data retrieval**  
+   After successful login, issue one or more low-risk read-only queries (such as `GET /accounts` and/or `GET /positions`) to confirm real Demo data access. Proof query frequency is low and tied to meaningful runtime events (for example, immediately after a successful login) rather than a polling loop.
 
 This approach fits the existing repository because the current solution already has:
 - a platform startup coordination pattern;
@@ -154,6 +160,7 @@ The solution extends the current Application, Infrastructure, API, and Web layer
 | REST | `GET /api/platform/ig-login-history` | Returns retained daily first-successful login payloads and related metadata | New read slice |
 | Internal | `CaptureIgLoginResultRequest` / `CaptureIgLoginResultResponse` | Sanitized successful login capture command | Application-owned contract |
 | Internal | `GetIgLoginHistoryRequest` / `GetIgLoginHistoryResponse` | Retained history query | Follows vertical-slice pattern |
+| Internal | `IIgSessionClient` | `AuthenticateAsync`, `GetAccountsAsync`, `GetPositionsAsync` | Application-owned interface; implemented in Infrastructure as a typed `HttpClient` |
 
 ### 5.2 Data Model
 
@@ -168,7 +175,8 @@ The solution extends the current Application, Infrastructure, API, and Web layer
 
 | Step | Change | Files/Modules | Notes |
 | ---- | ------ | ------------- | ----- |
-| 1 | Define explicit non-secret `IG` login response mapping | Application and Infrastructure contracts | Allow-list, not raw pass-through |
+| 1 | Replace simulated `IgAuthenticateResponse` creation with a real `IIgSessionClient.AuthenticateAsync` call; introduce the typed `HttpClient` registration targeting `https://demo-api.ig.com/gateway/deal`. | Application and Infrastructure contracts | Allow-list, not raw pass-through |
+| 1a | Add proof-data models (`IgAccountsResponse`, `IgAccountSummary`, `IgPositionsResponse`, `IgPositionItem`) and proof-data query methods (`GetAccountsAsync`, `GetPositionsAsync`) to `IIgSessionClient`. | Application and Infrastructure contracts | Read-only Demo proof data |
 | 2 | Add persistence for latest and daily retained login snapshots | Infrastructure persistence and schema | 90-day retention |
 | 3 | Extend startup/session supervision to capture successful login payloads | `PlatformStateCoordinator`, application services, broker auth workflow | Reuse inherited retry/schedule logic |
 | 4 | Extend status query and response models with latest login information and expandable detail support | Application, API, Web status models | `/status` remains the current-state page |
@@ -198,6 +206,7 @@ The solution extends the current Application, Infrastructure, API, and Web layer
 | Retry policy | Controls degraded-state retry behavior | Existing values from work package `002` | SQL-backed operator-managed configuration |
 | Login history retention days | Controls retained daily snapshot cleanup | `90` | Application/infrastructure configuration |
 | Live-environment restriction | Blocks unsupported live login | Existing safeguard enabled | Platform environment rules |
+| IG Demo base URL | Typed `HttpClient` base address for outbound IG calls | `https://demo-api.ig.com/gateway/deal` | DI registration in Infrastructure |
 
 ## 6. Security Design
 
@@ -227,7 +236,7 @@ Describe how the solution meets `SRx` requirements.
 
 | Test type | Coverage | Location | Notes |
 | --------- | -------- | -------- | ----- |
-| Unit | Payload sanitization, mapping, snapshot selection, secret exclusion | `test/TNC.Trading.Platform.Application/TNC.Trading.Platform.Application.UnitTests` and `test/TNC.Trading.Platform.Infrastructure/TNC.Trading.Platform.Infrastructure.UnitTests` | xUnit with requirement-traceable comments |
+| Unit | Payload sanitization, mapping, snapshot selection, secret exclusion | `test/TNC.Trading.Platform.Application/TNC.Trading.Platform.Application.UnitTests` and `test/TNC.Trading.Platform.Infrastructure/TNC.Trading.Platform.Infrastructure.UnitTests` | xUnit with requirement-traceable comments. Include tests for IG REST request construction (JSON body, `X-IG-API-KEY` header, `Version` header), Demo base-URL selection, redaction of `X-IG-API-KEY`, `CST`, and `X-SECURITY-TOKEN`, and HTTP error-code classification. Opt-in real-IG tests must be guarded by user secrets or environment variables and must not run in default `dotnet test` execution. |
 | Integration | Startup login capture, degraded handling, retry/schedule inheritance, persistence of latest and retained snapshots, retention cleanup, blocked live path | `test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.IntegrationTests` and supporting infrastructure tests | Validate platform-owned contracts |
 | Functional | Operator can load current status, view latest login information, expand latest payload details, open dedicated history page, and distinguish failed vs out-of-schedule | `test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.FunctionalTests` | Use feature-based folder naming |
 | E2E | Optional closed-box verification of end-to-end UI/API flow | `test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.E2ETests` | Add only if needed |

@@ -69,3 +69,5 @@ These rules apply when adding or updating documentation for a unit of work. They
 ## Notes (optional)
 
 - This file enforces the repo’s iterative delivery documentation workflow.
+
+- For rules governing handoff files (the `handoffs/` subfolder, naming, required sections, and agent-report format), see `.github/instructions/handoffs.instructions.md`.

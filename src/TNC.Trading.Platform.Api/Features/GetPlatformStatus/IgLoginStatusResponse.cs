@@ -8,4 +8,5 @@ internal sealed record IgLoginStatusResponse(
     DateTimeOffset? LastSuccessfulLoginAtUtc,
     Guid? LatestSnapshotId,
     string? LatestFailureSummary,
-    IgLoginSnapshotResponse? LatestSnapshot);
+    IgLoginSnapshotResponse? LatestSnapshot,
+    IgProofDataResponse? LatestProofData);

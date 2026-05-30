@@ -10,7 +10,7 @@ namespace TNC.Trading.Platform.Infrastructure.Platform;
 internal sealed class SqlPlatformConfigurationStore(
     PlatformDbContext dbContext,
     IConfiguration configuration,
-    ProtectedCredentialService protectedCredentialService,
+    IProtectedCredentialService protectedCredentialService,
     TimeProvider timeProvider) : IPlatformConfigurationStore
 {
     public async Task<PlatformConfigurationSnapshot> ApplyStartupConfigurationAsync(CancellationToken cancellationToken)

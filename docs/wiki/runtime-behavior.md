@@ -24,8 +24,9 @@ At startup and during background execution, the application:
 3. checks whether the selected environment combination is allowed
 4. evaluates whether required credentials are present
 5. updates runtime auth state
-6. captures a secret-safe IG login snapshot after a successful backend auth transition
-7. records events and notifications when state changes matter
+6. retrieves read-only IG Demo proof data (account, balance, positions) after a successful session and persists the result as a non-secret `IgProofDataSnapshot`
+7. captures a secret-safe IG login snapshot after a successful backend auth transition
+8. records events and notifications when state changes matter
 
 ## Startup sequence
 
@@ -39,6 +40,8 @@ sequenceDiagram
     participant Config as PlatformConfigurationService
     participant Retention as OperationalRecordRetentionProcessor
     participant Coordinator as PlatformStateCoordinator
+    participant IgSessionClient as IgSessionClient
+    participant IgDemo as IG Demo REST API
 
     App->>Db: Ensure database exists
     App->>Config: Apply startup configuration
@@ -46,6 +49,11 @@ sequenceDiagram
     App->>Retention: Apply retention cleanup
     Retention-->>App: Deleted record count
     App->>Coordinator: Initial TickAsync
+    Coordinator->>IgSessionClient: AuthenticateAsync
+    IgSessionClient->>IgDemo: Authenticate and query proof data
+    IgDemo-->>IgSessionClient: Session tokens and account/position data
+    IgSessionClient-->>Coordinator: Auth result and proof data
+    Coordinator->>Coordinator: Persist latest proof snapshot and login snapshot
     Coordinator-->>App: Runtime state updated
     App-->>App: Start request pipeline and background supervisor
 ```
@@ -103,6 +111,8 @@ Retained daily snapshots older than 90 days are removed by the shared retention 
 
 The current status projection now also reads the latest successful snapshot back into `GET /api/platform/status` so the Web UI can show the current IG login state and expand the latest non-secret payload details without calling a second latest-snapshot endpoint.
 
+The same status projection also surfaces the latest `IgProofDataSnapshot` as `LatestProofData` when the platform has already captured read-only Demo proof data for the active broker environment.
+
 The latest snapshot projection currently includes:
 
 - snapshot identifier and capture time
@@ -114,6 +124,37 @@ The latest snapshot projection currently includes:
 - the raw non-secret payload JSON
 
 Protected values such as credentials, `CST`, `X-SECURITY-TOKEN`, and equivalent secrets remain excluded before persistence and before the status response is built.
+
+## Broker authentication execution
+
+When the trading schedule is active and credentials are complete, the platform now authenticates against IG by:
+
+- loading the selected environment's protected API key, identifier, and password through the runtime credential service
+- calling the IG session client instead of constructing a simulated authentication response
+- sanitizing the broker response before any operational-event payload is recorded
+- persisting only the approved non-secret snapshot fields from a successful response
+
+The returned `CST` and `X-SECURITY-TOKEN` values remain in memory only for the current authentication flow. They are not stored on runtime-state entities, login snapshots, status payloads, or operational-event details.
+
+### Failure classification
+
+When IG authentication fails, the degraded-state summary is classified into one of these operator-visible categories:
+
+- invalid or rejected credentials
+- access forbidden
+- request rate limit exceeded
+- unexpected broker response
+- request timed out
+- broker unreachable
+- unexpected error
+
+These summaries are secret-safe and feed the same degraded-state path that maintains retry scheduling and failure notification behavior.
+
+### Opt-in real IG smoke validation
+
+Deterministic automated coverage continues to use test doubles by default.
+
+Real IG smoke validation remains opt-in only. Supply credentials through user secrets or environment variables outside source control, then run the targeted broker-auth validation locally when you explicitly want to verify live Demo connectivity. Do not enable this path in the default `dotnet test` workflow.
 
 ## State transitions
 
@@ -369,6 +410,7 @@ flowchart TD
     Combination -->|No| Credentials{Credentials complete?}
     Credentials -->|No| Degraded[Set Degraded state with missing-credential reason]
     Credentials -->|Yes| Active[Set Active state or continue retry-cycle logic]
+    Active --> ProofData[Capture IG Demo proof data and persist latest snapshot]
     Degraded --> ManualRetry{Manual retry allowed?}
     ManualRetry -->|Yes| RetryCycle[Start or reset retry cycle]
     ManualRetry -->|No| Wait[Keep blocked actions visible]

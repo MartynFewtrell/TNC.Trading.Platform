@@ -73,6 +73,7 @@ Applies to: `**/*`
 - `./.github/instructions/docs.instructions.md`
 - `./.github/instructions/dotnet-stack.instructions.md`
 - `./.github/instructions/folders.instructions.md`
+- `./.github/instructions/handoffs.instructions.md`
 - `./.github/instructions/playwright.instructions.md`
 - `./.github/instructions/radzen-blazor.instructions.md`
 - `./.github/instructions/scalar.instructions.md`

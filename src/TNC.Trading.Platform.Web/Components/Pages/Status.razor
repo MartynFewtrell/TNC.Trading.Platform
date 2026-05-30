@@ -170,6 +170,31 @@ else
         </section>
     </PlatformAccordionSection>
 
+    <PlatformAccordionSection Title="IG Demo proof data" IsOpen="false">
+        <section class="panel" data-testid="status-ig-proof-data-panel">
+            @if (status.IgLogin.LatestProofData is null)
+            {
+                <p data-testid="ig-proof-data-empty">No IG Demo proof data has been retrieved yet.</p>
+            }
+            else
+            {
+                <dl class="platform-key-value-grid">
+                    <dt>Preferred account</dt>
+                    <dd data-testid="ig-proof-account-name">@(status.IgLogin.LatestProofData.PreferredAccountName ?? "Unknown")</dd>
+                    <dt>Account ID</dt>
+                    <dd data-testid="ig-proof-account-id">@(status.IgLogin.LatestProofData.PreferredAccountId ?? "Unknown")</dd>
+                    <dt>Balance</dt>
+                    <dd data-testid="ig-proof-balance">@(status.IgLogin.LatestProofData.Balance?.ToString("F2") ?? "Unavailable")</dd>
+                    <dt>Open positions</dt>
+                    <dd data-testid="ig-proof-position-count">@status.IgLogin.LatestProofData.OpenPositionCount</dd>
+                    <dt>Retrieved at</dt>
+                    <dd data-testid="ig-proof-retrieved-at">@status.IgLogin.LatestProofData.RetrievedAtUtc.ToLocalTime().ToString("g")</dd>
+                </dl>
+                <p class="hint" data-testid="ig-proof-data-source">Data sourced from IG Demo (read-only). No trades or orders have been placed.</p>
+            }
+        </section>
+    </PlatformAccordionSection>
+
     <PlatformAccordionSection Title="Recent auth events" IsOpen="false">
         <section class="panel">
             @if (events.Events.Count == 0)

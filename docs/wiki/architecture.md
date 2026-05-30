@@ -11,7 +11,7 @@ The solution currently uses a small distributed-application layout:
 - a Blazor Server app provides the operator UI
 - application and infrastructure concerns are split into separate projects
 - feature endpoints in the API remain thin and delegate to application handlers
-- successful backend IG auth transitions now also produce a secret-safe persisted login snapshot for current and historical review
+- successful backend IG auth transitions now also produce a secret-safe persisted login snapshot and read-only proof data for current and historical review
 
 ## Solution structure
 
@@ -22,6 +22,7 @@ flowchart TD
     Api[Api\nMinimal API]
     App[Application]
     Infra[Infrastructure]
+    IgDemo[(IG Demo REST API)]
     Defaults[ServiceDefaults]
     Tests[Test projects]
 
@@ -32,6 +33,7 @@ flowchart TD
     Api --> App
     Api --> Infra
     Infra --> App
+    Infra --> IgDemo
     Tests --> AppHost
     Tests --> Web
     Tests --> Api
@@ -135,6 +137,7 @@ The `TNC.Trading.Platform.Application` project contains:
 - `TradingScheduleGate` for in-schedule evaluation
 - `PlatformStateCoordinator` for current-state orchestration
 - `PlatformAuthSupervisor` as the background loop that repeatedly ticks runtime state
+- proof-data projection models and application-level abstractions for IG Demo read-only capture
 
 ### Coordinator responsibilities
 
@@ -145,6 +148,7 @@ The `TNC.Trading.Platform.Application` project contains:
 - applies blocked-live rules
 - reacts to missing credentials
 - captures a secret-safe IG login snapshot when a backend auth transition succeeds
+- retrieves read-only IG Demo proof data after successful auth and stores the latest non-secret snapshot
 - updates retry state
 - records operational events
 - dispatches notification workflows
@@ -160,9 +164,24 @@ The `TNC.Trading.Platform.Infrastructure` project contains:
 - runtime-state storage
 - retry-cycle storage
 - IG login snapshot storage for the latest successful payload and retained daily first-successful history
+- the outbound `IgSessionClient` / `IIgSessionClient` adapter for the IG Demo REST API
+- in-memory proof-data storage for the latest read-only IG Demo account snapshot
 - operational-event storage, including persisted operator auth audit history
 - notification providers
 - retention processing for operational records
+
+## IG REST client and token boundary
+
+The `IgSessionClient` infrastructure adapter issues authenticated HTTP calls to the IG Demo REST API at `https://demo-api.ig.com/gateway/deal`.
+
+Session tokens returned by IG (`CST` and `X-SECURITY-TOKEN`) are consumed transiently within the same `PlatformStateCoordinator` tick that received the authentication response. They are:
+
+- never written to the `platformdb` database
+- never included in any API response
+- never surfaced in the Blazor UI or operator log output
+- passed directly from the `IgAuthenticateResponse` into the proof-data query calls and then discarded
+
+The `IgProofDataSnapshot` that is persisted to the in-memory store contains only safe read fields: account name, account ID, balance, open-position count, and the retrieval timestamp.
 
 ## AppHost composition responsibilities
 

@@ -2,7 +2,11 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Infrastructure.Ig;
 using TNC.Trading.Platform.Application.Services;
+using TNC.Trading.Platform.Infrastructure.Infrastructure.Platform;
+using TNC.Trading.Platform.Infrastructure.Infrastructure.Platform.Ig;
 using TNC.Trading.Platform.Infrastructure.Notifications;
 using TNC.Trading.Platform.Infrastructure.Persistence;
 using AppNotificationDispatcher = TNC.Trading.Platform.Application.Services.INotificationDispatcher;
@@ -40,6 +44,7 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         });
 
         services.AddScoped<ProtectedCredentialService>();
+        services.AddScoped<IProtectedCredentialService>(serviceProvider => serviceProvider.GetRequiredService<ProtectedCredentialService>());
         services.AddScoped<IPlatformConfigurationStore, SqlPlatformConfigurationStore>();
         services.AddScoped<IPlatformRuntimeStateStore, EfPlatformRuntimeStateStore>();
         services.AddScoped<IPlatformIgLoginSnapshotStore, EfPlatformIgLoginSnapshotStore>();
@@ -51,6 +56,13 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         services.AddScoped<AppNotificationDispatcher, NotificationDispatcher>();
         services.AddScoped<OperationalRecordRetentionProcessor>();
         services.AddHostedService<OperationalRecordRetentionService>();
+
+        services.AddSingleton<IPlatformIgProofDataStore, InMemoryPlatformIgProofDataStore>();
+
+        services.AddHttpClient<IIgSessionClient, IgSessionClient>(client =>
+        {
+            client.BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/");
+        });
 
         return services;
     }

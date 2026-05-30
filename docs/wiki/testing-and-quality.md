@@ -46,6 +46,7 @@ The unit tests cover:
 - blocked-live safety behavior
 - notification suppression and retry-cycle updates
 - schedule evaluation
+- proof-data query paths, including successful capture, accounts-query failure, positions-query failure, fallback account selection, status projection with proof data, and status projection with null proof data
 
 The application unit suites now prefer direct compile-time access to internal coordinator, schedule, and IG sanitization types instead of generic string-based reflection helpers. The only supporting seam added for this hardening was an internal visibility expansion for the test projects together with making the targeted retry-cycle helper callable as an internal member, so renamed members now fail at compile time rather than surfacing as runtime reflection errors.
 
@@ -73,6 +74,7 @@ The API tests cover:
 - invalid issuer, invalid audience, invalid signature, expired, and no-role bearer-token fail-closed behavior
 - viewer, operator, and administrator bearer-token access behavior across status, configuration, manual-retry, events, and administrator auth-summary endpoints
 - current `/api/platform/status` contract coverage for IG login current-state detail and the latest stored non-secret login payload embedded in the existing response
+- `GetPlatformStatusMappingTests` validation of the `IgProofDataResponse` contract shape for both populated and null cases
 - persisted operator auth audit-event recording through the protected API boundary for sign-in, sign-out, access-denied, and token-acquisition-failure outcomes
 - validation-problem payloads for unsupported or malformed auth-audit event submissions
 - display-name fallback behavior for auth-audit summaries when `preferred_username`, `name`, or both claims are absent
@@ -118,6 +120,23 @@ The current suite ownership is intentionally pyramid-shaped so the repository ke
 | Refreshed Blazor shell and operator-page rendering | Web unit tests with bUnit | Manual responsive and theme checks only |
 
 The current real-runtime auth matrix is intentionally narrow: one browser sign-in smoke, one functional sign-out smoke, one functional insufficient-role smoke, and one functional CSRF negative. Broader route matrices, role-policy checks, API-boundary checks, and rendered-component checks now live in lower-level suites so the distributed layer stays small and evidence-driven.
+
+## Deterministic vs. real-IG validation
+
+All proof-data tests in `TNC.Trading.Platform.Application.UnitTests` and `TNC.Trading.Platform.Api.UnitTests` use fake implementations of `IIgSessionClient` and `IPlatformIgProofDataStore`. Running `dotnet test` without any additional configuration is fully deterministic and does not require IG credentials or network access.
+
+### Opt-in real-IG smoke verification
+
+A real IG Demo session can be verified manually by:
+
+1. Starting the platform through AppHost: `dotnet run --project src/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.csproj`
+2. Navigating to `/configuration` and entering valid IG Demo credentials
+3. Waiting for the next background supervisor tick (typically a few seconds)
+4. Navigating to `/status` and confirming:
+   - The "IG login" accordion shows a successful state and a recent `LastSuccessfulLoginAtUtc` timestamp
+   - The "IG Demo proof data" accordion shows real account data with a recent `Retrieved at` timestamp
+
+This manual path requires valid IG Demo credentials and network access to `https://demo-api.ig.com`. It is not required for normal `dotnet test` runs and should not be used as a substitute for the deterministic unit test suite.
 
 ## Refreshed quality evidence for work package 005
 

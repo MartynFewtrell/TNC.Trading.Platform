@@ -126,6 +126,8 @@ It shows:
 - last successful login time
 - latest failure summary when one exists
 
+The latest failure summary is classified into clear operator-facing messages such as invalid credentials, forbidden access, request timeout, rate limiting, broker unreachability, or an unexpected broker response. These messages remain secret-safe and never include the configured API key, identifier, password, `CST`, or `X-SECURITY-TOKEN` values.
+
 When a successful IG login payload has been captured, the same panel also exposes an expandable **Latest successful IG login payload details** area.
 
 The expandable details show:
@@ -137,7 +139,29 @@ The expandable details show:
 - stored non-secret response headers
 - the raw non-secret payload JSON captured from the latest successful login
 
+Session tokens returned by IG are intentionally excluded from the details area. The expandable payload shows only the approved non-secret snapshot fields persisted by the backend.
+
 The details area is intentionally current-state-focused. It shows the latest successful payload only and does not replace the future retained-history experience.
+
+### IG Demo proof data panel
+
+The status page also includes an accordion section titled **IG Demo proof data**.
+
+It appears alongside the IG login panel as a standard grouped status section. Operators can leave it collapsed when they only need a quick login summary or expand it when they want to review the latest read-only proof snapshot.
+
+When no proof data has been captured yet, the expanded panel shows the empty-state message: **No IG Demo proof data has been retrieved yet**.
+
+When proof data is available, the panel shows:
+
+- **Preferred account** — the display name of the account marked as preferred in the IG Demo account list, or the first account when no preference is set
+- **Account ID** — the IG account identifier for the preferred account
+- **Balance** — the preferred account balance in the account's base currency, formatted to two decimal places
+- **Open positions** — the number of currently open positions in the Demo account
+- **Retrieved at** — the local time when the proof data was last successfully captured
+
+The hint text shown in the panel is: **Data sourced from IG Demo (read-only). No trades or orders have been placed.**
+
+The proof-data view is refreshed after each successful Demo auth tick. It is not continuously polled.
 
 ## IG login history page
 

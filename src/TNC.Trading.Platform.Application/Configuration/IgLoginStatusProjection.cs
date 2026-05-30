@@ -8,4 +8,5 @@ internal sealed record IgLoginStatusProjection(
     DateTimeOffset? LastSuccessfulLoginAtUtc,
     Guid? LatestSnapshotId,
     string? LatestFailureSummary,
-    IgLoginSnapshot? LatestSnapshot);
+    IgLoginSnapshot? LatestSnapshot,
+    IgProofDataSnapshot? LatestProofData);

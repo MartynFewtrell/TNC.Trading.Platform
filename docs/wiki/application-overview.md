@@ -34,11 +34,19 @@ The implemented application is focused on:
 - retry-state tracking, retry-limit handling, and manual retry initiation
 - local notification validation through Mailpit when infrastructure containers are enabled
 
-### Important current limitation
+### Current IG Demo connectivity and proof data
 
-The platform does not yet perform real IG authentication, price streaming, instrument discovery, order execution, or strategy automation.
+The platform now establishes a real authenticated session against the IG Demo REST API on each scheduled auth tick.
 
-Instead, the current codebase models and exposes the operational control plane needed before those features are added:
+After a successful Demo session, the platform performs read-only proof-data queries for account information and open positions as a safe connectivity check. The result is persisted as non-secret proof data and surfaced on the status page and through the API.
+
+This workflow is read-only:
+
+- no trades are placed
+- no orders are submitted
+- no account-changing or write-capable IG operations are issued
+
+The proof data includes the preferred account name, account ID, balance, open-position count, and retrieval timestamp. The platform also continues to expose the operational control plane needed around that connectivity:
 
 - configuration state
 - schedule state
@@ -46,6 +54,7 @@ Instead, the current codebase models and exposes the operational control plane n
 - auth degradation and recovery state
 - retry policy and retry-cycle visibility
 - notification and audit records
+- IG Demo login snapshot capture and retained proof data for safe operator review
 
 ## Solution projects
 

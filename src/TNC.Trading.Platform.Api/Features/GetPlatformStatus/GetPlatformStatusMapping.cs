@@ -59,6 +59,14 @@ internal static class GetPlatformStatusMapping
                         status.IgLoginStatus.LatestSnapshot.LightstreamerEndpoint,
                         status.IgLoginStatus.LatestSnapshot.SessionExpiresAtUtc,
                         status.IgLoginStatus.LatestSnapshot.ResponseHeaders,
-                        status.IgLoginStatus.LatestSnapshot.RawNonSecretPayloadJson)));
+                        status.IgLoginStatus.LatestSnapshot.RawNonSecretPayloadJson),
+                status.IgLoginStatus.LatestProofData is null
+                    ? null
+                    : new IgProofDataResponse(
+                        status.IgLoginStatus.LatestProofData.PreferredAccountName,
+                        status.IgLoginStatus.LatestProofData.PreferredAccountId,
+                        status.IgLoginStatus.LatestProofData.Balance,
+                        status.IgLoginStatus.LatestProofData.OpenPositionCount,
+                        status.IgLoginStatus.LatestProofData.RetrievedAtUtc)));
     }
 }
