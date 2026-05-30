@@ -24,7 +24,8 @@ At startup and during background execution, the application:
 3. checks whether the selected environment combination is allowed
 4. evaluates whether required credentials are present
 5. updates runtime auth state
-6. records events and notifications when state changes matter
+6. captures a secret-safe IG login snapshot after a successful backend auth transition
+7. records events and notifications when state changes matter
 
 ## Startup sequence
 
@@ -85,15 +86,34 @@ The schedule gate returns:
 
 ## Auth-state behavior
 
-The current implementation does not yet perform real broker authentication.
-
-Instead, it models the auth state needed by the rest of the control plane. The coordinator uses environment rules, schedule rules, and credential presence to decide what the runtime auth state should be.
+The runtime coordinator applies environment rules, schedule rules, and credential presence to decide what the auth state should be.
 
 This runtime auth-state model is distinct from the operator sign-in model:
 
 - operator sign-in uses standards-based OIDC/OAuth flows through Keycloak locally and Azure-aligned configuration for Microsoft Entra ID
 - automated tests may opt into the synthetic test provider through explicit test-harness composition
-- operator role boundaries are enforced independently of the simulated broker auth-state projection
+- operator role boundaries are enforced independently of the broker auth-state projection
+
+When a backend auth transition succeeds, the coordinator now persists:
+
+- one latest successful IG login snapshot for the active broker environment
+- one retained first-successful snapshot per trading day
+
+Retained daily snapshots older than 90 days are removed by the shared retention processor, while the independently addressable latest snapshot remains available.
+
+The current status projection now also reads the latest successful snapshot back into `GET /api/platform/status` so the Web UI can show the current IG login state and expand the latest non-secret payload details without calling a second latest-snapshot endpoint.
+
+The latest snapshot projection currently includes:
+
+- snapshot identifier and capture time
+- trading day
+- current account identifier
+- Lightstreamer endpoint when supplied
+- session expiry when supplied
+- approved non-secret response headers
+- the raw non-secret payload JSON
+
+Protected values such as credentials, `CST`, `X-SECURITY-TOKEN`, and equivalent secrets remain excluded before persistence and before the status response is built.
 
 ## State transitions
 
@@ -222,8 +242,14 @@ Operational events are stored for later review.
 ### Example event types seen in the code and tests
 
 - `AuthAttempted`
-- `ManualRetryRequested`
+- `Authenticated`
+- `FailureDetected`
+- `Recovered`
+- `SessionExpired`
+- `TradingScheduleInactive`
 - `BlockedLiveAttempt`
+- `SnapshotCaptured` (recorded when a successful IG login snapshot is persisted, including trading day and account identifier in the details; no protected values included)
+- `ManualRetryRequested`
 - operator session audit events such as `OperatorSignInCompleted`, `OperatorSignOutCompleted`, `OperatorAccessDenied`, and `OperatorTokenAcquisitionFailed`
 - notification-related event types such as `AuthFailure`, `AuthRecovered`, and `RetryLimitReached`
 
@@ -305,6 +331,18 @@ The processor currently applies retention to:
 - operational events
 - configuration audits
 - notification records
+- retained daily IG login snapshots (the `RetainedDailyFirstSuccessful` kind; the independently addressable latest snapshot is not subject to automatic age-based removal)
+
+### IG login snapshot retention
+
+Two kinds of IG login snapshot are stored:
+
+| Kind | Meaning | Retention |
+| --- | --- | --- |
+| `Latest` | The most recent successful login result for the active broker environment. | Always retained; overwritten by a newer successful login. |
+| `RetainedDailyFirstSuccessful` | The first successful login result for each trading day. One entry per day. | Removed after 90 days by the retention processor. |
+
+The retained daily snapshots are accessible through `GET /api/platform/ig-login/history`. The latest snapshot is included directly in `GET /api/platform/status` so the UI can expand payload details without a second read call.
 
 ## Local infrastructure behavior
 

@@ -1,5 +1,6 @@
 ﻿@page "/status"
 @attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Viewer)]
+@using System.Text.Json
 @inject PlatformApiClient PlatformApiClient
 @inject PlatformNavigationAccessCoordinator NavigationAccessCoordinator
 @inject PlatformOperatorContextAccessor OperatorContextAccessor
@@ -106,6 +107,69 @@ else
         </section>
     </PlatformAccordionSection>
 
+    <PlatformAccordionSection Title="IG login" IsOpen="false">
+        <section class="panel" data-testid="status-ig-login-panel">
+            <dl class="platform-key-value-grid">
+                <dt>Current login state</dt>
+                <dd data-testid="ig-current-state-value">@GetCurrentIgLoginState(status)</dd>
+                <dt>Schedule context</dt>
+                <dd data-testid="ig-schedule-context-value">@(status.IgLogin.ScheduleState.IsActive ? "In schedule" : "Out of schedule")</dd>
+                <dt>Schedule reason</dt>
+                <dd data-testid="ig-schedule-reason-value">@status.IgLogin.ScheduleState.Reason</dd>
+                <dt>Retry context</dt>
+                <dd data-testid="ig-retry-context-value">@GetRetryContext(status.IgLogin.RetryState)</dd>
+                <dt>Last attempt</dt>
+                <dd data-testid="ig-last-attempt-value">@(status.IgLogin.LastAttemptAtUtc?.ToLocalTime().ToString("g") ?? "None")</dd>
+                <dt>Last successful login</dt>
+                <dd data-testid="ig-last-success-value">@(status.IgLogin.LastSuccessfulLoginAtUtc?.ToLocalTime().ToString("g") ?? "None")</dd>
+                <dt>Latest failure summary</dt>
+                <dd data-testid="ig-latest-failure-value">@(status.IgLogin.LatestFailureSummary ?? "None")</dd>
+            </dl>
+
+            @if (status.IgLogin.LatestSnapshot is null)
+            {
+                <p data-testid="ig-latest-payload-empty">No successful IG login payload has been captured yet.</p>
+            }
+            else
+            {
+                <details data-testid="ig-latest-payload-details">
+                    <summary>Latest successful IG login payload details</summary>
+                    <dl class="platform-key-value-grid">
+                        <dt>Captured at</dt>
+                        <dd data-testid="ig-latest-payload-captured-at-value">@status.IgLogin.LatestSnapshot.CapturedAtUtc.ToLocalTime().ToString("g")</dd>
+                        <dt>Trading day</dt>
+                        <dd data-testid="ig-latest-payload-trading-day-value">@status.IgLogin.LatestSnapshot.TradingDay</dd>
+                        <dt>Current account</dt>
+                        <dd data-testid="ig-latest-payload-account-value">@status.IgLogin.LatestSnapshot.CurrentAccountId</dd>
+                        <dt>Lightstreamer endpoint</dt>
+                        <dd data-testid="ig-latest-payload-lightstreamer-value">@(status.IgLogin.LatestSnapshot.LightstreamerEndpoint ?? "None")</dd>
+                        <dt>Session expiry</dt>
+                        <dd data-testid="ig-latest-payload-expiry-value">@(status.IgLogin.LatestSnapshot.SessionExpiresAtUtc?.ToLocalTime().ToString("g") ?? "Not supplied")</dd>
+                    </dl>
+
+                    <h3>Response headers</h3>
+
+                    @if (status.IgLogin.LatestSnapshot.ResponseHeaders.Count == 0)
+                    {
+                        <p data-testid="ig-latest-payload-headers-empty">No non-secret response headers were stored.</p>
+                    }
+                    else
+                    {
+                        <ul data-testid="ig-latest-payload-headers-list">
+                            @foreach (var header in status.IgLogin.LatestSnapshot.ResponseHeaders.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase))
+                            {
+                                <li><strong>@header.Key:</strong> @header.Value</li>
+                            }
+                        </ul>
+                    }
+
+                    <h3>Raw non-secret payload</h3>
+                    <pre data-testid="ig-latest-payload-json">@FormatPayloadJson(status.IgLogin.LatestSnapshot.RawNonSecretPayloadJson)</pre>
+                </details>
+            }
+        </section>
+    </PlatformAccordionSection>
+
     <PlatformAccordionSection Title="Recent auth events" IsOpen="false">
         <section class="panel">
             @if (events.Events.Count == 0)
@@ -194,6 +258,76 @@ else
         {
             manualRetryInProgress = false;
             await LoadAsync();
+        }
+    }
+
+    private static string GetCurrentIgLoginState(PlatformStatusViewModel currentStatus)
+    {
+        if (!currentStatus.IgLogin.ScheduleState.IsActive
+            || string.Equals(currentStatus.IgLogin.CurrentState, "OutOfSchedule", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Out of schedule";
+        }
+
+        if (string.Equals(currentStatus.IgLogin.CurrentState, "Active", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Active";
+        }
+
+        if (!string.Equals(currentStatus.IgLogin.RetryState.Phase, "None", StringComparison.OrdinalIgnoreCase)
+            || currentStatus.IgLogin.RetryState.NextRetryAtUtc is not null)
+        {
+            return "Retrying";
+        }
+
+        if (string.Equals(currentStatus.IgLogin.CurrentState, "Blocked", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Blocked";
+        }
+
+        if (string.Equals(currentStatus.IgLogin.CurrentState, "Unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Not signed in";
+        }
+
+        if (currentStatus.AuthState.IsDegraded
+            || string.Equals(currentStatus.IgLogin.CurrentState, "Degraded", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Failed";
+        }
+
+        return currentStatus.IgLogin.CurrentState;
+    }
+
+    private static string GetRetryContext(RetryStateViewModel retryState)
+    {
+        if (string.Equals(retryState.Phase, "None", StringComparison.OrdinalIgnoreCase))
+        {
+            return "No retry scheduled";
+        }
+
+        var nextRetry = retryState.NextRetryAtUtc?.ToLocalTime().ToString("g") ?? "pending";
+        return $"{retryState.Phase} (attempt {retryState.AutomaticAttemptNumber}, next retry {nextRetry})";
+    }
+
+    private static string FormatPayloadJson(string rawPayloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(rawPayloadJson))
+        {
+            return "{}";
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(rawPayloadJson);
+            return JsonSerializer.Serialize(document.RootElement, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+        }
+        catch (JsonException)
+        {
+            return rawPayloadJson;
         }
     }
 }

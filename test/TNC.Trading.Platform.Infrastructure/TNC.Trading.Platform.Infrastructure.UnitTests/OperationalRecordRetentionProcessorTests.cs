@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Configuration;
+using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Infrastructure.Persistence;
 using TNC.Trading.Platform.Infrastructure.Platform;
 
@@ -24,6 +25,9 @@ public class OperationalRecordRetentionProcessorTests
         dbContext.Add(CreateConfigurationAudit(now.AddDays(-5), "recent-audit"));
         dbContext.Add(CreateNotificationRecord(now.AddDays(-91), "expired-notification"));
         dbContext.Add(CreateNotificationRecord(now.AddDays(-5), "recent-notification"));
+        dbContext.Add(CreateIgLoginSnapshot(now.AddDays(-91), IgLoginSnapshotKind.RetainedDailyFirstSuccessful, "expired-login-snapshot"));
+        dbContext.Add(CreateIgLoginSnapshot(now.AddDays(-5), IgLoginSnapshotKind.RetainedDailyFirstSuccessful, "recent-login-snapshot"));
+        dbContext.Add(CreateIgLoginSnapshot(now.AddDays(-120), IgLoginSnapshotKind.Latest, "latest-login-snapshot"));
         await dbContext.SaveChangesAsync();
 
         var configuration = new ConfigurationBuilder()
@@ -41,10 +45,28 @@ public class OperationalRecordRetentionProcessorTests
 
         var deletedCount = await processor.ApplyAsync(CancellationToken.None);
 
-        Assert.Equal(3, deletedCount);
+        Assert.Equal(4, deletedCount);
         Assert.Equal(1, dbContext.OperationalEvents.Count());
         Assert.Equal(1, dbContext.ConfigurationAudits.Count());
         Assert.Equal(1, dbContext.NotificationRecords.Count());
+        Assert.Equal(2, dbContext.IgLoginSnapshots.Count());
+    }
+
+    private static IgLoginSnapshotEntity CreateIgLoginSnapshot(DateTimeOffset capturedAtUtc, IgLoginSnapshotKind snapshotKind, string currentAccountId)
+    {
+        return new IgLoginSnapshotEntity
+        {
+            IgLoginSnapshotId = Guid.NewGuid(),
+            BrokerEnvironment = "Demo",
+            CapturedAtUtc = capturedAtUtc,
+            TradingDay = DateOnly.FromDateTime(capturedAtUtc.UtcDateTime),
+            SnapshotKind = snapshotKind.ToString(),
+            CurrentAccountId = currentAccountId,
+            LightstreamerEndpoint = "https://stream.example.test",
+            SessionExpiresAtUtc = capturedAtUtc.AddHours(1),
+            ResponseHeadersJson = "{\"Version\":\"3\"}",
+            RawNonSecretPayloadJson = "{}"
+        };
     }
 
     private static OperationalEventEntity CreateOperationalEvent(DateTimeOffset occurredAtUtc, string summary)

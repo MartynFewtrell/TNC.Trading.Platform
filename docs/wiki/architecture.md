@@ -11,6 +11,7 @@ The solution currently uses a small distributed-application layout:
 - a Blazor Server app provides the operator UI
 - application and infrastructure concerns are split into separate projects
 - feature endpoints in the API remain thin and delegate to application handlers
+- successful backend IG auth transitions now also produce a secret-safe persisted login snapshot for current and historical review
 
 ## Solution structure
 
@@ -143,6 +144,7 @@ The `TNC.Trading.Platform.Application` project contains:
 - evaluates the trading schedule
 - applies blocked-live rules
 - reacts to missing credentials
+- captures a secret-safe IG login snapshot when a backend auth transition succeeds
 - updates retry state
 - records operational events
 - dispatches notification workflows
@@ -157,6 +159,7 @@ The `TNC.Trading.Platform.Infrastructure` project contains:
 - SQL-backed configuration storage
 - runtime-state storage
 - retry-cycle storage
+- IG login snapshot storage for the latest successful payload and retained daily first-successful history
 - operational-event storage, including persisted operator auth audit history
 - notification providers
 - retention processing for operational records
@@ -181,6 +184,7 @@ The current `PlatformDbContext` stores these entities:
 | `ProtectedCredentialEntity` | Protected IG credential values by broker environment and credential type. |
 | `AuthRuntimeStateEntity` | Current runtime auth and retry projection. |
 | `AuthRetryCycleEntity` | Retry-cycle tracking and scheduling metadata. |
+| `IgLoginSnapshotEntity` | Secret-safe latest-success and retained daily IG login payload snapshots. |
 | `OperationalEventEntity` | Append-style operational event history. |
 | `ConfigurationAuditEntity` | Auditable record of configuration changes. |
 | `NotificationRecordEntity` | Recorded notification dispatch outcomes. |

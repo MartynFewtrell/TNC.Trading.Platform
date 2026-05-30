@@ -13,6 +13,7 @@ The implemented application is focused on:
 - storing operator-managed configuration durably
 - protecting IG credentials through write-only update flows
 - exposing current runtime and retry state through protected API and Blazor surfaces
+- capturing and retaining secret-safe IG login snapshot data from successful backend auth transitions
 - recording operational and notification history
 - preparing the platform for later broker, market-data, and trading features
 
@@ -29,6 +30,7 @@ The implemented application is focused on:
 - in-memory persistence fallback when no SQL connection string is available
 - protected credential storage using ASP.NET Core Data Protection
 - operational event recording and notification recording
+- secret-safe latest IG login snapshot persistence plus one retained first-successful snapshot per trading day
 - retry-state tracking, retry-limit handling, and manual retry initiation
 - local notification validation through Mailpit when infrastructure containers are enabled
 
@@ -154,6 +156,7 @@ The current implementation persists or models the following record types:
 - protected credentials
 - auth runtime state
 - auth retry cycles
+- IG login snapshots for the latest successful payload and retained daily history
 - operational events, including operator authentication audit history
 - configuration audits
 - notification records

@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Api.Features.GetIgLoginHistory;
 using TNC.Trading.Platform.Api.Features.GetPlatformConfiguration;
 using TNC.Trading.Platform.Api.Features.GetPlatformEvents;
 using TNC.Trading.Platform.Api.Features.GetPlatformStatus;
@@ -11,6 +12,7 @@ using TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration;
 using TNC.Trading.Platform.Api.Infrastructure.Platform;
 using TNC.Trading.Platform.Application.Authentication;
 using TNC.Trading.Platform.Application.Services;
+using AppGetIgLoginHistory = TNC.Trading.Platform.Application.Features.GetIgLoginHistory;
 using AppGetPlatformConfiguration = TNC.Trading.Platform.Application.Features.GetPlatformConfiguration;
 using AppGetPlatformEvents = TNC.Trading.Platform.Application.Features.GetPlatformEvents;
 using AppGetPlatformStatus = TNC.Trading.Platform.Application.Features.GetPlatformStatus;
@@ -29,6 +31,8 @@ internal static class PlatformEndpoints
         var platform = app.MapGroup("/api/platform");
 
         platform.MapGet("/status", GetPlatformStatusAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Viewer);
+        platform.MapGet("/ig-login/history", GetIgLoginHistoryAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Viewer);
         platform.MapGet("/configuration", GetPlatformConfigurationAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
@@ -53,6 +57,13 @@ internal static class PlatformEndpoints
     private static async Task<IResult> GetPlatformStatusAsync(AppGetPlatformStatus.GetPlatformStatusHandler handler, CancellationToken cancellationToken)
     {
         var result = await handler.HandleAsync(new AppGetPlatformStatus.GetPlatformStatusRequest(), cancellationToken);
+
+        return TypedResults.Ok(result.ToResponse());
+    }
+
+    private static async Task<IResult> GetIgLoginHistoryAsync(AppGetIgLoginHistory.GetIgLoginHistoryHandler handler, CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(new AppGetIgLoginHistory.GetIgLoginHistoryRequest(), cancellationToken);
 
         return TypedResults.Ok(result.ToResponse());
     }

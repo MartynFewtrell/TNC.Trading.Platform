@@ -10,6 +10,7 @@ internal sealed class PlatformStateCoordinator(
     IConfiguration configuration,
     PlatformConfigurationService platformConfigurationService,
     IPlatformRuntimeStateStore runtimeStateStore,
+    IPlatformIgLoginSnapshotStore igLoginSnapshotStore,
     IPlatformRetryCycleStore retryCycleStore,
     IPlatformEventStore eventStore,
     INotificationDispatcher notificationDispatcher,
@@ -28,6 +29,15 @@ internal sealed class PlatformStateCoordinator(
         var currentConfiguration = await GetRuntimeConfigurationAsync(currentState, cancellationToken).ConfigureAwait(false);
         var scheduleStatus = tradingScheduleGate.Evaluate(currentConfiguration.TradingSchedule, timeProvider.GetUtcNow());
         ApplyRuntimeContext(currentConfiguration, currentState, scheduleStatus);
+        var retryState = new PlatformRetryState(
+            currentState.RetryPhase,
+            currentState.AutomaticAttemptNumber,
+            currentState.NextRetryAtUtc,
+            currentState.RetryLimitReached,
+            currentState.RetryLimitReached && scheduleStatus.IsActive && currentState.SessionStatus == PlatformSessionStatus.Degraded);
+        var latestSnapshot = await igLoginSnapshotStore
+            .GetLatestSnapshotAsync(currentConfiguration.BrokerEnvironment, cancellationToken)
+            .ConfigureAwait(false);
 
         return new PlatformStatusModel(
             currentConfiguration.PlatformEnvironment,
@@ -39,13 +49,17 @@ internal sealed class PlatformStateCoordinator(
             currentState.SessionStatus,
             currentState.IsDegraded,
             currentState.BlockedReason,
-            new PlatformRetryState(
-                currentState.RetryPhase,
-                currentState.AutomaticAttemptNumber,
-                currentState.NextRetryAtUtc,
-                currentState.RetryLimitReached,
-                currentState.RetryLimitReached && scheduleStatus.IsActive && currentState.SessionStatus == PlatformSessionStatus.Degraded),
-            currentState.LastTransitionAtUtc ?? currentConfiguration.UpdatedAtUtc);
+            retryState,
+            currentState.LastTransitionAtUtc ?? currentConfiguration.UpdatedAtUtc,
+            new IgLoginStatusProjection(
+                currentState.SessionStatus.ToString(),
+                scheduleStatus,
+                retryState,
+                currentState.LastLoginAttemptAtUtc,
+                currentState.LastSuccessfulLoginAtUtc,
+                currentState.LatestIgLoginSnapshotId,
+                currentState.LatestFailureSummary,
+                latestSnapshot));
     }
 
     public async Task<IReadOnlyList<OperationalEventModel>> GetEventsAsync(string? category, string? environment, CancellationToken cancellationToken)
@@ -141,6 +155,18 @@ internal sealed class PlatformStateCoordinator(
         if (HasSessionExpired(currentState, now))
         {
             await HandleSessionExpiredAsync(currentConfiguration, currentState, cancellationToken).ConfigureAwait(false);
+            await runtimeStateStore.SaveAsync(currentState, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (currentState.SessionStatus == PlatformSessionStatus.Degraded
+            && currentState.RetryPhase != AuthRetryPhase.None
+            && currentState.NextRetryAtUtc is not null
+            && currentState.NextRetryAtUtc > now)
+        {
+            currentState.LastValidatedAtUtc = now;
+            await runtimeStateStore.SaveAsync(currentState, cancellationToken).ConfigureAwait(false);
+            return;
         }
 
         if (currentConfiguration.Credentials.IsComplete)
@@ -161,12 +187,16 @@ internal sealed class PlatformStateCoordinator(
 
         if (currentConfiguration.Credentials.IsComplete)
         {
+            currentState.LastLoginAttemptAtUtc = now;
             var authAttemptCorrelationId = CreateCorrelationId();
             await RecordAuthAttemptAsync(currentConfiguration, retryCycleId, authAttemptCorrelationId, cancellationToken).ConfigureAwait(false);
+
+            var successfulSnapshot = await CaptureSuccessfulLoginSnapshotAsync(currentConfiguration, now, currentState.IsDegraded, cancellationToken).ConfigureAwait(false);
 
             currentState.SessionStatus = PlatformSessionStatus.Active;
             currentState.IsDegraded = false;
             currentState.BlockedReason = null;
+            currentState.LatestFailureSummary = null;
             currentState.RetryPhase = AuthRetryPhase.None;
             currentState.AutomaticAttemptNumber = 0;
             currentState.NextRetryAtUtc = null;
@@ -175,6 +205,8 @@ internal sealed class PlatformStateCoordinator(
             currentState.ExpiresAtUtc = now.Add(GetSessionLifetime());
             currentState.LastValidatedAtUtc = now;
             currentState.LastTransitionAtUtc = now;
+            currentState.LastSuccessfulLoginAtUtc = successfulSnapshot.CapturedAtUtc;
+            currentState.LatestIgLoginSnapshotId = successfulSnapshot.Id;
 
             await UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, cycleType, failureNotificationSent: false, lastDelaySeconds: null, cancellationToken).ConfigureAwait(false);
 
@@ -197,6 +229,7 @@ internal sealed class PlatformStateCoordinator(
         currentState.SessionStatus = PlatformSessionStatus.Degraded;
         currentState.IsDegraded = true;
         currentState.BlockedReason = MissingCredentialsBlockedReason;
+        currentState.LatestFailureSummary = MissingCredentialsBlockedReason;
         currentState.RetryPhase = AuthRetryPhase.InitialAutomatic;
         currentState.AutomaticAttemptNumber = 0;
         var nextDelay = GetDelayBeforeAttempt(currentConfiguration.RetryPolicy, 1);
@@ -234,6 +267,7 @@ internal sealed class PlatformStateCoordinator(
         currentState.SessionStatus = PlatformSessionStatus.OutOfSchedule;
         currentState.IsDegraded = false;
         currentState.BlockedReason = reason;
+        currentState.LatestFailureSummary = null;
         currentState.RetryPhase = AuthRetryPhase.None;
         currentState.AutomaticAttemptNumber = 0;
         currentState.NextRetryAtUtc = null;
@@ -274,6 +308,7 @@ internal sealed class PlatformStateCoordinator(
         currentState.SessionStatus = PlatformSessionStatus.Blocked;
         currentState.IsDegraded = true;
         currentState.BlockedReason = blockedReason;
+        currentState.LatestFailureSummary = blockedReason;
         currentState.RetryPhase = AuthRetryPhase.None;
         currentState.AutomaticAttemptNumber = 0;
         currentState.NextRetryAtUtc = null;
@@ -312,9 +347,11 @@ internal sealed class PlatformStateCoordinator(
 
         var wasDegraded = currentState.IsDegraded;
         var retryCycleId = currentState.CurrentRetryCycleId;
+        var now = timeProvider.GetUtcNow();
+        currentState.LastLoginAttemptAtUtc = now;
         var authAttemptCorrelationId = CreateCorrelationId();
         await RecordAuthAttemptAsync(currentConfiguration, retryCycleId, authAttemptCorrelationId, cancellationToken).ConfigureAwait(false);
-        var sanitizedAuthResponse = IgAuthenticationResponseSanitizer.Sanitize(new IgAuthenticateResponse(
+        var simulatedResponse = new IgAuthenticateResponse(
             "configured-demo-session",
             null,
             null,
@@ -325,16 +362,21 @@ internal sealed class PlatformStateCoordinator(
                 ["CST"] = wasDegraded ? "cst-token" : null,
                 ["X-SECURITY-TOKEN"] = wasDegraded ? "security-token" : null,
                 ["Version"] = "3"
-            }));
+            });
+        var sanitizedAuthResponse = IgAuthenticationResponseSanitizer.Sanitize(simulatedResponse);
+        var successfulSnapshot = await CaptureSuccessfulLoginSnapshotAsync(currentConfiguration, now, simulatedResponse, cancellationToken).ConfigureAwait(false);
 
         currentState.SessionStatus = PlatformSessionStatus.Active;
         currentState.IsDegraded = false;
         currentState.BlockedReason = null;
+        currentState.LatestFailureSummary = null;
         currentState.RetryPhase = AuthRetryPhase.None;
         currentState.AutomaticAttemptNumber = 0;
         currentState.NextRetryAtUtc = null;
         currentState.RetryLimitReached = false;
-        currentState.EstablishedAtUtc = timeProvider.GetUtcNow();
+        currentState.LastSuccessfulLoginAtUtc = successfulSnapshot.CapturedAtUtc;
+        currentState.LatestIgLoginSnapshotId = successfulSnapshot.Id;
+        currentState.EstablishedAtUtc = now;
         currentState.ExpiresAtUtc = currentState.EstablishedAtUtc.Value.Add(GetSessionLifetime());
         currentState.LastValidatedAtUtc = currentState.EstablishedAtUtc;
         currentState.LastTransitionAtUtc = currentState.EstablishedAtUtc;
@@ -431,6 +473,7 @@ internal sealed class PlatformStateCoordinator(
         currentState.SessionStatus = PlatformSessionStatus.Degraded;
         currentState.IsDegraded = true;
         currentState.BlockedReason = MissingCredentialsBlockedReason;
+        currentState.LatestFailureSummary = MissingCredentialsBlockedReason;
         currentState.RetryPhase = AuthRetryPhase.None;
         currentState.AutomaticAttemptNumber = 0;
         currentState.NextRetryAtUtc = null;
@@ -473,11 +516,13 @@ internal sealed class PlatformStateCoordinator(
         currentState.SessionStatus = PlatformSessionStatus.Degraded;
         currentState.IsDegraded = true;
         currentState.BlockedReason = "The active IG demo session expired and is being re-established.";
+        currentState.LatestFailureSummary = currentState.BlockedReason;
         currentState.RetryPhase = AuthRetryPhase.InitialAutomatic;
         currentState.AutomaticAttemptNumber = 0;
         currentState.NextRetryAtUtc = now.AddSeconds(nextDelay);
         currentState.RetryLimitReached = false;
         currentState.CurrentRetryCycleId = Guid.NewGuid();
+        currentState.LastLoginAttemptAtUtc = now;
         currentState.EstablishedAtUtc = null;
         currentState.ExpiresAtUtc = null;
         currentState.LastValidatedAtUtc = now;
@@ -511,6 +556,56 @@ internal sealed class PlatformStateCoordinator(
         return currentState.SessionStatus == PlatformSessionStatus.Active
             && currentState.ExpiresAtUtc is not null
             && currentState.ExpiresAtUtc <= now;
+    }
+
+    private async Task<IgLoginSnapshot> CaptureSuccessfulLoginSnapshotAsync(
+        PlatformConfigurationSnapshot currentConfiguration,
+        DateTimeOffset capturedAtUtc,
+        bool includeTokenValues,
+        CancellationToken cancellationToken)
+    {
+        var response = new IgAuthenticateResponse(
+            "configured-demo-session",
+            null,
+            null,
+            includeTokenValues ? "cst-token" : null,
+            includeTokenValues ? "security-token" : null,
+            new Dictionary<string, string?>
+            {
+                ["CST"] = includeTokenValues ? "cst-token" : null,
+                ["X-SECURITY-TOKEN"] = includeTokenValues ? "security-token" : null,
+                ["Version"] = "3"
+            });
+
+        return await CaptureSuccessfulLoginSnapshotAsync(currentConfiguration, capturedAtUtc, response, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IgLoginSnapshot> CaptureSuccessfulLoginSnapshotAsync(
+        PlatformConfigurationSnapshot currentConfiguration,
+        DateTimeOffset capturedAtUtc,
+        IgAuthenticateResponse response,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = IgLoginSnapshotMapper.MapLatestSnapshot(currentConfiguration.BrokerEnvironment, response, capturedAtUtc);
+        await igLoginSnapshotStore.CaptureSuccessfulSnapshotAsync(snapshot, cancellationToken).ConfigureAwait(false);
+
+        await WriteOperationalEventAsync(
+            currentConfiguration,
+            "auth",
+            "SnapshotCaptured",
+            $"IG login snapshot captured for trading day {snapshot.TradingDay:d}.",
+            new
+            {
+                snapshot.Id,
+                snapshot.TradingDay,
+                snapshot.CurrentAccountId
+            },
+            "Information",
+            CreateCorrelationId(),
+            null,
+            cancellationToken).ConfigureAwait(false);
+
+        return snapshot;
     }
 
     internal Task UpsertRetryCycleAsync(

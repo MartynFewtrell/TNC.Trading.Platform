@@ -5,7 +5,7 @@ This plan describes how work package `006-ig-login` will be delivered in increme
 ## Summary
 
 - **Source**: See `../requirements.md` for canonical work metadata (work item, owner, dates, links) and scope. See `../../business-requirements.md` for project-level business context.
-- **Status**: draft
+- **Status**: complete
 - **Inputs**:
   - `../../business-requirements.md`
   - `../requirements.md`
@@ -53,24 +53,24 @@ Before starting *any* work item, and again before marking a work item as complet
 ### Work Item 1 details
 
 - [ ] Work Item 1: Backend login capture and persistence
-  - [ ] Build and test baseline established
-  - [ ] Task 1: Define secret-safe `IG` login snapshot contracts and mapping
-    - [ ] Step 1: Introduce application-owned models for the latest snapshot, retained daily snapshot, and status projection updates.
-    - [ ] Step 2: Implement an explicit allow-list mapper for approved non-secret `IG` login response fields and reject or ignore protected fields.
-    - [ ] Step 3: Add unit tests that verify full non-secret payload capture and exclusion of credentials, tokens, and equivalent secrets.
-  - [ ] Task 2: Add persistence and retention support for latest and daily snapshots
-    - [ ] Step 1: Add or update infrastructure persistence/schema support for `IgLoginSnapshot`, retained daily history, and related read models.
-    - [ ] Step 2: Ensure only one first-successful snapshot per trading day is retained while the latest successful snapshot remains independently addressable.
-    - [ ] Step 3: Add retention processing for removal of retained daily snapshots older than 90 days.
-  - [ ] Task 3: Integrate startup login and runtime supervision with inherited behavior from work package `002`
-    - [ ] Step 1: Extend startup coordination and broker auth workflow to capture successful login results during permitted schedule windows.
-    - [ ] Step 2: Reuse inherited retry, degraded-state, schedule, and live-environment guard behavior rather than redefining it locally.
-    - [ ] Step 3: Update the backend status projection so failed, retrying, active, signed-out, and out-of-schedule states remain accurate over time.
-  - [ ] Relevant `docs/wiki/` pages updated to reflect the implemented changes
-  - [ ] Build and test validation
+  - [x] Build and test baseline established
+  - [x] Task 1: Define secret-safe `IG` login snapshot contracts and mapping
+    - [x] Step 1: Introduce application-owned models for the latest snapshot, retained daily snapshot, and status projection updates.
+    - [x] Step 2: Implement an explicit allow-list mapper for approved non-secret `IG` login response fields and reject or ignore protected fields.
+    - [x] Step 3: Add unit tests that verify full non-secret payload capture and exclusion of credentials, tokens, and equivalent secrets.
+  - [x] Task 2: Add persistence and retention support for latest and daily snapshots
+    - [x] Step 1: Add or update infrastructure persistence/schema support for `IgLoginSnapshot`, retained daily history, and related read models.
+    - [x] Step 2: Ensure only one first-successful snapshot per trading day is retained while the latest successful snapshot remains independently addressable.
+    - [x] Step 3: Add retention processing for removal of retained daily snapshots older than 90 days.
+  - [x] Task 3: Integrate startup login and runtime supervision with inherited behavior from work package `002`
+    - [x] Step 1: Extend startup coordination and broker auth workflow to capture successful login results during permitted schedule windows.
+    - [x] Step 2: Reuse inherited retry, degraded-state, schedule, and live-environment guard behavior rather than redefining it locally.
+    - [x] Step 3: Update the backend status projection so failed, retrying, active, signed-out, and out-of-schedule states remain accurate over time.
+  - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
+  - [x] Build and test validation
 
   - **Files**:
-    - `src/TNC.Trading.Platform.Application/Services/PlatformStateCoordinator.cs`: extend startup/session supervision to capture and project `IG` login state.
+    - `src/TNC.Trading.Platform.Application/Services/PlatformStateCoordinator.cs`: extend startup/session supervision
     - `src/TNC.Trading.Platform.Application/Features/GetPlatformStatus/*`: update application status contracts and handlers for backend login projection support.
     - `src/TNC.Trading.Platform.Infrastructure/*`: add sanitized mapping, persistence, and retention support for login snapshots.
     - `src/TNC.Trading.Platform.Infrastructure/Infrastructure/Platform/OperationalRecordRetentionProcessor.cs`: align retained snapshot cleanup if shared retention infrastructure is reused.
@@ -81,18 +81,18 @@ Before starting *any* work item, and again before marking a work item as complet
 
 ### Work Item 2 details
 
-- [ ] Work Item 2: Current status API and `/status` UI
-  - [ ] Build and test baseline established
-  - [ ] Task 1: Extend the status API contract for current `IG` state and latest payload details
-    - [ ] Step 1: Add latest snapshot fields, auth state detail, schedule state, and retry context to the application and API `GetPlatformStatus` contracts.
-    - [ ] Step 2: Keep the latest full non-secret payload inside the existing status response so the UI can expand details without another read call.
-    - [ ] Step 3: Add contract and integration tests to verify the status endpoint remains secret-safe and accurately reflects backend-maintained state.
-  - [ ] Task 2: Update `/status` to present current state and expandable latest payload details
-    - [ ] Step 1: Update `Status.razor` and related UI models/components to display current login state, environment, schedule context, and retry context.
-    - [ ] Step 2: Add an expandable details area for the latest non-secret payload and clearly label it as current latest successful login information.
-    - [ ] Step 3: Add functional/UI tests to confirm operators can distinguish failed, retrying, active, and out-of-schedule states without ambiguity.
-  - [ ] Relevant `docs/wiki/` pages updated to reflect the implemented changes
-  - [ ] Build and test validation
+- [x] Work Item 2: Current status API and `/status` UI
+  - [x] Build and test baseline established
+  - [x] Task 1: Extend the status API contract for current `IG` state and latest payload details
+    - [x] Step 1: Add latest snapshot fields, auth state detail, schedule state, and retry context to the application and API `GetPlatformStatus` contracts.
+    - [x] Step 2: Keep the latest full non-secret payload inside the existing status response so the UI can expand details without another read call.
+    - [x] Step 3: Add contract and integration tests to verify the status endpoint remains secret-safe and accurately reflects backend-maintained state.
+  - [x] Task 2: Update `/status` to present current state and expandable latest payload details
+    - [x] Step 1: Update `Status.razor` and related UI models/components to display current login state, environment, schedule context, and retry context.
+    - [x] Step 2: Add an expandable details area for the latest non-secret payload and clearly label it as current latest successful login information.
+    - [x] Step 3: Add functional/UI tests to confirm operators can distinguish failed, retrying, active, and out-of-schedule states without ambiguity.
+  - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
+  - [x] Build and test validation
 
   - **Files**:
     - `src/TNC.Trading.Platform.Application/Features/GetPlatformStatus/*`: extend application status query/response models.
@@ -105,22 +105,22 @@ Before starting *any* work item, and again before marking a work item as complet
 
 ### Work Item 3 details
 
-- [ ] Work Item 3: Retained history API, UI, and operational records
-  - [ ] Build and test baseline established
-  - [ ] Task 1: Add retained history query and endpoint
-    - [ ] Step 1: Implement the `GetIgLoginHistory` application slice and API endpoint for retained daily first-successful payloads.
-    - [ ] Step 2: Ensure returned history distinguishes retained daily payloads from the latest successful payload used on `/status`.
-    - [ ] Step 3: Add integration tests for ordering, retention-window filtering, and secret-safe response shape.
-  - [ ] Task 2: Add dedicated `IG` login history UI
-    - [ ] Step 1: Create the history page and navigation entry in the Blazor UI.
-    - [ ] Step 2: Render retained daily payload summaries and details in a format that is clearly historical rather than current-state status.
-    - [ ] Step 3: Add functional/UI tests for page load, empty-state behavior, and retained-history display.
-  - [ ] Task 3: Extend secret-safe operational records for login/session transitions
-    - [ ] Step 1: Record startup login attempts, success/failure transitions, invalidation, recovery, and out-of-schedule transitions using existing operational-record patterns.
-    - [ ] Step 2: Verify logs and operational records contain summary context only and no protected values.
-    - [ ] Step 3: Align retention processing for retained daily snapshots and related review records as needed.
-  - [ ] Relevant `docs/wiki/` pages updated to reflect the implemented changes
-  - [ ] Build and test validation
+- [x] Work Item 3: Retained history API, UI, and operational records
+  - [x] Build and test baseline established
+  - [x] Task 1: Add retained history query and endpoint
+    - [x] Step 1: Implement the `GetIgLoginHistory` application slice and API endpoint for retained daily first-successful payloads.
+    - [x] Step 2: Ensure returned history distinguishes retained daily payloads from the latest successful payload used on `/status`.
+    - [x] Step 3: Add integration tests for ordering, retention-window filtering, and secret-safe response shape.
+  - [x] Task 2: Add dedicated `IG` login history UI
+    - [x] Step 1: Create the history page and navigation entry in the Blazor UI.
+    - [x] Step 2: Render retained daily payload summaries and details in a format that is clearly historical rather than current-state status.
+    - [x] Step 3: Add functional/UI tests for page load, empty-state behavior, and retained-history display.
+  - [x] Task 3: Extend secret-safe operational records for login/session transitions
+    - [x] Step 1: Record startup login attempts, success/failure transitions, invalidation, recovery, and out-of-schedule transitions using existing operational-record patterns.
+    - [x] Step 2: Verify logs and operational records contain summary context only and no protected values.
+    - [x] Step 3: Align retention processing for retained daily snapshots and related review records as needed.
+  - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
+  - [x] Build and test validation
 
   - **Files**:
     - `src/TNC.Trading.Platform.Application/Features/GetIgLoginHistory/*`: new application query slice for retained history.
@@ -134,18 +134,18 @@ Before starting *any* work item, and again before marking a work item as complet
 
 ### Work Item 4 details
 
-- [ ] Work Item 4: Test completion, documentation, and wiki alignment
-  - [ ] Build and test baseline established
-  - [ ] Task 1: Complete requirement-traceable automated test coverage
-    - [ ] Step 1: Fill any remaining unit, integration, and functional test gaps across `TR1`-`TR10`.
-    - [ ] Step 2: Ensure test names follow repository conventions and add comments capturing requirement traceability, expected outcomes, and behavioral importance.
-    - [ ] Step 3: Re-run full validation and resolve any regressions introduced by earlier slices.
-  - [ ] Task 2: Finalize work-package and wiki documentation
-    - [ ] Step 1: Update `docs/006-ig-login/technical-specification.md` and this delivery plan if implementation details materially changed during delivery.
-    - [ ] Step 2: Create or update relevant `docs/wiki/` pages for architecture, API/status behavior, operator workflow, local validation guidance, and troubleshooting for `IG` login.
-    - [ ] Step 3: Verify updated wiki links resolve and that documentation clearly distinguishes current status, latest payload details, and retained daily history.
-  - [ ] Relevant `docs/wiki/` pages updated to reflect the implemented changes
-  - [ ] Build and test validation
+- [x] Work Item 4: Test completion, documentation, and wiki alignment
+  - [x] Build and test baseline established
+  - [x] Task 1: Complete requirement-traceable automated test coverage
+    - [x] Step 1: Fill any remaining unit, integration, and functional test gaps across `TR1`-`TR10`.
+    - [x] Step 2: Ensure test names follow repository conventions and add comments capturing requirement traceability, expected outcomes, and behavioral importance.
+    - [x] Step 3: Re-run full validation and resolve any regressions introduced by earlier slices.
+  - [x] Task 2: Finalize work-package and wiki documentation
+    - [x] Step 1: Update `docs/006-ig-login/technical-specification.md` and this delivery plan if implementation details materially changed during delivery.
+    - [x] Step 2: Create or update relevant `docs/wiki/` pages for architecture, API/status behavior, operator workflow, local validation guidance, and troubleshooting for `IG` login.
+    - [x] Step 3: Verify updated wiki links resolve and that documentation clearly distinguishes current status, latest payload details, and retained daily history.
+  - [x] Relevant `docs/wiki/` pages updated to reflect the implemented changes
+  - [x] Build and test validation
 
   - **Files**:
     - `docs/006-ig-login/technical-specification.md`: align any implementation-driven adjustments.
@@ -174,13 +174,13 @@ Before starting *any* work item, and again before marking a work item as complet
 
 ## Acceptance checklist
 
-- [ ] Work item aligns with `../business-requirements.md`.
-- [ ] All referenced `FRx` requirements are implemented and validated.
-- [ ] All referenced `NFx` requirements have measurements or checks.
-- [ ] All referenced `SRx` security requirements are implemented and validated.
-- [ ] Relevant `docs/wiki/` pages are updated to reflect the delivered implementation.
-- [ ] Affected wiki links resolve after documentation updates.
-- [ ] Rollback/backout plan documented for each work item.
+- [x] Work item aligns with `../business-requirements.md`.
+- [x] All referenced `FRx` requirements are implemented and validated.
+- [x] All referenced `NFx` requirements have measurements or checks.
+- [x] All referenced `SRx` security requirements are implemented and validated.
+- [x] Relevant `docs/wiki/` pages are updated to reflect the delivered implementation.
+- [x] Affected wiki links resolve after documentation updates.
+- [x] Rollback/backout plan documented for each work item.
 
 ## Notes
 

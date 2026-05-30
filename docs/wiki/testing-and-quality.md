@@ -72,6 +72,7 @@ The API tests cover:
 - anonymous `401` behavior for protected endpoints
 - invalid issuer, invalid audience, invalid signature, expired, and no-role bearer-token fail-closed behavior
 - viewer, operator, and administrator bearer-token access behavior across status, configuration, manual-retry, events, and administrator auth-summary endpoints
+- current `/api/platform/status` contract coverage for IG login current-state detail and the latest stored non-secret login payload embedded in the existing response
 - persisted operator auth audit-event recording through the protected API boundary for sign-in, sign-out, access-denied, and token-acquisition-failure outcomes
 - validation-problem payloads for unsupported or malformed auth-audit event submissions
 - display-name fallback behavior for auth-audit summaries when `preferred_username`, `name`, or both claims are absent
@@ -91,7 +92,7 @@ The Web unit, functional, and end-to-end tests cover:
 - delegated-scope token evaluation and navigation recovery decisions for protected UI flows
 - lower-level protected-route redirect decisions and auth-audit helper behavior
 - direct `PlatformApiClient` success and failure-path handling for status, configuration, events, manual retry, and auth-administration requests
-- bUnit coverage for the refreshed `MainLayout`, `Home`, `Status`, and `Configuration` surfaces, including signed-in versus signed-out rendering, degraded warnings, manual-retry affordances, configuration save-state behavior, and access-denied routing
+- bUnit coverage for the refreshed `MainLayout`, `Home`, `Status`, and `Configuration` surfaces, including signed-in versus signed-out rendering, degraded warnings, manual-retry affordances, current IG login-state labels, latest payload details, configuration save-state behavior, and access-denied routing
 - public landing-page behavior
 - local sign-in surface behavior in lightweight automated runs
 - unit-level route-first anonymous challenge behavior for protected status, configuration, and administrator surfaces

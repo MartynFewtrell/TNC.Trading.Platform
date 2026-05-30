@@ -42,6 +42,7 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         services.AddScoped<ProtectedCredentialService>();
         services.AddScoped<IPlatformConfigurationStore, SqlPlatformConfigurationStore>();
         services.AddScoped<IPlatformRuntimeStateStore, EfPlatformRuntimeStateStore>();
+        services.AddScoped<IPlatformIgLoginSnapshotStore, EfPlatformIgLoginSnapshotStore>();
         services.AddScoped<IPlatformRetryCycleStore, EfPlatformRetryCycleStore>();
         services.AddScoped<IPlatformEventStore, EfPlatformEventStore>();
         services.AddScoped<INotificationProvider, RecordedNotificationProvider>();

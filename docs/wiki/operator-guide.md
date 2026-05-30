@@ -1,4 +1,4 @@
-# Operator guide
+﻿# Operator guide
 
 This guide explains how the current Blazor operator UI works, what information each page shows, and how the existing workflows behave.
 
@@ -8,6 +8,7 @@ The current UI is a Blazor Server app with a sign-in-first browser flow and thre
 
 - `/`
 - `/status`
+- `/ig-login/history`
 - `/configuration`
 - `/administration/authentication`
 
@@ -27,7 +28,8 @@ The left navigation still changes based on the signed-in operator role.
 | Route | Purpose |
 | --- | --- |
 | `/` | UI entry route. It redirects anonymous users to sign-in on first access and shows the signed-in home overview for authenticated operators. |
-| `/status` | Runtime status, trading-schedule state, auth state, retry state, and recent auth events. |
+| `/status` | Runtime status, trading-schedule state, auth state, current IG login state, latest successful non-secret payload details, and recent auth events. |
+| `/ig-login/history` | Retained daily first-successful non-secret IG login payloads within the 90-day retention window. Distinct from the current-state latest payload on `/status`. |
 | `/configuration` | Operator-managed configuration, notification settings, trading-schedule values, and write-only IG credential updates. |
 | `/administration/authentication` | Administrator-only summary of the configured auth provider, role claim type, and protected API audience. |
 | `/authentication/sign-in` | Starts sign-in. In automated local tests this also lists the seeded local test users. |
@@ -110,6 +112,66 @@ The auth state panel shows:
 - next retry time
 
 When the platform is degraded, the page also shows a warning banner.
+
+### IG login panel
+
+The IG login panel keeps the current broker-login view separate from the generic auth supervision summary.
+
+It shows:
+
+- the current IG login state label used by the UI (`Active`, `Retrying`, `Failed`, `Blocked`, `Not signed in`, or `Out of schedule`)
+- schedule context and the current schedule reason
+- retry context for the current login state
+- last login attempt time
+- last successful login time
+- latest failure summary when one exists
+
+When a successful IG login payload has been captured, the same panel also exposes an expandable **Latest successful IG login payload details** area.
+
+The expandable details show:
+
+- capture time and trading day
+- current account identifier
+- Lightstreamer endpoint when supplied
+- session expiry when supplied
+- stored non-secret response headers
+- the raw non-secret payload JSON captured from the latest successful login
+
+The details area is intentionally current-state-focused. It shows the latest successful payload only and does not replace the future retained-history experience.
+
+## IG login history page
+
+The IG login history page (`/ig-login/history`) shows retained daily first-successful non-secret login payloads within the 90-day retention window.
+
+It is accessible to all signed-in operators with the `Viewer` role or higher and is listed in the left navigation panel.
+
+### What it shows
+
+- A list of retained daily entries, newest trading day first.
+- For each entry:
+  - The trading day the retained snapshot corresponds to.
+  - The current account identifier at the time of login.
+  - The Lightstreamer endpoint, when supplied by the broker.
+  - The session expiry time, when returned by the broker.
+  - Stored non-secret response headers.
+  - The raw non-secret JSON payload from the successful login.
+
+### Empty state
+
+When no retained history has been captured yet — for example, on a fresh environment or before the first successful login — the page shows a clear empty-state message rather than a blank surface.
+
+### Distinction from the status page
+
+| Surface | Shows |
+| --- | --- |
+| `/status` IG login panel | **Current** login state, latest attempt time, and expandable **latest** successful non-secret payload. |
+| `/ig-login/history` | **Retained daily** first-successful snapshots from previous trading days within the 90-day window. |
+
+The history page is for review and troubleshooting of historical login payloads. It is not the source of truth for current auth state.
+
+### Secret safety
+
+The history page only displays non-secret fields. Credentials, session tokens, and equivalent protected values are excluded at the point of capture and are never returned by the history endpoint.
 
 ### Manual retry button
 
@@ -253,7 +315,18 @@ flowchart TD
     Open[Open /status] --> CheckEnv[Check environment values]
     CheckEnv --> CheckSchedule[Check trading schedule state]
     CheckSchedule --> CheckAuth[Check auth and retry state]
-    CheckAuth --> ReviewEvents[Review recent auth events]
+    CheckAuth --> CheckIgLogin[Review current IG login state and latest payload details]
+    CheckIgLogin --> ReviewEvents[Review recent auth events]
+```
+
+### Review retained IG login history
+
+```mermaid
+flowchart TD
+    OpenHistory[Open /ig-login/history] --> CheckEntries{Entries present?}
+    CheckEntries -->|Yes| ReviewEntry[Review trading day, account, endpoint, and raw payload for each entry]
+    CheckEntries -->|No| EmptyState[Empty state shown — no retained history yet]
+    ReviewEntry --> ExpandDetails[Expand entry details for full non-secret payload]
 ```
 
 ### Update configuration safely
@@ -321,6 +394,16 @@ This usually means one of these conditions is true:
 - the retry limit has not been reached yet
 - the session is not in the right degraded state
 - a retry is already in progress
+
+### The IG login history page is empty
+
+This is expected when:
+
+- the platform has not yet completed a successful IG login for any retained trading day
+- the environment has been freshly provisioned and no first-successful snapshot has been captured
+- all retained entries have aged outside the 90-day retention window
+
+To populate history, a successful IG login must occur during an active trading-schedule period. The retention processor removes entries older than 90 days automatically.
 
 ## Related documents
 

@@ -27,6 +27,7 @@ public class AuthRetryCycleTests
             configuration,
             configurationService,
             new EfPlatformRuntimeStateStore(dbContext),
+            new EfPlatformIgLoginSnapshotStore(dbContext),
             new EfPlatformRetryCycleStore(dbContext),
             new EfPlatformEventStore(dbContext),
             CreateNotificationDispatcher(dbContext, TimeProvider.System),
@@ -87,8 +88,8 @@ public class AuthRetryCycleTests
         await coordinator.TickAsync(CancellationToken.None);
 
         var failureNotification = Assert.Single(
-            GetNotificationRecords(dbContext).Where(record =>
-                string.Equals(record.NotificationType, "AuthFailure", StringComparison.Ordinal)));
+            GetNotificationRecords(dbContext),
+            record => string.Equals(record.NotificationType, "AuthFailure", StringComparison.Ordinal));
 
         Assert.Contains(
             "credentials are incomplete",
@@ -174,6 +175,10 @@ public class AuthRetryCycleTests
 
         Assert.Equal(PlatformSessionStatus.Degraded, status.SessionStatus);
         Assert.True(status.IsDegraded);
+        Assert.Null(status.IgLoginStatus.LastAttemptAtUtc);
+        Assert.Null(status.IgLoginStatus.LastSuccessfulLoginAtUtc);
+        Assert.Null(status.IgLoginStatus.LatestSnapshotId);
+        Assert.Equal("IG demo credentials are incomplete.", status.IgLoginStatus.LatestFailureSummary);
         Assert.Equal(AuthRetryPhase.None, retryState.Phase);
         Assert.Equal(0, retryState.AutomaticAttemptNumber);
         Assert.Null(retryState.NextRetryAtUtc);
@@ -298,13 +303,150 @@ public class AuthRetryCycleTests
         _ = await coordinator.GetStatusAsync(CancellationToken.None);
 
         var authAttempt = Assert.Single(
-            GetOperationalEvents(dbContext).Where(record =>
-                string.Equals(record.EventType, "AuthAttempted", StringComparison.Ordinal)));
+            GetOperationalEvents(dbContext),
+            record => string.Equals(record.EventType, "AuthAttempted", StringComparison.Ordinal));
 
         Assert.Equal("Demo", authAttempt.BrokerEnvironment);
         Assert.Contains("demo auth attempt started", authAttempt.Summary, StringComparison.Ordinal);
         Assert.Contains("Demo", authAttempt.DetailsJson, StringComparison.Ordinal);
         Assert.DoesNotContain("demo-api-key", authAttempt.DetailsJson, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: FR1, FR3, FR4, FR10, DR1, DR3, TR1, TR3.
+    /// Verifies: the coordinator captures a successful login snapshot on startup when complete Demo credentials are available during an active schedule.
+    /// Expected: the latest snapshot is persisted, the daily retained snapshot is created, and the runtime projection points to the successful snapshot.
+    /// Why: backend startup login must produce a durable non-secret source of truth for later status and history read surfaces.
+    /// </summary>
+    [Fact]
+    public async Task GetStatusAsync_ShouldPersistIgLoginSnapshot_WhenStartupAuthenticationSucceeds()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
+        var configuration = CreateConfiguration();
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(
+            BrokerEnvironmentKind.Demo,
+            "demo-api-key",
+            "demo-identifier",
+            "demo-password",
+            "unit-test",
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
+
+        var status = await coordinator.GetStatusAsync(CancellationToken.None);
+        var latestSnapshot = Assert.Single(dbContext.IgLoginSnapshots.Where(item => item.SnapshotKind == IgLoginSnapshotKind.Latest.ToString()));
+        var retainedSnapshot = Assert.Single(dbContext.IgLoginSnapshots.Where(item => item.SnapshotKind == IgLoginSnapshotKind.RetainedDailyFirstSuccessful.ToString()));
+
+        Assert.Equal(PlatformSessionStatus.Active, status.SessionStatus);
+        Assert.NotNull(status.IgLoginStatus.LastSuccessfulLoginAtUtc);
+        Assert.Equal(latestSnapshot.IgLoginSnapshotId, status.IgLoginStatus.LatestSnapshotId);
+        Assert.Equal("configured-demo-session", latestSnapshot.CurrentAccountId);
+        Assert.Equal("configured-demo-session", retainedSnapshot.CurrentAccountId);
+        Assert.DoesNotContain("cst-token", latestSnapshot.RawNonSecretPayloadJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("security-token", latestSnapshot.RawNonSecretPayloadJson, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: FR2, FR6, FR10, NF1, SR4, TR2, TR8.
+    /// Verifies: when an active IG demo session expires, the backend status projection switches from healthy to retrying without discarding the last successful login context.
+    /// Expected: the current status becomes degraded with an initial automatic retry scheduled, the latest failure summary explains the expiry, and the last successful snapshot metadata remains available for operator review.
+    /// Why: the runtime status source of truth must distinguish a current failed/retrying session from the previously successful login payload so later API and UI slices can stay accurate over time.
+    /// </summary>
+    [Fact]
+    public async Task GetStatusAsync_ShouldShowRetryingProjection_WhenActiveSessionExpires()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Bootstrap:AuthSimulation:SessionLifetimeSeconds"] = "1"
+        });
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(
+            BrokerEnvironmentKind.Demo,
+            "demo-api-key",
+            "demo-identifier",
+            "demo-password",
+            "unit-test",
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
+
+        var activeStatus = await coordinator.GetStatusAsync(CancellationToken.None);
+        var activeSnapshotId = activeStatus.IgLoginStatus.LatestSnapshotId;
+        var activeSuccessAtUtc = activeStatus.IgLoginStatus.LastSuccessfulLoginAtUtc;
+
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        var degradedStatus = await coordinator.GetStatusAsync(CancellationToken.None);
+
+        Assert.Equal(PlatformSessionStatus.Degraded, degradedStatus.SessionStatus);
+        Assert.True(degradedStatus.IsDegraded);
+        Assert.Equal(AuthRetryPhase.InitialAutomatic, degradedStatus.RetryState.Phase);
+        Assert.Equal(0, degradedStatus.RetryState.AutomaticAttemptNumber);
+        Assert.NotNull(degradedStatus.RetryState.NextRetryAtUtc);
+        Assert.False(degradedStatus.RetryState.RetryLimitReached);
+        Assert.False(degradedStatus.RetryState.ManualRetryAvailable);
+        Assert.Equal(timeProvider.GetUtcNow(), degradedStatus.IgLoginStatus.LastAttemptAtUtc);
+        Assert.Equal(activeSuccessAtUtc, degradedStatus.IgLoginStatus.LastSuccessfulLoginAtUtc);
+        Assert.Equal(activeSnapshotId, degradedStatus.IgLoginStatus.LatestSnapshotId);
+        Assert.Equal(
+            "The active IG demo session expired and is being re-established.",
+            degradedStatus.IgLoginStatus.LatestFailureSummary);
+    }
+
+    /// <summary>
+    /// Trace: FR6, FR10, NF1, NF2, SR4, TR8, TR10.
+    /// Verifies: when the runtime moves out of the permitted trading schedule after a successful login, the backend status projection reports intentional inactivity rather than an auth failure.
+    /// Expected: the current status becomes out of schedule, retry activity is cleared, the schedule reason becomes the blocked reason, and the last successful login metadata remains available as historical context only.
+    /// Why: later API and UI slices must be able to distinguish intentionally signed-out schedule inactivity from failed or retrying IG authentication.
+    /// </summary>
+    [Fact]
+    public async Task GetStatusAsync_ShouldShowOutOfScheduleProjectionWithoutFailureSummary_WhenTradingScheduleBecomesInactive()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Bootstrap:TradingSchedule:EndOfDay"] = "16:30"
+        });
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(
+            BrokerEnvironmentKind.Demo,
+            "demo-api-key",
+            "demo-identifier",
+            "demo-password",
+            "unit-test",
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
+
+        var activeStatus = await coordinator.GetStatusAsync(CancellationToken.None);
+        var activeSnapshotId = activeStatus.IgLoginStatus.LatestSnapshotId;
+        var activeSuccessAtUtc = activeStatus.IgLoginStatus.LastSuccessfulLoginAtUtc;
+
+        timeProvider.Advance(TimeSpan.FromHours(7));
+
+        var outOfScheduleStatus = await coordinator.GetStatusAsync(CancellationToken.None);
+
+        Assert.Equal(PlatformSessionStatus.OutOfSchedule, outOfScheduleStatus.SessionStatus);
+        Assert.False(outOfScheduleStatus.IsDegraded);
+        Assert.Equal(AuthRetryPhase.None, outOfScheduleStatus.RetryState.Phase);
+        Assert.Equal(0, outOfScheduleStatus.RetryState.AutomaticAttemptNumber);
+        Assert.Null(outOfScheduleStatus.RetryState.NextRetryAtUtc);
+        Assert.False(outOfScheduleStatus.RetryState.RetryLimitReached);
+        Assert.False(outOfScheduleStatus.RetryState.ManualRetryAvailable);
+        Assert.Equal(
+            "Trading schedule is inactive for the current time window.",
+            outOfScheduleStatus.BlockedReason);
+        Assert.Equal(activeSuccessAtUtc, outOfScheduleStatus.IgLoginStatus.LastSuccessfulLoginAtUtc);
+        Assert.Equal(activeSnapshotId, outOfScheduleStatus.IgLoginStatus.LatestSnapshotId);
+        Assert.Null(outOfScheduleStatus.IgLoginStatus.LatestFailureSummary);
     }
 
     /// <summary>
@@ -341,15 +483,19 @@ public class AuthRetryCycleTests
         Assert.Equal(
             "IG live is unavailable while the platform environment is Test.",
             status.BlockedReason);
+        Assert.Null(status.IgLoginStatus.LastSuccessfulLoginAtUtc);
+        Assert.Null(status.IgLoginStatus.LatestSnapshotId);
+        Assert.Equal(
+            "IG live is unavailable while the platform environment is Test.",
+            status.IgLoginStatus.LatestFailureSummary);
 
         var blockedNotification = Assert.Single(
-            GetNotificationRecords(dbContext).Where(record =>
-                string.Equals(record.NotificationType, "BlockedLiveAttempt", StringComparison.Ordinal)));
+            GetNotificationRecords(dbContext),
+            record => string.Equals(record.NotificationType, "BlockedLiveAttempt", StringComparison.Ordinal));
         var blockedEvent = Assert.Single(
-            GetOperationalEvents(dbContext).Where(record =>
-                string.Equals(record.Category, "auth", StringComparison.Ordinal)
-                &&
-                string.Equals(record.EventType, "BlockedLiveAttempt", StringComparison.Ordinal)));
+            GetOperationalEvents(dbContext),
+            record => string.Equals(record.Category, "auth", StringComparison.Ordinal)
+                && string.Equals(record.EventType, "BlockedLiveAttempt", StringComparison.Ordinal));
 
         Assert.Equal("Live", blockedNotification.BrokerEnvironment);
         Assert.Equal("BlockedLiveAttempt", blockedEvent.EventType);
@@ -441,6 +587,7 @@ public class AuthRetryCycleTests
             configuration,
             configurationService,
             new EfPlatformRuntimeStateStore(dbContext),
+            new EfPlatformIgLoginSnapshotStore(dbContext),
             new EfPlatformRetryCycleStore(dbContext),
             new EfPlatformEventStore(dbContext),
             CreateNotificationDispatcher(dbContext, timeProvider),

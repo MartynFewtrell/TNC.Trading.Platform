@@ -120,22 +120,10 @@ public class PlatformShellContextProviderTests
     {
         return new HttpResponseMessage(statusCode)
         {
-            Content = JsonContent.Create(new PlatformStatusViewModel(
-                platformEnvironment,
-                brokerEnvironment,
-                LiveOptionVisible: true,
-                LiveOptionAvailable: liveOptionAvailable,
-                new TradingScheduleViewModel(
-                    new TimeOnly(8, 0),
-                    new TimeOnly(16, 30),
-                    [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday],
-                    "Closed",
-                    [],
-                    "Europe/London"),
-                new TradingScheduleStateViewModel(true, "Active"),
-                new AuthStateViewModel("Healthy", IsDegraded: false, BlockedReason: null),
-                new RetryStateViewModel("Idle", 0, NextRetryAtUtc: null, RetryLimitReached: false, ManualRetryAvailable: true),
-                DateTimeOffset.UtcNow))
+            Content = JsonContent.Create(PlatformWebTestData.CreateStatus(
+                platformEnvironment: platformEnvironment,
+                brokerEnvironment: brokerEnvironment,
+                liveOptionAvailable: liveOptionAvailable))
         };
     }
 
