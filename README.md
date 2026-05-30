@@ -73,13 +73,13 @@ The current local implementation is started with the AppHost and exposes:
 
 - [Requirements](docs/001-project-scaffolding-and-devex/requirements.md)
 - [Technical specification](docs/001-project-scaffolding-and-devex/technical-specification.md)
-- [Delivery plan](docs/001-project-scaffolding-and-devex/delivery-plan.md)
+- [Delivery plan](docs/001-project-scaffolding-and-devex/plans/001-delivery-plan.md)
 
 ### Work package 002: Environment and auth foundation
 
 - [Requirements](docs/002-environment-and-auth-foundation/requirements.md)
 - [Technical specification](docs/002-environment-and-auth-foundation/technical-specification.md)
-- [Delivery plan](docs/002-environment-and-auth-foundation/delivery-plan.md)
+- [Delivery plan](docs/002-environment-and-auth-foundation/plans/001-delivery-plan.md)
 
 ### Work package 003: Authentication and authorisation
 
