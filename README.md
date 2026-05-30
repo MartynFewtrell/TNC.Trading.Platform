@@ -46,7 +46,7 @@ The repository now follows the current guideline that non-generated C# code keep
 
 ## Getting started
 
-For local prerequisites, build steps, run commands, and validation guidance, see the [Local development guide](docs/local-development.md).
+For local prerequisites, build steps, run commands, and validation guidance, see the [Local development guide](docs/wiki/local-development.md).
 
 For a broader view of the implemented platform, including the application overview, architecture, operator experience, runtime behavior, API surface, testing guidance, and local development workflow, start with the [documentation index](docs/README.md).
 
@@ -67,7 +67,21 @@ The current local implementation is started with the AppHost and exposes:
 
 - [Business requirements](docs/business-requirements.md)
 - [Systems analysis](docs/systems-analysis.md)
-- [Local development guide](docs/local-development.md)
+- [Local development guide](docs/wiki/local-development.md)
+
+### Implementation wiki
+
+The implementation wiki in [`docs/wiki`](docs/wiki/README.md) describes the application as it exists today, focusing on the delivered solution, runtime behavior, and operator experience.
+
+- [Wiki home / documentation index](docs/wiki/README.md) - start here for the implementation-focused documentation set.
+- [Application overview](docs/wiki/application-overview.md) - high-level summary of the current platform purpose, capabilities, and limits.
+- [Architecture](docs/wiki/architecture.md) - solution structure, runtime topology, project responsibilities, and persistence overview.
+- [Operator guide](docs/wiki/operator-guide.md) - current Blazor operator UI routes, workflows, and page behavior.
+- [API reference](docs/wiki/api-reference.md) - current HTTP endpoints, request/response contracts, and protected API behavior.
+- [Runtime behavior](docs/wiki/runtime-behavior.md) - startup flow, schedule rules, auth-state transitions, retry handling, and retention behavior.
+- [Testing and quality](docs/wiki/testing-and-quality.md) - test-project layout, validation scope, and current quality evidence.
+- [Local development guide](docs/wiki/local-development.md) - build, run, validate, and troubleshoot the current application locally.
+- [IG domain reference](docs/wiki/ig-day-trading-with-ig-apis.md) - supporting domain notes for the IG integration context.
 
 ### Work package 001: Project scaffolding and DevEx
 
