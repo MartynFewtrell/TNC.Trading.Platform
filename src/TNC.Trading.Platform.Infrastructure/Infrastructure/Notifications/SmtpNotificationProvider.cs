@@ -11,10 +11,29 @@ internal sealed class SmtpNotificationProvider(
 {
     public string Name => "Smtp";
 
+    private static string RedactRecipientForLog(string recipient)
+    {
+        if (string.IsNullOrWhiteSpace(recipient))
+        {
+            return "[redacted]";
+        }
+
+        var atIndex = recipient.IndexOf('@');
+        if (atIndex <= 0 || atIndex == recipient.Length - 1)
+        {
+            return "[redacted]";
+        }
+
+        var localPartFirstChar = recipient[0];
+        var domain = recipient[(atIndex + 1)..];
+        return $"{localPartFirstChar}***@{domain}";
+    }
+
     public async Task<NotificationDispatchResult> DispatchAsync(NotificationMessage message, CancellationToken cancellationToken)
     {
         var host = configuration["NotificationTransports:Smtp:Host"];
         var senderAddress = configuration["NotificationTransports:Smtp:SenderAddress"];
+        var redactedRecipient = RedactRecipientForLog(message.Recipient);
 
         if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(senderAddress))
         {
@@ -56,14 +75,14 @@ internal sealed class SmtpNotificationProvider(
             logger.LogWarning(
                 "SMTP notification {EventType} to {Recipient} timed out after 10 s and was skipped.",
                 message.EventType,
-                message.Recipient);
+                redactedRecipient);
             return new NotificationDispatchResult("TimedOut", "SMTP dispatch timed out.", Name);
         }
 
         logger.LogInformation(
             "SMTP notification {EventType} sent to {Recipient} via {Host}:{Port}",
             message.EventType,
-            message.Recipient,
+            redactedRecipient,
             host,
             port);
 
