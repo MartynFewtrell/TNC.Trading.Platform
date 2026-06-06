@@ -176,13 +176,12 @@ Returns the current platform runtime state together with the current IG login pr
       },
       "rawNonSecretPayloadJson": "{\"currentAccountId\":\"configured-demo-session\",\"lightstreamerEndpoint\":null,\"expiresAtUtc\":null,\"headers\":{\"Version\":\"3\"}}"
     },
-    "igProofData": {
+    "latestProofData": {
       "preferredAccountName": "Demo Account",
       "preferredAccountId": "ACC12345",
       "balance": 5000.00,
       "openPositionCount": 2,
       "retrievedAtUtc": "2026-04-01T09:59:46+00:00"
-    }
   }
 }
 ```
