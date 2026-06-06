@@ -2,6 +2,7 @@
 description: 'Interactively generates a work-package `technical-specification.md` from requirements by asking one question at a time and maintaining a visible evolving draft.'
 name: 'Generate Technical Spec'
 model: 'gpt-5.4'
+model-tier: 'routine'
 ---
 
 # Generate Technical Spec

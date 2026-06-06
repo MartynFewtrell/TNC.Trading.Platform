@@ -2,6 +2,7 @@
 description: 'Handles delegated Markdown documentation work for parent agents while preserving repository conventions, link integrity, and document quality.'
 name: 'Documentation Specialist'
 model: 'gpt-5.4'
+model-tier: 'routine'
 ---
 
 # Documentation Specialist

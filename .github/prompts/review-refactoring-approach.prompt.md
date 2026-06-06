@@ -50,6 +50,7 @@ ${REVIEW_DEPTH="standard"} <!-- quick | standard | deep: controls how much detai
 - MUST: Use an incremental three-digit numeric prefix for refactoring review report files, for example `001-work-package-refactoring-review-report.md`, `002-work-package-refactoring-review-report.md`, `003-work-package-refactoring-review-report.md`.
 - MUST: Prefer the provided work-package artifacts and explicitly supplied paths before discovering additional repository files.
 - MUST: Inspect the current implementation that relates to the work package and cite specific evidence using repository paths and, when practical, symbol names such as classes, methods, components, or test classes.
+- MUST: Cite file-and-line evidence for material findings, risks, and recommendations unless stable line references are genuinely unavailable in the environment.
 - MUST: Map documented requirements, responsibilities, and acceptance criteria to the current implementation and identify where the structure supports or undermines them.
 - MUST: Identify maintainability issues such as duplication, excessive complexity, weak cohesion, tight coupling, mixed responsibilities, boundary leakage, brittle control flow, naming problems, dead code, and poor testability when supported by repository evidence.
 - MUST: Ground recommendations in established design and refactoring principles, including separation of concerns, single responsibility, explicit dependencies, dependency inversion, and DRY.
@@ -66,7 +67,7 @@ ${REVIEW_DEPTH="standard"} <!-- quick | standard | deep: controls how much detai
 - SHOULD: Consider both production code and related tests when assessing refactoring safety and regression risk.
 - SHOULD: Recommend preserving or improving test coverage when a refactor affects behavior-critical paths.
 - SHOULD: Call out opportunities to simplify Blazor components when markup, state management, and service orchestration are mixed in ways that reduce maintainability.
-- Output MUST be: a single markdown report with a clear summary, evidence-backed findings, and prioritized refactoring recommendations.
+- Output MUST be: a single markdown report with a clear overview, evidence-backed findings, and prioritized refactoring recommendations.
 
 ## Process
 

@@ -56,7 +56,7 @@ ${EVIDENCE_LEVEL="high"} <!-- high|medium: how aggressively to cite file/line ev
 - MUST: If something cannot be proven from the repo, write it as an **explicit assumption** and list what evidence was missing.
 - MUST NOT: Modify production application behavior. Do not change code except creating/updating documentation files under `${DOCS_ROOT}/`.
 - SHOULD: Prefer concrete, testable statements over generic descriptions (e.g., list endpoints, commands, schemas, message contracts).
-- Output MUST be: (1) a created/updated set of `${DOCS_ROOT}/**/*.md` files, and (2) a short final summary of what was produced and what remains uncertain.
+- Output MUST be: (1) a created/updated set of `${DOCS_ROOT}/**/*.md` files, and (2) a short final overview of what was produced and what remains uncertain.
 
 ## Process
 
@@ -74,7 +74,7 @@ Create/update the following files under `${DOCS_ROOT}/` (add more if the repo de
 ```markdown
 # ${DOCS_ROOT}/index.md
 
-## Summary
+## Overview
 - What the system is
 - Who uses it
 - What it integrates with
@@ -144,7 +144,7 @@ In your final response after writing files, include:
 ```markdown
 # Documentation Suite Generated
 
-## Summary
+## Overview
 - Docs created/updated: <count>
 - Primary entry points identified: <list>
 - Biggest assumptions: <list>
@@ -165,4 +165,4 @@ Reverse engineer this codebase and generate a full documentation suite under `/d
 
 ### Example response (optional)
 
-A created/updated set of `/docs/*.md` files plus a short final summary listing what was produced.
+A created/updated set of `/docs/*.md` files plus a short final overview listing what was produced.

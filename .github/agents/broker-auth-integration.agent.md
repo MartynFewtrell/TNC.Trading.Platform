@@ -2,6 +2,7 @@
 description: 'Handles delegated broker authentication, session supervision, secret-safe payload persistence, and related validation work for backend delivery slices.'
 name: 'Broker Auth Integration Agent'
 model: 'gpt-5.4'
+model-tier: 'complex'
 ---
 
 # Broker Auth Integration Agent

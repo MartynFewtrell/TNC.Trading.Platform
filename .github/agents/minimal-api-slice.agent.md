@@ -2,6 +2,7 @@
 description: 'Handles delegated Minimal API and application slice contract work, including endpoint, request/response, mapping, and API-test delivery.'
 name: 'Minimal API Slice Agent'
 model: 'gpt-5.4'
+model-tier: 'complex'
 ---
 
 # Minimal API Slice Agent

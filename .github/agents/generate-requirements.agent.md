@@ -2,6 +2,7 @@
 description: 'Interactively generates a work-package `requirements.md` by asking one question at a time and writing the evolving draft to the target docs folder.'
 name: 'Generate Requirements'
 model: 'gpt-5.4'
+model-tier: 'routine'
 ---
 
 # Generate Requirements

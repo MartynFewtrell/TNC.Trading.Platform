@@ -2,6 +2,7 @@
 description: 'Interactively generates `plans/001-delivery-plan.md` from work-package requirements and technical design by asking one question at a time and maintaining a visible evolving draft.'
 name: 'Generate Delivery Plan'
 model: 'gpt-5.4'
+model-tier: 'routine'
 ---
 
 # Generate Delivery Plan

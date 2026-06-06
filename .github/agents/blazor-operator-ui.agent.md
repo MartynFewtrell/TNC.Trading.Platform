@@ -2,6 +2,7 @@
 description: 'Handles delegated Blazor operator UI, status-page, history-page, and functional-test work for repository delivery slices.'
 name: 'Blazor Operator UI Agent'
 model: 'gpt-5.4'
+model-tier: 'complex'
 ---
 
 # Blazor Operator UI Agent
