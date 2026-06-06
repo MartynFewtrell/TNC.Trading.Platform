@@ -42,7 +42,7 @@ internal static class PlatformWebTestData
                 latestSnapshot?.CapturedAtUtc,
                 latestSnapshot?.SnapshotId,
                 isDegraded ? blockedReason : null,
-                latestSnapshot ?? CreateLatestSnapshot(),
+                latestSnapshot,
                 null));
 
     public static PlatformConfigurationViewModel CreateConfiguration(bool restartRequired = false) =>
