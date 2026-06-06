@@ -34,8 +34,10 @@ internal sealed class OperationalRecordRetentionProcessor(
                 .ExecuteDeleteAsync(cancellationToken)
                 .ConfigureAwait(false);
             var deletedRetainedIgLoginSnapshots = await dbContext.IgLoginSnapshots
-                .Where(item => item.SnapshotKind == "RetainedDailyFirstSuccessful" && item.CapturedAtUtc < cutoff)
+                .Where(item => item.SnapshotKind == TNC.Trading.Platform.Application.Configuration.IgLoginSnapshotKind.RetainedDailyFirstSuccessful.ToString()
+                    && item.CapturedAtUtc < cutoff)
                 .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false);
                 .ConfigureAwait(false);
 
             deletedCount = deletedEvents + deletedAudits + deletedNotifications + deletedRetainedIgLoginSnapshots;
