@@ -5,7 +5,7 @@ namespace TNC.Trading.Platform.Infrastructure.Infrastructure.Platform;
 
 internal sealed class InMemoryPlatformIgProofDataStore : IPlatformIgProofDataStore
 {
-    private readonly Dictionary<BrokerEnvironmentKind, IgProofDataSnapshot> _store = [];
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<BrokerEnvironmentKind, IgProofDataSnapshot> _store = new();
 
     public Task<IgProofDataSnapshot?> GetLatestAsync(BrokerEnvironmentKind brokerEnvironment, CancellationToken cancellationToken)
         => Task.FromResult(_store.TryGetValue(brokerEnvironment, out var snapshot) ? snapshot : null);
@@ -14,5 +14,7 @@ internal sealed class InMemoryPlatformIgProofDataStore : IPlatformIgProofDataSto
     {
         _store[brokerEnvironment] = snapshot;
         return Task.CompletedTask;
+    }
+}
     }
 }
