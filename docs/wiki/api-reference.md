@@ -198,26 +198,26 @@ Returns the current platform runtime state together with the current IG login pr
 | `authState.sessionStatus` | Current auth-related runtime state. |
 | `retryState.phase` | Current retry phase, such as `None`, `InitialAutomatic`, or `Periodic`. |
 | `retryState.manualRetryAvailable` | Indicates whether the manual retry command may currently be used. |
-| `igLoginStatus.currentState` | Current IG login label source used by the UI to distinguish active, retrying, failed, blocked, and out-of-schedule states. |
-| `igLoginStatus.scheduleState` | IG-specific copy of the current schedule context kept inside the status response so the UI can show current login state without another read call. |
-| `igLoginStatus.retryState` | IG-specific retry context used for the current login-state presentation. |
-| `igLoginStatus.latestSnapshot` | The latest stored successful non-secret IG login payload, including summary fields, non-secret response headers, and the raw non-secret JSON payload. |
-| `igLoginStatus.igProofData` | The latest read-only IG Demo proof data snapshot, or `null` when no proof data has been captured yet. |
+| `igLogin.currentState` | Current IG login label source used by the UI to distinguish active, retrying, failed, blocked, and out-of-schedule states. |
+| `igLogin.scheduleState` | IG-specific copy of the current schedule context kept inside the status response so the UI can show current login state without another read call. |
+| `igLogin.retryState` | IG-specific retry context used for the current login-state presentation. |
+| `igLogin.latestSnapshot` | The latest stored successful non-secret IG login payload, including summary fields, non-secret response headers, and the raw non-secret JSON payload. |
+| `igLogin.latestProofData` | The latest read-only IG Demo proof data snapshot, or `null` when no proof data has been captured yet. |
 
 ### Secret-safety notes
 
-- The `igLoginStatus.latestSnapshot` object excludes credentials, session tokens, account-security tokens, and equivalent protected values.
-- The `igLoginStatus.igProofData` object is read-only and excludes credentials, session tokens, account-security tokens, and any write-capable context.
+- The `igLogin.latestSnapshot` object excludes credentials, session tokens, account-security tokens, and equivalent protected values.
+- The `igLogin.latestProofData` object is read-only and excludes credentials, session tokens, account-security tokens, and any write-capable context.
 - Only approved non-secret response headers are returned.
 - The UI expands the latest payload locally from this response; there is no separate latest-payload endpoint.
 
-### igLoginStatus.igProofData
+### igLogin.latestProofData
 
-When proof data has been successfully retrieved after a Demo session, the `igProofData` field is populated:
+When proof data has been successfully retrieved after a Demo session, the `latestProofData` field is populated:
 
 ```json
-"igLoginStatus": {
-  "igProofData": {
+"igLogin": {
+  "latestProofData": {
     "preferredAccountName": "Demo Account",
     "preferredAccountId": "ACC12345",
     "balance": 5000.00,
@@ -230,12 +230,12 @@ When proof data has been successfully retrieved after a Demo session, the `igPro
 When no proof data has been retrieved yet (for example, on first startup before an auth tick has completed), the field is `null`:
 
 ```json
-"igLoginStatus": {
-  "igProofData": null
+"igLogin": {
+  "latestProofData": null
 }
 ```
 
-The `igProofData` object is read-only and derived from IG Demo account and position queries. It does not contain session tokens, credentials, or any write-capable context.
+The `latestProofData` object is read-only and derived from IG Demo account and position queries. It does not contain session tokens, credentials, or any write-capable context.
 
 ## GET /api/platform/ig-login/history
 
