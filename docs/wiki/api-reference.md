@@ -147,7 +147,7 @@ Returns the current platform runtime state together with the current IG login pr
     "manualRetryAvailable": false
   },
   "updatedAtUtc": "2026-04-01T10:00:00+00:00",
-  "igLoginStatus": {
+  "igLogin": {
     "currentState": "Active",
     "scheduleState": {
       "isActive": true,
