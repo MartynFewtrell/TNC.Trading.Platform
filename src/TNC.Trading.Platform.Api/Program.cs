@@ -28,11 +28,11 @@ try
         var dbContext = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         // EnsureCreatedAsync is a no-op when the database already exists, so any schema
         // changes introduced by new work items are invisible to persistent SQL containers
-        // that were created by an earlier build.  For this non-migration project the safe
-        // approach is to always recreate the schema so the running schema matches the
-        // current EF model. All operational data (configuration, state, snapshots) is
-        // re-seeded on first use by the application services below.
-        if (string.Equals(dbContext.Database.ProviderName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal))
+        // that were created by an earlier build. For this non-migration project the safest
+        // approach in local development is to recreate the schema so the running schema
+        // matches the current EF model.
+        if (app.Environment.IsDevelopment()
+            && string.Equals(dbContext.Database.ProviderName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal))
         {
             await dbContext.Database.EnsureDeletedAsync();
         }
