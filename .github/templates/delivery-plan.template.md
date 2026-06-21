@@ -1,6 +1,8 @@
 ﻿# Delivery Plan Template
 
 > Use this template to plan *when* and *in what increments* the technical specification will be delivered. Store the initial delivery plan as `plans/001-delivery-plan.md`. Each work item should reference relevant `FRx/NFx/SRx/...` and the sections in `../technical-specification.md` that implement them.
+>
+> This is the baseline initial plan for every work package. For refactoring-focused packages, use it to define the initial sequencing and package posture. If later work is driven by evidence from the current implementation, add a numbered refactoring review report and one or more numbered refactoring mitigation plans rather than overloading this document with all implementation detail.
 
 ## Summary
 
@@ -15,12 +17,24 @@
 
 <Describe what will be delivered and the boundaries of this plan. Keep it concrete and implementation-oriented.>
 
+For refactoring-focused packages, this section should state whether the plan is only the initial package plan or whether later implementation is expected to move into a refactoring review plus mitigation-plan flow.
+
 ## Delivery approach
 
 - **Delivery model**: <single PR | multiple PRs | feature-flagged rollout>
 - **Branching**: <strategy>
 - **Dependencies**: <teams/systems>
 - **Key risks**: <risk + mitigation>
+
+### Refactoring package addendum (recommended when applicable)
+
+- **Work package profile**: `<feature delivery | refactoring-focused | mixed>`
+- **Behavior-preservation boundary**: `<observable behavior that must remain unchanged>`
+- **Expected follow-on artifacts**:
+  - `<none>` or
+  - `NNN-work-package-refactoring-review-report.md`
+  - `plans/NNN-work-package-refactoring-mitigation-plan.md`
+  - `plans/NNN-work-package-refactoring-mitigation-plan-execution-log.md`
 
 ## Delivery Plan
 
@@ -36,6 +50,8 @@ Before starting *any* work item, and again before marking a work item as complet
 ### Planned work items
 
 The final plan may include one or more work items.
+
+For refactoring-focused packages, the initial delivery plan may stay high-level. Once a refactoring review confirms specific findings, place the actionable implementation sequencing in a numbered mitigation plan that traces back to those findings.
 
 | Work item | Description | Traceability (requirements) | Traceability (spec sections) | Dependencies | Validation | Rollback/Backout | User instructions |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -87,3 +103,4 @@ Copy the **Work Item 1 details** section for each additional work item.
 ## Notes
 
 - <notes>
+- For refactoring-focused packages, keep `plans/001-delivery-plan.md` as the initial package-planning artifact and use numbered mitigation plans for evidence-backed implementation detail after review.

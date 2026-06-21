@@ -391,7 +391,15 @@ List candidate work packages suggested by this analysis. Keep these as outcomes/
 | 015-operator-ui-and-ops-console | Provide an operator interface to select environment, manage tracked instruments, view operational status, and apply pause/resume/stop controls. | BR1, BR4, BR8, BR11 | UC1, UC3, UC8, UC9 |  | NFR2 | Initial scope is personal/internal use; no manual trading UX required. |
 | 016-end-of-day-flattening | Implement intraday-only end-of-day behavior to flatten positions, record outcomes, and stop and notify if flattening cannot be completed. | BR8, BR9, BR10, BR11 | UC11, UC10 | SAR7 | NFR2, NFR3 | End-of-day cut-off is fixed daily and configurable. |
 
-### 12.1 Suggested sequencing
+### 12.1 Confirmed delivery work packages
+
+The repository can also contain confirmed delivery work packages that are primarily maintainability-focused rather than candidate capability slices. These packages still trace back to the project-level requirements and analysis, but they are tracked as explicit delivery increments under `./docs/`.
+
+| Work package | Summary | Related BR IDs | Related UC IDs | Related NFR IDs | Notes |
+| --- | --- | --- | --- | --- | --- |
+| 006-refactor-app | Refactor the main application surfaces to improve cohesion, change safety, and delivery readiness without expanding runtime capability scope. | BR10, BR11 | UC9 | NFR2 | Delivery-focused maintainability slice intended to support later operator-facing capability work. |
+
+### 12.2 Suggested sequencing
 
 The following sequencing is informative only and is intended to reduce delivery risk:
 
