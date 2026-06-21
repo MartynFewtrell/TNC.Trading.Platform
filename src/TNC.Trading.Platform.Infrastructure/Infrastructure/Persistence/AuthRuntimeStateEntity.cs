@@ -26,6 +26,14 @@ internal sealed class AuthRuntimeStateEntity
 
     public Guid? CurrentRetryCycleId { get; set; }
 
+    public DateTimeOffset? LastLoginAttemptAtUtc { get; set; }
+
+    public DateTimeOffset? LastSuccessfulLoginAtUtc { get; set; }
+
+    public Guid? LatestIgLoginSnapshotId { get; set; }
+
+    public string? LatestFailureSummary { get; set; }
+
     public DateTimeOffset? EstablishedAtUtc { get; set; }
 
     public DateTimeOffset? ExpiresAtUtc { get; set; }

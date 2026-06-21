@@ -11,4 +11,5 @@ internal sealed record PlatformStatusModel(
     bool IsDegraded,
     string? BlockedReason,
     PlatformRetryState RetryState,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    IgLoginStatusProjection IgLoginStatus);

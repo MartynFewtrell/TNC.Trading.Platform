@@ -2,7 +2,7 @@
 
 > Use this template to plan how the issues identified in a work-package refactoring review will be mitigated. Keep the plan actionable, traceable to the review findings, and aligned to the repository refactoring guidance so maintainability improves without unintended behavior changes.
 
-## Summary
+## Overview
 
 - **Source review**: `<../work-package-refactoring-review-report.md>`
 - **Work package**: `<./docs/00x-work/>`

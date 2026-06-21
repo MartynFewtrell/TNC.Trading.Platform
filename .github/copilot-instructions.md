@@ -25,6 +25,7 @@ Applies to: `**/*`
 
 - When choosing a .NET target version (if `global.json` does not define it), determine the latest .NET LTS version via Microsoft Learn and target that by default.
 - Ground .NET best-practice guidance in Microsoft Learn when possible, and periodically re-validate repository instruction files against Microsoft Learn.
+- For repository customization work under `.github/`, load `./.github/AGENTS.md`, `./.github/lessons.md`, and the relevant scoped instruction files before making broad asset changes.
 - For C# source files, keep one top-level class, interface, record, struct, enum, or delegate per file and name the file to match the top-level type. Prefer file-scoped namespaces in new C# files when all types in the file belong to the same namespace.
 - Follow Microsoft Learn C# naming conventions for top-level types: use PascalCase for classes, records, structs, enums, and delegates; prefix interfaces with `I`; use singular enum names unless the enum is a flags enum.
 - For .NET Aspire guidance, use `https://aspire.dev/` as the primary reference site and include it in documentation/rules so guidance can be re-researched as Aspire evolves.
@@ -32,7 +33,8 @@ Applies to: `**/*`
 - For Azure authentication, use Microsoft Entra ID.
 - Ensure authentication guidance and implementations are compatible with OIDC, OAuth 2.0, and SAML 2.0.
 - Project-wide developer run documentation (e.g., how to build/start/validate locally) should live at the top level under `docs/` for reuse across work packages, with work packages referencing it as needed.
-- Implement requested Copilot artifacts as Agent Skills (in `.github/skills` with `SKILL.md`), not as `.prompt.md` files.
+- Implement new reusable Copilot behavior as instructions, agents, or Agent Skills before considering a new `.prompt.md` file. Treat `.github/prompts/` as support for the existing prompt workflow or for prompt-format artifacts that are explicitly required.
+- Prefer existing repository scripts or tasks for repeatable validation or maintenance workflows. When the same command sequence is likely to recur and no script exists, propose adding one rather than normalizing repeated ad hoc command lists.
 - Keep `Program.cs` focused on startup orchestration when using Minimal APIs, and place endpoint mappings in dedicated registration extensions grouped by route or feature area.
 - Do not draft `docs/00x-work/` work packages unless explicitly requested.
 - Use automated test method names in the MethodName_StateUnderTest_ExpectedResult style, e.g., `CalculateTotal_ShouldReturnZero_WhenCartIsEmpty`, because it reads naturally and enhances clarity.
@@ -40,6 +42,9 @@ Applies to: `**/*`
 - Store plans in a `plans` subfolder within each work package, using `plans/001-delivery-plan.md` for the initial delivery plan and prefixes like `001-`, `002-`, `003-` for all subsequent plan files to show application order. For additional work package plans, number them in the sequence they are applied in the work package; for this auth package, the refactoring mitigation plan should be 004 rather than 002.
 - Treat `docs/wiki/` as the implementation documentation source of truth. Before any numbered plan is considered complete, update the affected wiki pages to reflect implemented changes in behavior, architecture, API surface, runtime behavior, operator guidance, local development, or testing approach. When plan work is completed, the wiki documentation under `docs/wiki` should be updated as needed to reflect the implemented changes before the work is considered complete.
 - When generating review reports in this repository, create a new report file instead of updating the existing report so prior report history remains visible.
+- Use file-and-line evidence in reviews, mitigation plans, and similar diagnostic outputs. Use path-only references only when stable line references are genuinely unavailable.
+- Keep chat responses concise and execution-focused; only require summary sections when the durable markdown artifact itself needs one.
+- When work on repository customization assets yields a stable operating lesson or routing rule, update `./.github/AGENTS.md` or `./.github/lessons.md` in the same change.
 
 ### SHOULD
 
@@ -48,6 +53,9 @@ Applies to: `**/*`
 - Prefer .NET Aspire for local desktop/distributed development orchestration.
 - Prefer Azure Container Apps for deployments when containerized hosting is appropriate.
 - Prefer scalable service-based architecture with messaging when the problem domain benefits from it.
+- Prefer the highest-capability available model tier for cross-file orchestration, complex analysis, and review synthesis.
+- Prefer lighter model tiers for narrow inventory, formatting, or single-slice asset maintenance when the host supports them.
+- Prefer explicit routine-or-complex model-tier markers on repository agents when the host supports only one approved model identifier.
 
 ### MUST NOT
 
@@ -73,8 +81,12 @@ Applies to: `**/*`
 - `./.github/instructions/docs.instructions.md`
 - `./.github/instructions/dotnet-stack.instructions.md`
 - `./.github/instructions/folders.instructions.md`
+- `./.github/instructions/handoffs.instructions.md`
 - `./.github/instructions/playwright.instructions.md`
 - `./.github/instructions/radzen-blazor.instructions.md`
 - `./.github/instructions/scalar.instructions.md`
+- `./.github/instructions/token-discipline.instructions.md`
 - `./.github/instructions/tests.instructions.md`
 - `./.github/instructions/work-packages.instructions.md`
+- `./.github/AGENTS.md`
+- `./.github/lessons.md`

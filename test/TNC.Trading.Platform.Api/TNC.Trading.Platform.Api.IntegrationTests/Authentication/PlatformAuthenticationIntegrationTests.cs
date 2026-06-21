@@ -71,6 +71,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+
     /// <summary>
     /// Trace: FR6, FR7, FR9, FR10, TR2, SR1.
     /// Verifies: a viewer token cannot reach operator-only configuration APIs.
@@ -429,6 +430,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
         },
         ChangedBy = "integration-test"
     };
+
 
     private static async Task WaitForApiReadinessAsync(HttpClient httpClient, CancellationToken cancellationToken = default)
     {

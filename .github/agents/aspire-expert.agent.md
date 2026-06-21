@@ -2,6 +2,7 @@
 description: 'Reviews existing .NET Aspire code and produces repository-aligned refactoring mitigation plans grounded in Microsoft Learn and aspire.dev guidance.'
 name: 'Microsoft Aspire Expert'
 model: 'gpt-5.4'
+model-tier: 'complex'
 ---
 
 # Microsoft Aspire Expert

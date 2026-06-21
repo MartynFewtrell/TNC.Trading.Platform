@@ -12,6 +12,8 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
 
     internal DbSet<AuthRetryCycleEntity> AuthRetryCycles => Set<AuthRetryCycleEntity>();
 
+    internal DbSet<IgLoginSnapshotEntity> IgLoginSnapshots => Set<IgLoginSnapshotEntity>();
+
     internal DbSet<OperationalEventEntity> OperationalEvents => Set<OperationalEventEntity>();
 
     internal DbSet<ConfigurationAuditEntity> ConfigurationAudits => Set<ConfigurationAuditEntity>();
@@ -50,6 +52,7 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.Property(item => item.SessionStatus).HasMaxLength(64);
             entity.Property(item => item.RetryPhase).HasMaxLength(64);
             entity.Property(item => item.BlockedReason).HasMaxLength(512);
+            entity.Property(item => item.LatestFailureSummary).HasMaxLength(512);
         });
 
         modelBuilder.Entity<AuthRetryCycleEntity>(entity =>
@@ -59,6 +62,16 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.Property(item => item.PlatformEnvironment).HasMaxLength(32);
             entity.Property(item => item.BrokerEnvironment).HasMaxLength(32);
             entity.Property(item => item.RetryPhase).HasMaxLength(64);
+        });
+
+        modelBuilder.Entity<IgLoginSnapshotEntity>(entity =>
+        {
+            entity.HasKey(item => item.IgLoginSnapshotId);
+            entity.Property(item => item.BrokerEnvironment).HasMaxLength(32);
+            entity.Property(item => item.SnapshotKind).HasMaxLength(64);
+            entity.Property(item => item.CurrentAccountId).HasMaxLength(64);
+            entity.Property(item => item.LightstreamerEndpoint).HasMaxLength(512);
+            entity.HasIndex(item => new { item.BrokerEnvironment, item.SnapshotKind, item.TradingDay });
         });
 
         modelBuilder.Entity<OperationalEventEntity>(entity =>

@@ -8,7 +8,7 @@ namespace TNC.Trading.Platform.Infrastructure.Platform;
 internal sealed class ProtectedCredentialService(
     PlatformDbContext dbContext,
     IDataProtectionProvider dataProtectionProvider,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider) : IProtectedCredentialService
 {
     private readonly IDataProtector protector = dataProtectionProvider.CreateProtector("Platform.IgCredentials");
 
@@ -42,6 +42,24 @@ internal sealed class ProtectedCredentialService(
         {
             await UpsertCredentialAsync(brokerEnvironment, "Password", password, changedBy, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    public async Task<IgCredentials> GetCredentialsAsync(BrokerEnvironmentKind brokerEnvironment, CancellationToken cancellationToken)
+    {
+        var entities = await dbContext.ProtectedCredentials
+            .Where(item => item.BrokerEnvironment == brokerEnvironment.ToString())
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        string? Decrypt(string type) =>
+            entities.FirstOrDefault(entity => string.Equals(entity.CredentialType, type, StringComparison.Ordinal)) is { } entity
+                ? protector.Unprotect(entity.ProtectedValue)
+                : null;
+
+        return new IgCredentials(
+            Decrypt("ApiKey") ?? string.Empty,
+            Decrypt("Identifier") ?? string.Empty,
+            Decrypt("Password") ?? string.Empty);
     }
 
     private async Task UpsertCredentialAsync(BrokerEnvironmentKind brokerEnvironment, string credentialType, string secret, string changedBy, CancellationToken cancellationToken)

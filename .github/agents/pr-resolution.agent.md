@@ -2,6 +2,7 @@
 description: 'Analyzes pull request comments with repository context and online references, then recommends actions and implements approved fixes with validation.'
 name: 'Comment Resolution Agent'
 model: 'gpt-5.4'
+model-tier: 'complex'
 ---
 
 # PR Comment Resolution Agent

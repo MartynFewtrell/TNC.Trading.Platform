@@ -9,4 +9,5 @@ internal sealed record PlatformStatusViewModel(
     TradingScheduleStateViewModel TradingScheduleState,
     AuthStateViewModel AuthState,
     RetryStateViewModel RetryState,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    IgLoginStatusViewModel IgLogin);

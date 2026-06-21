@@ -1,10 +1,15 @@
 ﻿# Prompt workflow guide
 
-This document explains what each prompt in `./.github/prompts/` is for, the intended order to use them, and how they fit together as a working delivery workflow.
+This document explains the existing prompt assets in `./.github/prompts/`, when they are still useful, and how they fit into the repository's broader Copilot asset model.
+
+## Preferred asset path
+
+For new reusable behavior, prefer repository instructions, agents, and skills.
+Use prompts when maintaining the existing prompt-driven workflow, when a prompt-format artifact is explicitly required, or when supporting compatibility with the current prompt library.
 
 ## Primary workflow
 
-Use this sequence when starting from an idea and driving it through analysis, work-package design, delivery, review, and mitigation.
+Use this sequence when you are intentionally following the repository's existing prompt-driven workflow from idea through delivery, review, and mitigation.
 
 ```text
 Idea
@@ -102,9 +107,14 @@ These prompts are useful alongside the primary workflow, but they are not normal
 
 - **`generate-copilot-prompt.prompt.md`**
   - Supports maintenance of the existing prompt library and can help draft a reusable `*.prompt.md` file from the repository prompt template when a prompt-format artifact is explicitly required.
-  - For new Copilot artifacts, prefer creating an Agent Skill under `./.github/skills/` with `SKILL.md`, in line with `./.github/copilot-instructions.md`.
-  - Use this prompt only when extending or reorganizing the current prompt library, or when a prompt file is intentionally needed rather than a skill.
+   - For new Copilot artifacts, prefer repository instructions, agents, or an Agent Skill under `./.github/skills/` with `SKILL.md`, in line with `./.github/copilot-instructions.md`.
+   - Use this prompt only when extending or reorganizing the current prompt library, or when a prompt file is intentionally needed rather than an instruction, agent, or skill.
   - Best used outside the normal product-delivery flow.
+
+- **`create-copilot-agent.prompt.md`**
+   - Supports maintenance of the repository's existing agent library when an `.agent.md` asset is the correct reusable form.
+   - Prefer this over creating a new prompt when the desired behavior is a specialized multi-step execution role.
+   - Best used when the repository needs a new named agent rather than a task-local prompt.
 
 - **`create-instructions.prompt.md`**
   - Creates a new `*.instructions.md` file for repository-specific coding or documentation rules.
@@ -153,8 +163,9 @@ These prompts are useful alongside the primary workflow, but they are not normal
 ### Pattern D: Repository standards tooling work
 
 1. `create-instructions` when a new rule set is needed
-2. `generate-copilot-prompt` when a new reusable prompt is needed
-3. `reverse-doc-suite` when the repo documentation set needs to be reconstructed from code
+2. `create-copilot-agent` when a new reusable agent is needed
+3. `generate-copilot-prompt` only when a prompt-format artifact is intentionally required
+4. `reverse-doc-suite` when the repo documentation set needs to be reconstructed from code
 
 ## Prompt quick reference
 
@@ -172,7 +183,8 @@ These prompts are useful alongside the primary workflow, but they are not normal
 | `review-refactoring-approach.prompt.md` | numbered refactoring review report | Assess maintainability | `execute-delivery` or `execute-test-mitigation` | `plan-refactoring-mitigation` |
 | `plan-refactoring-mitigation.prompt.md` | numbered refactoring mitigation plan | Turn refactoring findings into work | `review-refactoring-approach` | `execute-refactoring-mitigation` |
 | `execute-refactoring-mitigation.prompt.md` | refactored code + updated mitigation plan | Implement maintainability improvements | `plan-refactoring-mitigation` | completion |
-| `generate-copilot-prompt.prompt.md` | new `*.prompt.md` file | Add a new reusable prompt | none | none |
+| `create-copilot-agent.prompt.md` | new `*.agent.md` file | Add a new reusable agent | none | none |
+| `generate-copilot-prompt.prompt.md` | new or updated `*.prompt.md` file | Maintain or intentionally extend the prompt library | none | none |
 | `create-instructions.prompt.md` | new `*.instructions.md` file | Add new scoped repo rules | none | none |
 | `reverse-doc-suite.prompt.md` | full `/docs` suite | Reconstruct docs from code | existing repo | docs review or maintenance |
 
@@ -182,6 +194,6 @@ These prompts are useful alongside the primary workflow, but they are not normal
 - Use the **execute prompts** to implement validated plans.
 - Use the **review prompts** to inspect quality after delivery.
 - Use the **plan mitigation prompts** to turn review findings into explicit follow-up work.
-- Use the **utility prompts** only when you are maintaining the prompt library, repository instructions, or documentation estate itself.
+- Use the **utility prompts** only when you are maintaining the repository's prompt, agent, instruction, or documentation assets.
 
-In short: define the work, design the work, plan the work, execute the work, then review and harden the work.
+In short: prefer instructions, agents, and skills for new reusable behavior; use this prompt workflow when you intentionally need the existing prompt-driven path.

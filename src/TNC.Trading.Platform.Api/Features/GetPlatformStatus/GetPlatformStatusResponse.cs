@@ -9,4 +9,5 @@ internal sealed record GetPlatformStatusResponse(
     TradingScheduleStateResponse TradingScheduleState,
     AuthStateResponse AuthState,
     RetryStateResponse RetryState,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    IgLoginStatusResponse IgLogin);

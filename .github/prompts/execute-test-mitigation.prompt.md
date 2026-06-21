@@ -70,7 +70,7 @@ Prefer efficient execution: reuse the plan's existing structure, reuse the most 
 - MUST NOT: Mark items as complete if they are not implemented and validated.
 - MUST NOT: Skip build and test gates to save time.
 - MUST NOT: Weaken existing coverage, remove assertions, or broaden waits merely to make tests pass.
-- Output MUST be: a short execution summary plus the updated numbered mitigation plan file content (or a diff or patch description if the environment cannot display the whole file).
+- Output MUST be: a terse completion note plus the updated numbered mitigation plan file content (or a diff or patch description if the environment cannot display the whole file).
 
 ## Process
 
@@ -109,7 +109,7 @@ Prefer efficient execution: reuse the plan's existing structure, reuse the most 
 
 Return:
 
-- **Summary**: What was implemented and which work items were completed.
+- **Completed**: What was implemented and which work items were completed.
 - **Validation**: The build and test commands run and their outcomes.
 - **Plan update**: The updated numbered mitigation plan file content, or a concise diff or patch description if the full file is too large to include.
 - **Outstanding items**: Any checklist entries intentionally left incomplete, plus the blocker or reason.
@@ -122,4 +122,4 @@ Execute `./docs/002-environment-and-auth-foundation/plans/005-work-package-test-
 
 ### Example response (optional)
 
-A summary of implemented test hardening work, the validation results, and an updated numbered mitigation plan file with completed items checked off.
+A terse completion note, the validation results, and an updated numbered mitigation plan file with completed items checked off.

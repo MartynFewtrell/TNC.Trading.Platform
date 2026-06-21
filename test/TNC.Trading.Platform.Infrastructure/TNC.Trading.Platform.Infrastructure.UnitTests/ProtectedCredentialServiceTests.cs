@@ -72,4 +72,54 @@ public class ProtectedCredentialServiceTests
         Assert.DoesNotContain(rotatedCredentials, credential => credential.ProtectedValue == "rotated-identifier");
         Assert.DoesNotContain(rotatedCredentials, credential => credential.ProtectedValue == "rotated-password");
     }
+
+    /// <summary>
+    /// Trace: SR3, NF3.
+    /// Verifies: the runtime credential read path decrypts all stored values for the selected broker environment.
+    /// Expected: the returned credentials contain the original API key, identifier, and password values.
+    /// Why: broker authentication must be able to use the protected credentials at runtime without exposing them in persisted outputs.
+    /// </summary>
+    [Fact]
+    public async Task GetCredentialsAsync_WhenAllCredentialsPresent_ShouldReturnDecryptedValues()
+    {
+        using var dbContext = InfrastructureReflection.CreateDbContext();
+        var service = new ProtectedCredentialService(
+            dbContext,
+            InfrastructureReflection.CreateDataProtectionProvider(),
+            TimeProvider.System);
+
+        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var credentials = await service.GetCredentialsAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
+
+        Assert.Equal("demo-api-key", credentials.ApiKey);
+        Assert.Equal("demo-identifier", credentials.Identifier);
+        Assert.Equal("demo-password", credentials.Password);
+    }
+
+    /// <summary>
+    /// Trace: SR3, NF3.
+    /// Verifies: missing protected credential rows are mapped to empty strings instead of leaking nulls or throwing.
+    /// Expected: any missing credential type returns an empty string while present values are still decrypted correctly.
+    /// Why: runtime auth calls need a deterministic secret-safe contract even when an operator has only partially configured credentials.
+    /// </summary>
+    [Fact]
+    public async Task GetCredentialsAsync_WhenCredentialMissing_ShouldReturnEmptyStringForMissingValue()
+    {
+        using var dbContext = InfrastructureReflection.CreateDbContext();
+        var service = new ProtectedCredentialService(
+            dbContext,
+            InfrastructureReflection.CreateDataProtectionProvider(),
+            TimeProvider.System);
+
+        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "demo-api-key", null, "demo-password", "unit-test", CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var credentials = await service.GetCredentialsAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
+
+        Assert.Equal("demo-api-key", credentials.ApiKey);
+        Assert.Equal(string.Empty, credentials.Identifier);
+        Assert.Equal("demo-password", credentials.Password);
+    }
 }

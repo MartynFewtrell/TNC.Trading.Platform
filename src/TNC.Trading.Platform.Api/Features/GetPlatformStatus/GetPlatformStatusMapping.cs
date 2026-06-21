@@ -1,4 +1,4 @@
-using AppGetPlatformStatus = TNC.Trading.Platform.Application.Features.GetPlatformStatus;
+﻿using AppGetPlatformStatus = TNC.Trading.Platform.Application.Features.GetPlatformStatus;
 
 namespace TNC.Trading.Platform.Api.Features.GetPlatformStatus;
 
@@ -33,6 +33,40 @@ internal static class GetPlatformStatusMapping
                 status.RetryState.NextRetryAtUtc,
                 status.RetryState.RetryLimitReached,
                 status.RetryState.ManualRetryAvailable),
-            status.UpdatedAtUtc);
+            status.UpdatedAtUtc,
+            new IgLoginStatusResponse(
+                status.IgLoginStatus.CurrentState,
+                new TradingScheduleStateResponse(
+                    status.IgLoginStatus.ScheduleState.IsActive,
+                    status.IgLoginStatus.ScheduleState.Reason),
+                new RetryStateResponse(
+                    status.IgLoginStatus.RetryState.Phase.ToString(),
+                    status.IgLoginStatus.RetryState.AutomaticAttemptNumber,
+                    status.IgLoginStatus.RetryState.NextRetryAtUtc,
+                    status.IgLoginStatus.RetryState.RetryLimitReached,
+                    status.IgLoginStatus.RetryState.ManualRetryAvailable),
+                status.IgLoginStatus.LastAttemptAtUtc,
+                status.IgLoginStatus.LastSuccessfulLoginAtUtc,
+                status.IgLoginStatus.LatestSnapshotId,
+                status.IgLoginStatus.LatestFailureSummary,
+                status.IgLoginStatus.LatestSnapshot is null
+                    ? null
+                    : new IgLoginSnapshotResponse(
+                        status.IgLoginStatus.LatestSnapshot.Id,
+                        status.IgLoginStatus.LatestSnapshot.CapturedAtUtc,
+                        status.IgLoginStatus.LatestSnapshot.TradingDay,
+                        status.IgLoginStatus.LatestSnapshot.CurrentAccountId,
+                        status.IgLoginStatus.LatestSnapshot.LightstreamerEndpoint,
+                        status.IgLoginStatus.LatestSnapshot.SessionExpiresAtUtc,
+                        status.IgLoginStatus.LatestSnapshot.ResponseHeaders,
+                        status.IgLoginStatus.LatestSnapshot.RawNonSecretPayloadJson),
+                status.IgLoginStatus.LatestProofData is null
+                    ? null
+                    : new IgProofDataResponse(
+                        status.IgLoginStatus.LatestProofData.PreferredAccountName,
+                        status.IgLoginStatus.LatestProofData.PreferredAccountId,
+                        status.IgLoginStatus.LatestProofData.Balance,
+                        status.IgLoginStatus.LatestProofData.OpenPositionCount,
+                        status.IgLoginStatus.LatestProofData.RetrievedAtUtc)));
     }
 }

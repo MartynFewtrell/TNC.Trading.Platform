@@ -24,7 +24,9 @@ At startup and during background execution, the application:
 3. checks whether the selected environment combination is allowed
 4. evaluates whether required credentials are present
 5. updates runtime auth state
-6. records events and notifications when state changes matter
+6. retrieves read-only IG Demo proof data (account, balance, positions) after a successful session and persists the result as a non-secret `IgProofDataSnapshot`
+7. captures a secret-safe IG login snapshot after a successful backend auth transition
+8. records events and notifications when state changes matter
 
 ## Startup sequence
 
@@ -38,6 +40,8 @@ sequenceDiagram
     participant Config as PlatformConfigurationService
     participant Retention as OperationalRecordRetentionProcessor
     participant Coordinator as PlatformStateCoordinator
+    participant IgSessionClient as IgSessionClient
+    participant IgDemo as IG Demo REST API
 
     App->>Db: Ensure database exists
     App->>Config: Apply startup configuration
@@ -45,6 +49,11 @@ sequenceDiagram
     App->>Retention: Apply retention cleanup
     Retention-->>App: Deleted record count
     App->>Coordinator: Initial TickAsync
+    Coordinator->>IgSessionClient: AuthenticateAsync
+    IgSessionClient->>IgDemo: Authenticate and query proof data
+    IgDemo-->>IgSessionClient: Session tokens and account/position data
+    IgSessionClient-->>Coordinator: Auth result and proof data
+    Coordinator->>Coordinator: Persist latest proof snapshot and login snapshot
     Coordinator-->>App: Runtime state updated
     App-->>App: Start request pipeline and background supervisor
 ```
@@ -85,15 +94,67 @@ The schedule gate returns:
 
 ## Auth-state behavior
 
-The current implementation does not yet perform real broker authentication.
-
-Instead, it models the auth state needed by the rest of the control plane. The coordinator uses environment rules, schedule rules, and credential presence to decide what the runtime auth state should be.
+The runtime coordinator applies environment rules, schedule rules, and credential presence to decide what the auth state should be.
 
 This runtime auth-state model is distinct from the operator sign-in model:
 
 - operator sign-in uses standards-based OIDC/OAuth flows through Keycloak locally and Azure-aligned configuration for Microsoft Entra ID
 - automated tests may opt into the synthetic test provider through explicit test-harness composition
-- operator role boundaries are enforced independently of the simulated broker auth-state projection
+- operator role boundaries are enforced independently of the broker auth-state projection
+
+When a backend auth transition succeeds, the coordinator now persists:
+
+- one latest successful IG login snapshot for the active broker environment
+- one retained first-successful snapshot per trading day
+
+Retained daily snapshots older than 90 days are removed by the shared retention processor, while the independently addressable latest snapshot remains available.
+
+The current status projection now also reads the latest successful snapshot back into `GET /api/platform/status` so the Web UI can show the current IG login state and expand the latest non-secret payload details without calling a second latest-snapshot endpoint.
+
+The same status projection also surfaces the latest `IgProofDataSnapshot` as `LatestProofData` when the platform has already captured read-only Demo proof data for the active broker environment.
+
+The latest snapshot projection currently includes:
+
+- snapshot identifier and capture time
+- trading day
+- current account identifier
+- Lightstreamer endpoint when supplied
+- session expiry when supplied
+- approved non-secret response headers
+- the raw non-secret payload JSON
+
+Protected values such as credentials, `CST`, `X-SECURITY-TOKEN`, and equivalent secrets remain excluded before persistence and before the status response is built.
+
+## Broker authentication execution
+
+When the trading schedule is active and credentials are complete, the platform now authenticates against IG by:
+
+- loading the selected environment's protected API key, identifier, and password through the runtime credential service
+- calling the IG session client instead of constructing a simulated authentication response
+- sanitizing the broker response before any operational-event payload is recorded
+- persisting only the approved non-secret snapshot fields from a successful response
+
+The returned `CST` and `X-SECURITY-TOKEN` values remain in memory only for the current authentication flow. They are not stored on runtime-state entities, login snapshots, status payloads, or operational-event details.
+
+### Failure classification
+
+When IG authentication fails, the degraded-state summary is classified into one of these operator-visible categories:
+
+- invalid or rejected credentials
+- access forbidden
+- request rate limit exceeded
+- unexpected broker response
+- request timed out
+- broker unreachable
+- unexpected error
+
+These summaries are secret-safe and feed the same degraded-state path that maintains retry scheduling and failure notification behavior.
+
+### Opt-in real IG smoke validation
+
+Deterministic automated coverage continues to use test doubles by default.
+
+Real IG smoke validation remains opt-in only. Supply credentials through user secrets or environment variables outside source control, then run the targeted broker-auth validation locally when you explicitly want to verify live Demo connectivity. Do not enable this path in the default `dotnet test` workflow.
 
 ## State transitions
 
@@ -222,8 +283,14 @@ Operational events are stored for later review.
 ### Example event types seen in the code and tests
 
 - `AuthAttempted`
-- `ManualRetryRequested`
+- `Authenticated`
+- `FailureDetected`
+- `Recovered`
+- `SessionExpired`
+- `TradingScheduleInactive`
 - `BlockedLiveAttempt`
+- `SnapshotCaptured` (recorded when a successful IG login snapshot is persisted, including trading day and account identifier in the details; no protected values included)
+- `ManualRetryRequested`
 - operator session audit events such as `OperatorSignInCompleted`, `OperatorSignOutCompleted`, `OperatorAccessDenied`, and `OperatorTokenAcquisitionFailed`
 - notification-related event types such as `AuthFailure`, `AuthRecovered`, and `RetryLimitReached`
 
@@ -305,6 +372,18 @@ The processor currently applies retention to:
 - operational events
 - configuration audits
 - notification records
+- retained daily IG login snapshots (the `RetainedDailyFirstSuccessful` kind; the independently addressable latest snapshot is not subject to automatic age-based removal)
+
+### IG login snapshot retention
+
+Two kinds of IG login snapshot are stored:
+
+| Kind | Meaning | Retention |
+| --- | --- | --- |
+| `Latest` | The most recent successful login result for the active broker environment. | Always retained; overwritten by a newer successful login. |
+| `RetainedDailyFirstSuccessful` | The first successful login result for each trading day. One entry per day. | Removed after 90 days by the retention processor. |
+
+The retained daily snapshots are accessible through `GET /api/platform/ig-login/history`. The latest snapshot is included directly in `GET /api/platform/status` so the UI can expand payload details without a second read call.
 
 ## Local infrastructure behavior
 
@@ -331,6 +410,7 @@ flowchart TD
     Combination -->|No| Credentials{Credentials complete?}
     Credentials -->|No| Degraded[Set Degraded state with missing-credential reason]
     Credentials -->|Yes| Active[Set Active state or continue retry-cycle logic]
+    Active --> ProofData[Capture IG Demo proof data and persist latest snapshot]
     Degraded --> ManualRetry{Manual retry allowed?}
     ManualRetry -->|Yes| RetryCycle[Start or reset retry cycle]
     ManualRetry -->|No| Wait[Keep blocked actions visible]

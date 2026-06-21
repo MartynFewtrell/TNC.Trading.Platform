@@ -100,6 +100,20 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
         return content ?? throw new InvalidOperationException("Authentication administration response was empty.");
     }
 
+    public async Task<IReadOnlyList<IgLoginHistorySnapshotViewModel>> GetIgLoginHistoryAsync(CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(
+            HttpMethod.Get,
+            "/api/platform/ig-login/history",
+            [PlatformAuthenticationDefaults.Scopes.Viewer],
+            cancellationToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var content = await response.Content.ReadFromJsonAsync<IgLoginHistoryResponse>(JsonOptions, cancellationToken);
+        return content?.RetainedSnapshots ?? throw new InvalidOperationException("IG login history response was empty.");
+    }
+
     private async Task<HttpRequestMessage> CreateAuthorizedRequestAsync(
         HttpMethod method,
         string url,
@@ -111,4 +125,6 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         return request;
     }
+
+    private sealed record IgLoginHistoryResponse(IReadOnlyList<IgLoginHistorySnapshotViewModel> RetainedSnapshots);
 }

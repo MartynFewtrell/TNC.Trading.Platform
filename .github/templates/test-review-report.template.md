@@ -12,7 +12,7 @@
   - `src/...`
   - `test/...`
 
-## Executive summary
+## Key findings overview
 
 - **Overall test confidence**: `<high|medium|low>`
 - **Overall coverage assessment**: `<strong|partial|weak>`

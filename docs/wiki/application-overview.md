@@ -13,6 +13,7 @@ The implemented application is focused on:
 - storing operator-managed configuration durably
 - protecting IG credentials through write-only update flows
 - exposing current runtime and retry state through protected API and Blazor surfaces
+- capturing and retaining secret-safe IG login snapshot data from successful backend auth transitions
 - recording operational and notification history
 - preparing the platform for later broker, market-data, and trading features
 
@@ -29,14 +30,23 @@ The implemented application is focused on:
 - in-memory persistence fallback when no SQL connection string is available
 - protected credential storage using ASP.NET Core Data Protection
 - operational event recording and notification recording
+- secret-safe latest IG login snapshot persistence plus one retained first-successful snapshot per trading day
 - retry-state tracking, retry-limit handling, and manual retry initiation
 - local notification validation through Mailpit when infrastructure containers are enabled
 
-### Important current limitation
+### Current IG Demo connectivity and proof data
 
-The platform does not yet perform real IG authentication, price streaming, instrument discovery, order execution, or strategy automation.
+The platform now establishes a real authenticated session against the IG Demo REST API on each scheduled auth tick.
 
-Instead, the current codebase models and exposes the operational control plane needed before those features are added:
+After a successful Demo session, the platform performs read-only proof-data queries for account information and open positions as a safe connectivity check. The result is persisted as non-secret proof data and surfaced on the status page and through the API.
+
+This workflow is read-only:
+
+- no trades are placed
+- no orders are submitted
+- no account-changing or write-capable IG operations are issued
+
+The proof data includes the preferred account name, account ID, balance, open-position count, and retrieval timestamp. The platform also continues to expose the operational control plane needed around that connectivity:
 
 - configuration state
 - schedule state
@@ -44,6 +54,7 @@ Instead, the current codebase models and exposes the operational control plane n
 - auth degradation and recovery state
 - retry policy and retry-cycle visibility
 - notification and audit records
+- IG Demo login snapshot capture and retained proof data for safe operator review
 
 ## Solution projects
 
@@ -154,6 +165,7 @@ The current implementation persists or models the following record types:
 - protected credentials
 - auth runtime state
 - auth retry cycles
+- IG login snapshots for the latest successful payload and retained daily history
 - operational events, including operator authentication audit history
 - configuration audits
 - notification records

@@ -74,7 +74,7 @@ Prefer efficient execution: reuse the plan's existing structure, reuse the most 
 - MUST NOT: Skip build and test gates to save time.
 - MUST NOT: Introduce speculative abstractions, large rewrites, or unrelated cleanup beyond what the mitigation plan requires.
 - MUST NOT: Weaken existing coverage, remove assertions, or broaden waits merely to make tests pass after a refactor.
-- Output MUST be: a short execution summary plus the updated numbered mitigation plan file content (or a diff or patch description if the environment cannot display the whole file).
+- Output MUST be: a terse completion note plus the updated numbered mitigation plan file content (or a diff or patch description if the environment cannot display the whole file).
 
 ## Process
 
@@ -114,7 +114,7 @@ Prefer efficient execution: reuse the plan's existing structure, reuse the most 
 
 Return:
 
-- **Summary**: What was implemented and which work items were completed.
+- **Completed**: What was implemented and which work items were completed.
 - **Validation**: The build and test commands run and their outcomes.
 - **Plan update**: The updated numbered mitigation plan file content, or a concise diff or patch description if the full file is too large to include.
 - **Outstanding items**: Any checklist entries intentionally left incomplete, plus the blocker or reason.
@@ -127,4 +127,4 @@ Execute `./docs/003-authentication-and-authorisation/plans/005-work-package-refa
 
 ### Example response (optional)
 
-A summary of implemented refactoring work, the validation results, and an updated numbered mitigation plan file with completed items checked off.
+A terse completion note, the validation results, and an updated numbered mitigation plan file with completed items checked off.
