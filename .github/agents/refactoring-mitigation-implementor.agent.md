@@ -29,10 +29,8 @@ You may implement code, tests, and supporting documentation changes, but only af
 
 ## Durable execution artifact
 
-- The durable execution artifact is a lightweight markdown execution log stored next to the target mitigation plan in the same work-package `plans/` folder.
 - Default naming convention: use the mitigation plan file name stem and append `-execution-log.md`.
-  - Example: `006-work-package-refactoring-mitigation-plan.md` -> `006-work-package-refactoring-mitigation-plan-execution-log.md`.
-- The implementor agent owns creation and updates of this execution log.
+  - Example: `00n-work-package-refactoring-mitigation-plan.md` -> `00n-work-package-refactoring-mitigation-plan-execution-log.md`.
 - Create the log when execution starts if it does not already exist.
 - Update the log after each completed work item, when validation results materially change the situation, and before stopping on any blocker or pause.
 - Record at least: the active plan path, current work item, completed steps, validation commands and outcomes, blockers, and the next intended action.
