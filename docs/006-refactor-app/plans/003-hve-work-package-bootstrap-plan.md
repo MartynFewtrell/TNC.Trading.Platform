@@ -8,7 +8,7 @@
   - `../../business-requirements.md`
   - `../requirements.md`
   - `../technical-specification.md`
-  - `plans/002-hve-agent-adoption-plan.md`
+  - `002-hve-agent-adoption-plan.md`
   - `.github/prompts/help.md`
   - `.github/templates/agent-template.md`
   - `.github/templates/prompt.template.md`
