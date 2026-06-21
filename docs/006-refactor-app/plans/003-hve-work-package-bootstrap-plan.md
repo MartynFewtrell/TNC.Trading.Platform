@@ -2,13 +2,13 @@
 
 ## Summary
 
-- **Source**: See `../requirements.md` for canonical work metadata and scope. See `../technical-specification.md` for the work-package implementation posture. See `plans/002-hve-agent-adoption-plan.md` for the earlier refactoring-workflow-specific HVE adoption work that this plan should complement rather than replace.
+- **Source**: See `../requirements.md` for canonical work metadata and scope. See `../technical-specification.md` for the work-package implementation posture. See `002-hve-agent-adoption-plan.md` for the earlier refactoring-workflow-specific HVE adoption work that this plan should complement rather than replace.
 - **Status**: in-progress
 - **Inputs**:
   - `../../business-requirements.md`
   - `../requirements.md`
   - `../technical-specification.md`
-  - `plans/002-hve-agent-adoption-plan.md`
+  - `002-hve-agent-adoption-plan.md`
   - `.github/prompts/help.md`
   - `.github/templates/agent-template.md`
   - `.github/templates/prompt.template.md`
