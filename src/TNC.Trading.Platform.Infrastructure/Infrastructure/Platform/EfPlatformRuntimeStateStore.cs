@@ -49,6 +49,10 @@ internal sealed class EfPlatformRuntimeStateStore(PlatformDbContext dbContext) :
         entity.NextRetryAtUtc = state.NextRetryAtUtc;
         entity.RetryLimitReached = state.RetryLimitReached;
         entity.CurrentRetryCycleId = state.CurrentRetryCycleId;
+        entity.LastLoginAttemptAtUtc = state.LastLoginAttemptAtUtc;
+        entity.LastSuccessfulLoginAtUtc = state.LastSuccessfulLoginAtUtc;
+        entity.LatestIgLoginSnapshotId = state.LatestIgLoginSnapshotId;
+        entity.LatestFailureSummary = state.LatestFailureSummary;
         entity.EstablishedAtUtc = state.EstablishedAtUtc;
         entity.ExpiresAtUtc = state.ExpiresAtUtc;
         entity.LastValidatedAtUtc = state.LastValidatedAtUtc;
@@ -72,6 +76,10 @@ internal sealed class EfPlatformRuntimeStateStore(PlatformDbContext dbContext) :
             NextRetryAtUtc = entity.NextRetryAtUtc,
             RetryLimitReached = entity.RetryLimitReached,
             CurrentRetryCycleId = entity.CurrentRetryCycleId,
+            LastLoginAttemptAtUtc = entity.LastLoginAttemptAtUtc,
+            LastSuccessfulLoginAtUtc = entity.LastSuccessfulLoginAtUtc,
+            LatestIgLoginSnapshotId = entity.LatestIgLoginSnapshotId,
+            LatestFailureSummary = entity.LatestFailureSummary,
             EstablishedAtUtc = entity.EstablishedAtUtc,
             ExpiresAtUtc = entity.ExpiresAtUtc,
             LastValidatedAtUtc = entity.LastValidatedAtUtc,

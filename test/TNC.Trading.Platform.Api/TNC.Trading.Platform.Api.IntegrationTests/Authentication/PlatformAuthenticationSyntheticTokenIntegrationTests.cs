@@ -2,12 +2,11 @@
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json;
-using Aspire.Hosting.Testing;
 
 namespace TNC.Trading.Platform.Api.IntegrationTests.Authentication;
 
 [Collection(AuthenticationIntegrationTestCollection.Name)]
-public class PlatformAuthenticationSyntheticTokenIntegrationTests
+public class PlatformAuthenticationSyntheticTokenIntegrationTests(SyntheticTokenIntegrationTestFixture fixture)
 {
     private const string OperatorRole = "Operator";
     private const string ViewerRole = "Viewer";
@@ -23,15 +22,7 @@ public class PlatformAuthenticationSyntheticTokenIntegrationTests
     [Fact]
     public async Task StatusEndpoint_ShouldReturnUnauthorized_WhenTokenIssuerIsInvalid()
     {
-        using var _ = new TestEnvironmentVariableScope("Authentication__ApiProvider", "Test");
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(httpClient);
+        using var httpClient = fixture.CreateApiClient();
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Get,
             "/api/platform/status",
@@ -53,15 +44,7 @@ public class PlatformAuthenticationSyntheticTokenIntegrationTests
     [Fact]
     public async Task StatusEndpoint_ShouldReturnUnauthorized_WhenTokenAudienceIsInvalid()
     {
-        using var _ = new TestEnvironmentVariableScope("Authentication__ApiProvider", "Test");
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(httpClient);
+        using var httpClient = fixture.CreateApiClient();
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Get,
             "/api/platform/status",
@@ -83,15 +66,7 @@ public class PlatformAuthenticationSyntheticTokenIntegrationTests
     [Fact]
     public async Task StatusEndpoint_ShouldReturnUnauthorized_WhenTokenIsExpired()
     {
-        using var _ = new TestEnvironmentVariableScope("Authentication__ApiProvider", "Test");
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(httpClient);
+        using var httpClient = fixture.CreateApiClient();
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Get,
             "/api/platform/status",
@@ -113,15 +88,7 @@ public class PlatformAuthenticationSyntheticTokenIntegrationTests
     [Fact]
     public async Task AuthAuditEndpoint_ShouldReturnValidationProblem_WhenEventTypeIsUnsupported()
     {
-        using var _ = new TestEnvironmentVariableScope("Authentication__ApiProvider", "Test");
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(httpClient);
+        using var httpClient = fixture.CreateApiClient();
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Post,
             "/api/platform/auth/audit",
@@ -153,15 +120,7 @@ public class PlatformAuthenticationSyntheticTokenIntegrationTests
     [Fact]
     public async Task AuthAuditEndpoint_ShouldReturnValidationProblem_WhenEventTypeIsMissing()
     {
-        using var _ = new TestEnvironmentVariableScope("Authentication__ApiProvider", "Test");
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(httpClient);
+        using var httpClient = fixture.CreateApiClient();
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Post,
             "/api/platform/auth/audit",
@@ -192,15 +151,7 @@ public class PlatformAuthenticationSyntheticTokenIntegrationTests
     [Fact]
     public async Task AuthAuditEndpoint_ShouldUseNameClaim_WhenPreferredUserNameClaimIsMissing()
     {
-        using var _ = new TestEnvironmentVariableScope("Authentication__ApiProvider", "Test");
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(httpClient);
+        using var httpClient = fixture.CreateApiClient();
         using var auditRequest = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Post,
             "/api/platform/auth/audit",
@@ -252,15 +203,7 @@ public class PlatformAuthenticationSyntheticTokenIntegrationTests
     [Fact]
     public async Task AuthAuditEndpoint_ShouldUseUnknownOperator_WhenDisplayNameClaimsAreMissing()
     {
-        using var _ = new TestEnvironmentVariableScope("Authentication__ApiProvider", "Test");
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(httpClient);
+        using var httpClient = fixture.CreateApiClient();
         using var auditRequest = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Post,
             "/api/platform/auth/audit",
@@ -304,15 +247,7 @@ public class PlatformAuthenticationSyntheticTokenIntegrationTests
     [Fact]
     public async Task ConfigurationEndpoint_ShouldReturnValidationProblemDetails_WhenRequestIsInvalid()
     {
-        using var _ = new TestEnvironmentVariableScope("Authentication__ApiProvider", "Test");
-        await using var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-
-        await using var app = await appHost.BuildAsync();
-        await app.StartAsync();
-
-        using var httpClient = app.CreateHttpClient("api");
-        await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(httpClient);
+        using var httpClient = fixture.CreateApiClient();
         using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
             HttpMethod.Put,
             "/api/platform/configuration",
@@ -372,4 +307,83 @@ public class PlatformAuthenticationSyntheticTokenIntegrationTests
         Assert.Equal("Notification provider is required.", errors.GetProperty("NotificationSettings.Provider")[0].GetString());
         Assert.Equal("ChangedBy is required.", errors.GetProperty("ChangedBy")[0].GetString());
     }
+
+    /// <summary>
+    /// Trace: FR7, SR2, SR4, TR5.
+    /// Verifies: the IG login history endpoint returns HTTP 401 when the bearer token issuer is invalid.
+    /// Expected: a request with an unexpected issuer receives HTTP 401 Unauthorized.
+    /// Why: the history endpoint must fail closed for forged tokens just as other protected endpoints do.
+    /// </summary>
+    [Fact]
+    public async Task IgLoginHistoryEndpoint_ShouldReturnUnauthorized_WhenTokenIssuerIsInvalid()
+    {
+        using var httpClient = fixture.CreateApiClient();
+        using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
+            HttpMethod.Get,
+            "/api/platform/ig-login/history",
+            "local-viewer",
+            [ViewerRole],
+            [ViewerScope],
+            issuer: "https://unexpected-auth.local");
+        using var response = await httpClient.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    /// <summary>
+    /// Trace: FR7, SR2, SR4, TR5.
+    /// Verifies: the IG login history endpoint returns HTTP 401 when no bearer token is supplied.
+    /// Expected: an anonymous request receives HTTP 401 Unauthorized.
+    /// Why: retained history payloads contain account identifiers and must not be accessible anonymously.
+    /// </summary>
+    [Fact]
+    public async Task IgLoginHistoryEndpoint_ShouldReturnUnauthorized_WhenNoTokenIsProvided()
+    {
+        using var httpClient = fixture.CreateApiClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/platform/ig-login/history");
+        using var response = await httpClient.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    /// <summary>
+    /// Trace: FR7, NF2, SR2, TR5.
+    /// Verifies: the IG login history endpoint returns HTTP 200 with a secret-safe response when a valid viewer token is presented.
+    /// Expected: the response contains a `retainedSnapshots` array that is either empty or contains entries without credential fields.
+    /// Why: the history endpoint must return a well-formed, secret-safe response for authenticated viewers.
+    /// </summary>
+    [Fact]
+    public async Task IgLoginHistoryEndpoint_ShouldReturnOkWithSecretSafeResponse_WhenViewerTokenIsProvided()
+    {
+        using var httpClient = fixture.CreateApiClient();
+        using var request = TestJwtTokenFactory.CreateAuthenticatedRequest(
+            HttpMethod.Get,
+            "/api/platform/ig-login/history",
+            "local-viewer",
+            [ViewerRole],
+            [ViewerScope]);
+        using var response = await httpClient.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        var root = document.RootElement;
+
+        // Response must contain a retainedSnapshots array — may be empty on a fresh environment.
+        Assert.True(root.TryGetProperty("retainedSnapshots", out var snapshots), "Response must include 'retainedSnapshots' array.");
+        Assert.Equal(JsonValueKind.Array, snapshots.ValueKind);
+
+        // If entries exist, confirm no credential fields are present.
+        foreach (var entry in snapshots.EnumerateArray())
+        {
+            Assert.False(entry.TryGetProperty("password", out _), "History entry must not expose password.");
+            Assert.False(entry.TryGetProperty("cst", out _), "History entry must not expose CST token.");
+            Assert.False(entry.TryGetProperty("securityToken", out _), "History entry must not expose security token.");
+            Assert.True(entry.TryGetProperty("tradingDay", out _), "History entry must include tradingDay.");
+            Assert.True(entry.TryGetProperty("currentAccountId", out _), "History entry must include currentAccountId.");
+        }
+    }
 }
+
+

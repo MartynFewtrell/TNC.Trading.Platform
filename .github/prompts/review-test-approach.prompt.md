@@ -52,6 +52,7 @@ ${REVIEW_DEPTH="standard"} <!-- quick | standard | deep: controls how much detai
 - MUST: Use an incremental three-digit numeric prefix for review report files, for example `001-work-package-test-review-report.md`, `002-work-package-test-review-report.md`, `003-work-package-test-review-report.md`.
 - MUST: Prefer the provided work-package artifacts and explicitly supplied paths before discovering additional repository files.
 - MUST: Inspect the current automated tests that relate to the work package and cite specific evidence using repository paths and, when practical, test class or method names.
+- MUST: Cite file-and-line evidence for material findings, risks, and recommendations unless stable line references are genuinely unavailable in the environment.
 - MUST: Use the `run-coverlet` skill on appropriate test projects that materially support the reviewed work package, unless no suitable test project exists; if not run, explicitly state why.
 - MUST: Use the `run-stryker` skill on appropriate unit test projects that materially support the reviewed work package, unless no suitable unit test project exists; if not run, explicitly state why.
 - MUST: Map documented requirements and acceptance criteria to current tests, partial coverage, or missing coverage.
@@ -72,7 +73,7 @@ ${REVIEW_DEPTH="standard"} <!-- quick | standard | deep: controls how much detai
 - SHOULD: Use repository conventions for functional test traceability, including work package and `FRx` references, when making recommendations.
 - SHOULD: Recommend readable automated test names using `MethodName_StateUnderTest_ExpectedResult` (for example `CalculateTotal_ShouldReturnZero_WhenCartIsEmpty`) instead of numeric-only method names.
 - SHOULD: Recommend adding or improving test comments so they capture requirement traceability and explain what the test verifies and why it matters.
-- Output MUST be: a single markdown report with a clear summary, evidence-backed findings, and prioritized recommendations.
+- Output MUST be: a single markdown report with a clear overview, evidence-backed findings, and prioritized recommendations.
 
 ## Process
 

@@ -12,12 +12,17 @@ internal static class PlatformWebTestData
         bool retryLimitReached = false,
         string blockedReason = "None",
         string platformEnvironment = "Test",
-        string brokerEnvironment = "Demo") =>
+        string brokerEnvironment = "Demo",
+        bool liveOptionAvailable = false,
+        string? sessionStatus = null,
+        bool isScheduleActive = true,
+        string retryPhase = "None",
+        IgLoginSnapshotViewModel? latestSnapshot = null) =>
         new(
             platformEnvironment,
             brokerEnvironment,
             LiveOptionVisible: true,
-            LiveOptionAvailable: false,
+            LiveOptionAvailable: liveOptionAvailable,
             new TradingScheduleViewModel(
                 new TimeOnly(8, 0),
                 new TimeOnly(16, 30),
@@ -25,10 +30,20 @@ internal static class PlatformWebTestData
                 "ExcludeWeekends",
                 [],
                 "UTC"),
-            new TradingScheduleStateViewModel(isDegraded ? false : true, isDegraded ? "Outside trading hours" : "Active"),
-            new AuthStateViewModel(isDegraded ? "Degraded" : "Healthy", isDegraded, isDegraded ? blockedReason : null),
-            new RetryStateViewModel("Idle", 2, DateTimeOffset.UtcNow.AddMinutes(5), retryLimitReached, manualRetryAvailable),
-            DateTimeOffset.UtcNow);
+            new TradingScheduleStateViewModel(isScheduleActive, isScheduleActive ? "Active" : "Outside trading hours"),
+            new AuthStateViewModel(GetSessionStatus(isDegraded, isScheduleActive, sessionStatus), isDegraded, isDegraded ? blockedReason : null),
+            new RetryStateViewModel(retryPhase, 2, retryPhase == "None" ? null : DateTimeOffset.UtcNow.AddMinutes(5), retryLimitReached, manualRetryAvailable),
+            DateTimeOffset.UtcNow,
+            new IgLoginStatusViewModel(
+                GetSessionStatus(isDegraded, isScheduleActive, sessionStatus),
+                new TradingScheduleStateViewModel(isScheduleActive, isScheduleActive ? "Active" : "Outside trading hours"),
+                new RetryStateViewModel(retryPhase, 2, retryPhase == "None" ? null : DateTimeOffset.UtcNow.AddMinutes(5), retryLimitReached, manualRetryAvailable),
+                DateTimeOffset.UtcNow.AddMinutes(-5),
+                latestSnapshot?.CapturedAtUtc,
+                latestSnapshot?.SnapshotId,
+                isDegraded ? blockedReason : null,
+                latestSnapshot,
+                null));
 
     public static PlatformConfigurationViewModel CreateConfiguration(bool restartRequired = false) =>
         new(
@@ -79,6 +94,55 @@ internal static class PlatformWebTestData
             DateTimeOffset.UtcNow);
 
     public static ManualRetryViewModel CreateManualRetry() => new(Guid.Parse("11111111-1111-1111-1111-111111111111"));
+
+    public static IgLoginSnapshotViewModel CreateLatestSnapshot(
+        string currentAccountId = "configured-demo-session",
+        string? rawPayloadJson = null) =>
+        new(
+            Guid.Parse("22222222-2222-2222-2222-222222222222"),
+            DateTimeOffset.UtcNow.AddMinutes(-1),
+            DateOnly.FromDateTime(DateTime.UtcNow),
+            currentAccountId,
+            "https://demo-apd.marketdatasystems.com",
+            DateTimeOffset.UtcNow.AddMinutes(14),
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Version"] = "3"
+            },
+            rawPayloadJson ?? "{\"currentAccountId\":\"configured-demo-session\",\"lightstreamerEndpoint\":\"https://demo-apd.marketdatasystems.com\",\"headers\":{\"Version\":\"3\"}}"
+        );
+
+    public static IgLoginHistorySnapshotViewModel CreateHistorySnapshot(
+        string currentAccountId = "retained-demo-session",
+        string? rawPayloadJson = null) =>
+        new(
+            Guid.Parse("33333333-3333-3333-3333-333333333333"),
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1)),
+            currentAccountId,
+            "https://demo-apd.marketdatasystems.com",
+            DateTimeOffset.UtcNow.AddDays(-1).AddMinutes(15),
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Version"] = "3"
+            },
+            rawPayloadJson ?? "{\"currentAccountId\":\"retained-demo-session\",\"lightstreamerEndpoint\":\"https://demo-apd.marketdatasystems.com\",\"headers\":{\"Version\":\"3\"}}"
+        );
+
+    private static string GetSessionStatus(bool isDegraded, bool isScheduleActive, string? sessionStatus)
+    {
+        if (!string.IsNullOrWhiteSpace(sessionStatus))
+        {
+            return sessionStatus;
+        }
+
+        if (!isScheduleActive)
+        {
+            return "OutOfSchedule";
+        }
+
+        return isDegraded ? "Degraded" : "Active";
+    }
 
     public static AuthAdministrationViewModel CreateAuthAdministration() =>
         new("Keycloak", "role", "tnc-trading-platform-api");

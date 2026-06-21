@@ -26,6 +26,7 @@ internal static class IgAuthenticationResponseSanitizer
     {
         return headerName.Contains("token", StringComparison.OrdinalIgnoreCase)
             || headerName.Contains("authorization", StringComparison.OrdinalIgnoreCase)
-            || headerName.Contains("cst", StringComparison.OrdinalIgnoreCase);
+            || headerName.Contains("cst", StringComparison.OrdinalIgnoreCase)
+            || headerName.Contains("x-ig-api-key", StringComparison.OrdinalIgnoreCase);
     }
 }

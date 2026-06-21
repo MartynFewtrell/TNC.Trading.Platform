@@ -1,5 +1,8 @@
-﻿using TNC.Trading.Platform.Application.Configuration;
+﻿using System.Net;
+using TNC.Trading.Platform.Application.Infrastructure.Ig;
+using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Services;
+using TNC.Trading.Platform.Infrastructure.Infrastructure.Platform;
 using TNC.Trading.Platform.Infrastructure.Notifications;
 using TNC.Trading.Platform.Infrastructure.Persistence;
 using TNC.Trading.Platform.Infrastructure.Platform;
@@ -27,10 +30,14 @@ public class AuthRetryCycleTests
             configuration,
             configurationService,
             new EfPlatformRuntimeStateStore(dbContext),
+            new EfPlatformIgLoginSnapshotStore(dbContext),
             new EfPlatformRetryCycleStore(dbContext),
             new EfPlatformEventStore(dbContext),
             CreateNotificationDispatcher(dbContext, TimeProvider.System),
             new TradingScheduleGate(),
+            CreateSuccessfulSessionClient(),
+            protectedCredentialService,
+            new InMemoryPlatformIgProofDataStore(),
             TimeProvider.System,
             ApplicationReflection.CreateNullLogger<PlatformStateCoordinator>());
 
@@ -87,8 +94,8 @@ public class AuthRetryCycleTests
         await coordinator.TickAsync(CancellationToken.None);
 
         var failureNotification = Assert.Single(
-            GetNotificationRecords(dbContext).Where(record =>
-                string.Equals(record.NotificationType, "AuthFailure", StringComparison.Ordinal)));
+            GetNotificationRecords(dbContext),
+            record => string.Equals(record.NotificationType, "AuthFailure", StringComparison.Ordinal));
 
         Assert.Contains(
             "credentials are incomplete",
@@ -174,6 +181,10 @@ public class AuthRetryCycleTests
 
         Assert.Equal(PlatformSessionStatus.Degraded, status.SessionStatus);
         Assert.True(status.IsDegraded);
+        Assert.Null(status.IgLoginStatus.LastAttemptAtUtc);
+        Assert.Null(status.IgLoginStatus.LastSuccessfulLoginAtUtc);
+        Assert.Null(status.IgLoginStatus.LatestSnapshotId);
+        Assert.Equal("IG demo credentials are incomplete.", status.IgLoginStatus.LatestFailureSummary);
         Assert.Equal(AuthRetryPhase.None, retryState.Phase);
         Assert.Equal(0, retryState.AutomaticAttemptNumber);
         Assert.Null(retryState.NextRetryAtUtc);
@@ -298,13 +309,369 @@ public class AuthRetryCycleTests
         _ = await coordinator.GetStatusAsync(CancellationToken.None);
 
         var authAttempt = Assert.Single(
-            GetOperationalEvents(dbContext).Where(record =>
-                string.Equals(record.EventType, "AuthAttempted", StringComparison.Ordinal)));
+            GetOperationalEvents(dbContext),
+            record => string.Equals(record.EventType, "AuthAttempted", StringComparison.Ordinal));
 
         Assert.Equal("Demo", authAttempt.BrokerEnvironment);
         Assert.Contains("demo auth attempt started", authAttempt.Summary, StringComparison.Ordinal);
         Assert.Contains("Demo", authAttempt.DetailsJson, StringComparison.Ordinal);
         Assert.DoesNotContain("demo-api-key", authAttempt.DetailsJson, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: FR1, FR3, FR4, FR10, DR1, DR3, TR1, TR3.
+    /// Verifies: the coordinator captures a successful login snapshot on startup when complete Demo credentials are available during an active schedule.
+    /// Expected: the latest snapshot is persisted, the daily retained snapshot is created, and the runtime projection points to the successful snapshot.
+    /// Why: backend startup login must produce a durable non-secret source of truth for later status and history read surfaces.
+    /// </summary>
+    [Fact]
+    public async Task GetStatusAsync_ShouldPersistIgLoginSnapshot_WhenStartupAuthenticationSucceeds()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
+        var configuration = CreateConfiguration();
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(
+            BrokerEnvironmentKind.Demo,
+            "demo-api-key",
+            "demo-identifier",
+            "demo-password",
+            "unit-test",
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
+
+        var status = await coordinator.GetStatusAsync(CancellationToken.None);
+        var latestSnapshot = Assert.Single(dbContext.IgLoginSnapshots.Where(item => item.SnapshotKind == IgLoginSnapshotKind.Latest.ToString()));
+        var retainedSnapshot = Assert.Single(dbContext.IgLoginSnapshots.Where(item => item.SnapshotKind == IgLoginSnapshotKind.RetainedDailyFirstSuccessful.ToString()));
+
+        Assert.Equal(PlatformSessionStatus.Active, status.SessionStatus);
+        Assert.NotNull(status.IgLoginStatus.LastSuccessfulLoginAtUtc);
+        Assert.Equal(latestSnapshot.IgLoginSnapshotId, status.IgLoginStatus.LatestSnapshotId);
+        Assert.Equal("configured-demo-session", latestSnapshot.CurrentAccountId);
+        Assert.Equal("configured-demo-session", retainedSnapshot.CurrentAccountId);
+        Assert.DoesNotContain("cst-token", latestSnapshot.RawNonSecretPayloadJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("security-token", latestSnapshot.RawNonSecretPayloadJson, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: FR1, FR3, FR10, SR2, SR3, TR1, TR5.
+    /// Verifies: a successful IG authentication moves the runtime into the active session state during a scheduled tick.
+    /// Expected: the persisted runtime state becomes Active, the degraded flag clears, and a successful snapshot is referenced.
+    /// Why: startup-driven broker authentication must establish the live session projection without leaving the platform in a degraded state.
+    /// </summary>
+    [Fact]
+    public async Task TickAsync_WhenCredentialsCompleteAndIgReturnsSuccess_ShouldTransitionToActive()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
+        var configuration = CreateConfiguration();
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(
+            BrokerEnvironmentKind.Demo,
+            "demo-api-key",
+            "demo-identifier",
+            "demo-password",
+            "unit-test",
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var sessionClient = CreateSuccessfulSessionClient();
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider, sessionClient);
+
+        await coordinator.TickAsync(CancellationToken.None);
+
+        var runtimeState = await new EfPlatformRuntimeStateStore(dbContext).GetOrCreateAsync(CancellationToken.None);
+
+        Assert.Equal(PlatformSessionStatus.Active, runtimeState.SessionStatus);
+        Assert.False(runtimeState.IsDegraded);
+        Assert.Null(runtimeState.BlockedReason);
+        Assert.NotNull(runtimeState.LastSuccessfulLoginAtUtc);
+        Assert.NotNull(runtimeState.LatestIgLoginSnapshotId);
+    }
+
+    /// <summary>
+    /// Trace: FR2, FR6, FR10, SR2, SR3, SR4, TR2, TR5.
+    /// Verifies: unauthorized IG authentication failures are translated into the degraded auth state without exposing secrets.
+    /// Expected: the runtime remains degraded, the failure summary reports rejected credentials, and no snapshot is created.
+    /// Why: invalid broker credentials must fail safely and visibly while preventing the platform from presenting a false active session.
+    /// </summary>
+    [Fact]
+    public async Task TickAsync_WhenCredentialsCompleteAndIgReturnsUnauthorized_ShouldTransitionToDegraded()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
+        var configuration = CreateConfiguration();
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(
+            BrokerEnvironmentKind.Demo,
+            "demo-api-key",
+            "demo-identifier",
+            "demo-password",
+            "unit-test",
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var sessionClient = new FakeIgSessionClient((_, _) => Task.FromException<IgAuthenticateResponse>(
+            new HttpRequestException("Unauthorized", null, HttpStatusCode.Unauthorized)));
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider, sessionClient);
+
+        await coordinator.TickAsync(CancellationToken.None);
+
+        var runtimeState = await new EfPlatformRuntimeStateStore(dbContext).GetOrCreateAsync(CancellationToken.None);
+
+        Assert.Equal(PlatformSessionStatus.Degraded, runtimeState.SessionStatus);
+        Assert.True(runtimeState.IsDegraded);
+        Assert.Equal("IG authentication failed: invalid or rejected credentials.", runtimeState.BlockedReason);
+        Assert.Equal("IG authentication failed: invalid or rejected credentials.", runtimeState.LatestFailureSummary);
+        Assert.Null(runtimeState.LatestIgLoginSnapshotId);
+    }
+
+    /// <summary>
+    /// Trace: FR2, FR6, FR10, SR2, SR3, SR4, TR2, TR5.
+    /// Verifies: network-level IG authentication failures are translated into the degraded auth state.
+    /// Expected: the runtime remains degraded, the failure summary reports broker unreachability, and no snapshot is created.
+    /// Why: transient broker outages must keep the current session state accurate without leaking sensitive request data.
+    /// </summary>
+    [Fact]
+    public async Task TickAsync_WhenCredentialsCompleteAndIgIsUnreachable_ShouldTransitionToDegraded()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
+        var configuration = CreateConfiguration();
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(
+            BrokerEnvironmentKind.Demo,
+            "demo-api-key",
+            "demo-identifier",
+            "demo-password",
+            "unit-test",
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var sessionClient = new FakeIgSessionClient((_, _) => Task.FromException<IgAuthenticateResponse>(
+            new HttpRequestException("Broker unavailable")));
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider, sessionClient);
+
+        await coordinator.TickAsync(CancellationToken.None);
+
+        var runtimeState = await new EfPlatformRuntimeStateStore(dbContext).GetOrCreateAsync(CancellationToken.None);
+
+        Assert.Equal(PlatformSessionStatus.Degraded, runtimeState.SessionStatus);
+        Assert.True(runtimeState.IsDegraded);
+        Assert.Equal("IG authentication failed: broker is unreachable.", runtimeState.BlockedReason);
+        Assert.Null(runtimeState.LatestIgLoginSnapshotId);
+    }
+
+    /// <summary>
+    /// Trace: FR1, FR4, NF3, SR2, SR3, TR1, TR3, TR5.
+    /// Verifies: successful IG authentication persists only the approved non-secret payload while keeping session tokens ephemeral.
+    /// Expected: persisted snapshots, runtime state, and stored operational-event details exclude the raw CST and X-SECURITY-TOKEN values.
+    /// Why: broker session tokens must remain in-memory only so later status, audit, and persistence reads stay secret-safe.
+    /// </summary>
+    [Fact]
+    public async Task TickAsync_WhenCredentialsCompleteAndIgReturnsSuccess_ShouldNotPersistTokenValues()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
+        var configuration = CreateConfiguration();
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(
+            BrokerEnvironmentKind.Demo,
+            "demo-api-key",
+            "demo-identifier",
+            "demo-password",
+            "unit-test",
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var sessionClient = CreateSuccessfulSessionClient();
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider, sessionClient);
+
+        await coordinator.TickAsync(CancellationToken.None);
+
+        var runtimeState = await new EfPlatformRuntimeStateStore(dbContext).GetOrCreateAsync(CancellationToken.None);
+        var latestSnapshot = Assert.Single(dbContext.IgLoginSnapshots.Where(item => item.SnapshotKind == IgLoginSnapshotKind.Latest.ToString()));
+        var authEvent = Assert.Single(
+            GetOperationalEvents(dbContext),
+            record => string.Equals(record.EventType, "Authenticated", StringComparison.Ordinal));
+
+        Assert.DoesNotContain("cst-token", latestSnapshot.RawNonSecretPayloadJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("security-token", latestSnapshot.RawNonSecretPayloadJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("cst-token", authEvent.DetailsJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("security-token", authEvent.DetailsJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("cst-token", runtimeState.BlockedReason ?? string.Empty, StringComparison.Ordinal);
+        Assert.DoesNotContain("security-token", runtimeState.LatestFailureSummary ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: FR2, FR6, FR10, SR2, SR3, SR4, TR2, TR5.
+    /// Verifies: IG authentication timeouts are translated into the degraded auth state with a timeout-specific summary.
+    /// Expected: the runtime remains degraded, the failure summary reports a timeout, and the next retry is scheduled.
+    /// Why: timeout handling must fail safely while keeping the inherited retry path available for later recovery attempts.
+    /// </summary>
+    [Fact]
+    public async Task TickAsync_WhenCredentialsCompleteAndIgTimesOut_ShouldTransitionToDegraded()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
+        var configuration = CreateConfiguration();
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(
+            BrokerEnvironmentKind.Demo,
+            "demo-api-key",
+            "demo-identifier",
+            "demo-password",
+            "unit-test",
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var sessionClient = new FakeIgSessionClient((_, _) => Task.FromException<IgAuthenticateResponse>(new TaskCanceledException("Timed out")));
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider, sessionClient);
+
+        await coordinator.TickAsync(CancellationToken.None);
+
+        var runtimeState = await new EfPlatformRuntimeStateStore(dbContext).GetOrCreateAsync(CancellationToken.None);
+
+        Assert.Equal(PlatformSessionStatus.Degraded, runtimeState.SessionStatus);
+        Assert.Equal("IG authentication failed: request timed out.", runtimeState.BlockedReason);
+        Assert.NotNull(runtimeState.NextRetryAtUtc);
+    }
+
+    /// <summary>
+    /// Trace: FR2, FR6, FR10, SR2, SR3, SR4, TR2, TR5.
+    /// Verifies: broker throttling responses are translated into the degraded auth state with a rate-limit summary.
+    /// Expected: the runtime remains degraded, the failure summary reports the throttle condition, and no active session is presented.
+    /// Why: operators need a clear explanation when the IG API rejects requests because the rate limit has been exceeded.
+    /// </summary>
+    [Fact]
+    public async Task TickAsync_WhenCredentialsCompleteAndIgReturnsTooManyRequests_ShouldTransitionToDegraded()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
+        var configuration = CreateConfiguration();
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(
+            BrokerEnvironmentKind.Demo,
+            "demo-api-key",
+            "demo-identifier",
+            "demo-password",
+            "unit-test",
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var sessionClient = new FakeIgSessionClient((_, _) => Task.FromException<IgAuthenticateResponse>(
+            new HttpRequestException("Too many requests", null, HttpStatusCode.TooManyRequests)));
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider, sessionClient);
+
+        await coordinator.TickAsync(CancellationToken.None);
+
+        var runtimeState = await new EfPlatformRuntimeStateStore(dbContext).GetOrCreateAsync(CancellationToken.None);
+
+        Assert.Equal(PlatformSessionStatus.Degraded, runtimeState.SessionStatus);
+        Assert.Equal("IG authentication failed: request rate limit exceeded.", runtimeState.BlockedReason);
+        Assert.Null(runtimeState.LatestIgLoginSnapshotId);
+    }
+
+    /// <summary>
+    /// Trace: FR2, FR6, FR10, NF1, SR4, TR2, TR8.
+    /// Verifies: when an active IG demo session expires, the backend status projection switches from healthy to retrying without discarding the last successful login context.
+    /// Expected: the current status becomes degraded with an initial automatic retry scheduled, the latest failure summary explains the expiry, and the last successful snapshot metadata remains available for operator review.
+    /// Why: the runtime status source of truth must distinguish a current failed/retrying session from the previously successful login payload so later API and UI slices can stay accurate over time.
+    /// </summary>
+    [Fact]
+    public async Task GetStatusAsync_ShouldShowRetryingProjection_WhenActiveSessionExpires()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Bootstrap:AuthSimulation:SessionLifetimeSeconds"] = "1"
+        });
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(
+            BrokerEnvironmentKind.Demo,
+            "demo-api-key",
+            "demo-identifier",
+            "demo-password",
+            "unit-test",
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
+
+        var activeStatus = await coordinator.GetStatusAsync(CancellationToken.None);
+        var activeSnapshotId = activeStatus.IgLoginStatus.LatestSnapshotId;
+        var activeSuccessAtUtc = activeStatus.IgLoginStatus.LastSuccessfulLoginAtUtc;
+
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        var degradedStatus = await coordinator.GetStatusAsync(CancellationToken.None);
+
+        Assert.Equal(PlatformSessionStatus.Degraded, degradedStatus.SessionStatus);
+        Assert.True(degradedStatus.IsDegraded);
+        Assert.Equal(AuthRetryPhase.InitialAutomatic, degradedStatus.RetryState.Phase);
+        Assert.Equal(0, degradedStatus.RetryState.AutomaticAttemptNumber);
+        Assert.NotNull(degradedStatus.RetryState.NextRetryAtUtc);
+        Assert.False(degradedStatus.RetryState.RetryLimitReached);
+        Assert.False(degradedStatus.RetryState.ManualRetryAvailable);
+        Assert.Equal(timeProvider.GetUtcNow(), degradedStatus.IgLoginStatus.LastAttemptAtUtc);
+        Assert.Equal(activeSuccessAtUtc, degradedStatus.IgLoginStatus.LastSuccessfulLoginAtUtc);
+        Assert.Equal(activeSnapshotId, degradedStatus.IgLoginStatus.LatestSnapshotId);
+        Assert.Equal(
+            "The active IG demo session expired and is being re-established.",
+            degradedStatus.IgLoginStatus.LatestFailureSummary);
+    }
+
+    /// <summary>
+    /// Trace: FR6, FR10, NF1, NF2, SR4, TR8, TR10.
+    /// Verifies: when the runtime moves out of the permitted trading schedule after a successful login, the backend status projection reports intentional inactivity rather than an auth failure.
+    /// Expected: the current status becomes out of schedule, retry activity is cleared, the schedule reason becomes the blocked reason, and the last successful login metadata remains available as historical context only.
+    /// Why: later API and UI slices must be able to distinguish intentionally signed-out schedule inactivity from failed or retrying IG authentication.
+    /// </summary>
+    [Fact]
+    public async Task GetStatusAsync_ShouldShowOutOfScheduleProjectionWithoutFailureSummary_WhenTradingScheduleBecomesInactive()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Bootstrap:TradingSchedule:EndOfDay"] = "16:30"
+        });
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(
+            BrokerEnvironmentKind.Demo,
+            "demo-api-key",
+            "demo-identifier",
+            "demo-password",
+            "unit-test",
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
+
+        var activeStatus = await coordinator.GetStatusAsync(CancellationToken.None);
+        var activeSnapshotId = activeStatus.IgLoginStatus.LatestSnapshotId;
+        var activeSuccessAtUtc = activeStatus.IgLoginStatus.LastSuccessfulLoginAtUtc;
+
+        timeProvider.Advance(TimeSpan.FromHours(7));
+
+        var outOfScheduleStatus = await coordinator.GetStatusAsync(CancellationToken.None);
+
+        Assert.Equal(PlatformSessionStatus.OutOfSchedule, outOfScheduleStatus.SessionStatus);
+        Assert.False(outOfScheduleStatus.IsDegraded);
+        Assert.Equal(AuthRetryPhase.None, outOfScheduleStatus.RetryState.Phase);
+        Assert.Equal(0, outOfScheduleStatus.RetryState.AutomaticAttemptNumber);
+        Assert.Null(outOfScheduleStatus.RetryState.NextRetryAtUtc);
+        Assert.False(outOfScheduleStatus.RetryState.RetryLimitReached);
+        Assert.False(outOfScheduleStatus.RetryState.ManualRetryAvailable);
+        Assert.Equal(
+            "Trading schedule is inactive for the current time window.",
+            outOfScheduleStatus.BlockedReason);
+        Assert.Equal(activeSuccessAtUtc, outOfScheduleStatus.IgLoginStatus.LastSuccessfulLoginAtUtc);
+        Assert.Equal(activeSnapshotId, outOfScheduleStatus.IgLoginStatus.LatestSnapshotId);
+        Assert.Null(outOfScheduleStatus.IgLoginStatus.LatestFailureSummary);
     }
 
     /// <summary>
@@ -314,7 +681,7 @@ public class AuthRetryCycleTests
     /// Why: the live-trading safety boundary must prevent accidental live authentication from the Test platform environment.
     /// </summary>
     [Fact]
-    public async Task TickAsync_ShouldBlockBeforeActivatingSession_WhenLiveBrokerIsConfiguredInTestPlatform()
+    public async Task TickAsync_WhenPlatformEnvironmentIsTestAndBrokerEnvironmentIsLive_ShouldRemainBlocked()
     {
         using var dbContext = ApplicationReflection.CreateDbContext();
         var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
@@ -334,6 +701,8 @@ public class AuthRetryCycleTests
         await dbContext.SaveChangesAsync();
 
         var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
+        await coordinator.TickAsync(CancellationToken.None);
+
         var status = await coordinator.GetStatusAsync(CancellationToken.None);
 
         Assert.Equal(PlatformSessionStatus.Blocked, status.SessionStatus);
@@ -341,15 +710,19 @@ public class AuthRetryCycleTests
         Assert.Equal(
             "IG live is unavailable while the platform environment is Test.",
             status.BlockedReason);
+        Assert.Null(status.IgLoginStatus.LastSuccessfulLoginAtUtc);
+        Assert.Null(status.IgLoginStatus.LatestSnapshotId);
+        Assert.Equal(
+            "IG live is unavailable while the platform environment is Test.",
+            status.IgLoginStatus.LatestFailureSummary);
 
         var blockedNotification = Assert.Single(
-            GetNotificationRecords(dbContext).Where(record =>
-                string.Equals(record.NotificationType, "BlockedLiveAttempt", StringComparison.Ordinal)));
+            GetNotificationRecords(dbContext),
+            record => string.Equals(record.NotificationType, "BlockedLiveAttempt", StringComparison.Ordinal));
         var blockedEvent = Assert.Single(
-            GetOperationalEvents(dbContext).Where(record =>
-                string.Equals(record.Category, "auth", StringComparison.Ordinal)
-                &&
-                string.Equals(record.EventType, "BlockedLiveAttempt", StringComparison.Ordinal)));
+            GetOperationalEvents(dbContext),
+            record => string.Equals(record.Category, "auth", StringComparison.Ordinal)
+                && string.Equals(record.EventType, "BlockedLiveAttempt", StringComparison.Ordinal));
 
         Assert.Equal("Live", blockedNotification.BrokerEnvironment);
         Assert.Equal("BlockedLiveAttempt", blockedEvent.EventType);
@@ -432,7 +805,8 @@ public class AuthRetryCycleTests
         PlatformDbContext dbContext,
         IConfiguration configuration,
         ProtectedCredentialService protectedCredentialService,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IIgSessionClient? igSessionClient = null)
     {
         var configurationStore = CreateConfigurationStore(dbContext, configuration, protectedCredentialService, timeProvider);
         var configurationService = new PlatformConfigurationService(configurationStore);
@@ -441,10 +815,14 @@ public class AuthRetryCycleTests
             configuration,
             configurationService,
             new EfPlatformRuntimeStateStore(dbContext),
+            new EfPlatformIgLoginSnapshotStore(dbContext),
             new EfPlatformRetryCycleStore(dbContext),
             new EfPlatformEventStore(dbContext),
             CreateNotificationDispatcher(dbContext, timeProvider),
             new TradingScheduleGate(),
+            igSessionClient ?? CreateSuccessfulSessionClient(),
+            protectedCredentialService,
+            new InMemoryPlatformIgProofDataStore(),
             timeProvider,
             ApplicationReflection.CreateNullLogger<PlatformStateCoordinator>());
     }
@@ -490,6 +868,27 @@ public class AuthRetryCycleTests
             false);
     }
 
+    private static IIgSessionClient CreateSuccessfulSessionClient()
+    {
+        return new FakeIgSessionClient((_, _) => Task.FromResult(CreateSuccessfulAuthenticateResponse()));
+    }
+
+    private static IgAuthenticateResponse CreateSuccessfulAuthenticateResponse()
+    {
+        return new IgAuthenticateResponse(
+            "configured-demo-session",
+            "https://stream.example.com",
+            DateTimeOffset.UtcNow.AddMinutes(30),
+            "cst-token",
+            "security-token",
+            new Dictionary<string, string?>
+            {
+                ["CST"] = "cst-token",
+                ["X-SECURITY-TOKEN"] = "security-token",
+                ["Version"] = "3"
+            });
+    }
+
     private sealed class TestTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         private DateTimeOffset currentUtcNow = utcNow;
@@ -497,5 +896,24 @@ public class AuthRetryCycleTests
         public override DateTimeOffset GetUtcNow() => currentUtcNow;
 
         public void Advance(TimeSpan delay) => currentUtcNow = currentUtcNow.Add(delay);
+    }
+
+    private sealed class FakeIgSessionClient(
+        Func<IgAuthenticateRequest, CancellationToken, Task<IgAuthenticateResponse>> authenticateAsync) : IIgSessionClient
+    {
+        public Task<IgAuthenticateResponse> AuthenticateAsync(IgAuthenticateRequest request, CancellationToken cancellationToken)
+        {
+            return authenticateAsync(request, cancellationToken);
+        }
+
+        public Task<IgAccountsResponse> GetAccountsAsync(string cst, string securityToken, string apiKey, CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IgPositionsResponse> GetPositionsAsync(string cst, string securityToken, string apiKey, CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
     }
 }

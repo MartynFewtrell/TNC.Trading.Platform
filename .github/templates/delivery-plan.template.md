@@ -4,7 +4,7 @@
 >
 > This is the baseline initial plan for every work package. For refactoring-focused packages, use it to define the initial sequencing and package posture. If later work is driven by evidence from the current implementation, add a numbered refactoring review report and one or more numbered refactoring mitigation plans rather than overloading this document with all implementation detail.
 
-## Summary
+## Overview
 
 - **Source**: See `../requirements.md` for canonical work metadata (work item, owner, dates, links) and scope. See `../../business-requirements.md` for project-level business context.
 - **Status**: <draft|review|approved|in-progress|done>

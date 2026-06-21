@@ -58,6 +58,22 @@ AppHost manages the local SQL Server and Keycloak infrastructure credentials thr
 - The seeded Keycloak user password `LocalAuth!123` is unchanged and is used only for local operator sign-in validation.
 - Infrastructure admin credentials and seeded local operator credentials are separate concerns.
 
+## IG Demo credentials and proof-data verification
+
+To supply IG Demo credentials in local development, sign in as an operator and navigate to `/configuration`. Enter the IG API key, identifier, and password in the credential fields, then save the form. The credentials are stored using ASP.NET Core Data Protection and are never displayed in plaintext after saving.
+
+After you save the credentials, the background supervisor attempts a real IG Demo auth on the next scheduled tick. In a local development run, this is typically within a few seconds.
+
+To verify the connection:
+
+1. Navigate to `/status`.
+2. Confirm the **IG login** accordion shows a successful auth state and a recent `LastSuccessfulLoginAtUtc` timestamp.
+3. Expand **IG Demo proof data** and confirm it shows real account data.
+
+Proof-data queries are tied to auth events rather than a polling timer. They are low-frequency, read-only calls, so avoid manually triggering auth retries in rapid succession when the credentials are already correct and the session is active.
+
+If the **IG login** accordion shows a failed state, check that the credentials are correct and that the IG Demo API (`https://demo-api.ig.com`) is reachable from the local machine.
+
 ## Reset previously persisted local state
 
 If you already ran an older AppHost configuration that required explicit SQL Server or Keycloak passwords and local startup now fails, reset the persisted local infrastructure for the `sql` and `keycloak` AppHost resources, then start AppHost again.

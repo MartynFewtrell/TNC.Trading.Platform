@@ -9,7 +9,7 @@ internal static class PlatformAuthenticationIntegrationTestRuntime
         ArgumentNullException.ThrowIfNull(httpClient);
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(90));
+        timeoutCts.CancelAfter(TimeSpan.FromMinutes(5));
 
         while (!timeoutCts.IsCancellationRequested)
         {
@@ -24,11 +24,14 @@ internal static class PlatformAuthenticationIntegrationTestRuntime
             catch (HttpRequestException) when (!timeoutCts.IsCancellationRequested)
             {
             }
+            catch (IOException) when (!timeoutCts.IsCancellationRequested)
+            {
+            }
             catch (TaskCanceledException) when (!timeoutCts.IsCancellationRequested)
             {
             }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(200), timeoutCts.Token);
+            await Task.Delay(TimeSpan.FromMilliseconds(500), timeoutCts.Token);
         }
 
         throw new TimeoutException("The API did not become ready within the expected time for the authentication integration tests.");

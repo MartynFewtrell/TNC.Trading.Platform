@@ -95,4 +95,79 @@ public sealed class StatusTests
         cut.WaitForAssertion(() =>
             Assert.Contains(retry.RetryCycleId.ToString(), cut.Find("[data-testid='manual-retry-message']").TextContent, StringComparison.Ordinal));
     }
+
+    /// <summary>
+    /// Trace: FR5, FR6, NF2, NF5, TR4, TR8.
+    /// Verifies: the status page renders the current IG login state together with the expandable latest successful non-secret payload details.
+    /// Expected: the page shows the active current-state label, the latest account summary fields, and the formatted stored payload content.
+    /// Why: operators need a clear current-state view and an on-page path to inspect the latest successful login payload without another read flow.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldShowLatestIgLoginPayloadDetails_WhenStatusIncludesLatestSnapshot()
+    {
+        var latestSnapshot = PlatformWebTestData.CreateLatestSnapshot();
+        using var context = new PlatformComponentTestContext(
+            "local-viewer",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateStatus(latestSnapshot: latestSnapshot)),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateEvents()));
+
+        var cut = context.RenderComponent<Status>();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Equal("Active", cut.Find("[data-testid='ig-current-state-value']").TextContent.Trim());
+            Assert.Contains(latestSnapshot.CurrentAccountId, cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Latest successful IG login payload details", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("configured-demo-session", cut.Find("[data-testid='ig-latest-payload-json']").TextContent, StringComparison.Ordinal);
+        });
+    }
+
+    /// <summary>
+    /// Trace: FR6, FR10, NF5, TR8, TR10.
+    /// Verifies: the status page labels an in-schedule degraded state with an active retry cycle as retrying instead of failed or out of schedule.
+    /// Expected: the rendered IG current-state label is `Retrying` and the retry context explains the scheduled retry attempt.
+    /// Why: the operator must be able to distinguish transient retry behavior from a hard failure when watching `/status`.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldShowRetryingState_WhenRetryCycleIsActive()
+    {
+        using var context = new PlatformComponentTestContext(
+            "local-viewer",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateStatus(isDegraded: true, retryPhase: "InitialAutomatic")),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateEvents()));
+
+        var cut = context.RenderComponent<Status>();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Equal("Retrying", cut.Find("[data-testid='ig-current-state-value']").TextContent.Trim());
+            Assert.Contains("InitialAutomatic", cut.Find("[data-testid='ig-retry-context-value']").TextContent, StringComparison.Ordinal);
+        });
+    }
+
+    /// <summary>
+    /// Trace: FR6, FR10, NF5, TR8, TR10.
+    /// Verifies: the status page labels an inactive schedule state distinctly from failed login handling.
+    /// Expected: the rendered IG current-state label is `Out of schedule` and the schedule context is shown as out of schedule.
+    /// Why: the operator must not confuse intentional schedule inactivity with an authentication failure.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldShowOutOfScheduleState_WhenTradingScheduleIsInactive()
+    {
+        using var context = new PlatformComponentTestContext(
+            "local-viewer",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateStatus(isScheduleActive: false, sessionStatus: "OutOfSchedule")),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateEvents()));
+
+        var cut = context.RenderComponent<Status>();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Equal("Out of schedule", cut.Find("[data-testid='ig-current-state-value']").TextContent.Trim());
+            Assert.Equal("Out of schedule", cut.Find("[data-testid='ig-schedule-context-value']").TextContent.Trim());
+        });
+    }
 }

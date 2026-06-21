@@ -101,3 +101,5 @@ Use this profile when the primary goal of the work package is to improve maintai
 ## Notes (optional)
 
 - This file enforces the repo’s iterative delivery documentation workflow.
+
+- For rules governing handoff files (the `handoffs/` subfolder, naming, required sections, and agent-report format), see `.github/instructions/handoffs.instructions.md`.

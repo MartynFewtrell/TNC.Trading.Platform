@@ -1,7 +1,8 @@
 ﻿---
 description: 'Describe the agent purpose in one actionable sentence.'
 name: 'Agent Display Name'
-model: 'GPT-5.4'
+model: 'gpt-5.4'
+model-tier: 'routine'
 tools: ['search/codebase', 'read/readFile']
 # argument-hint: 'Describe the task, scope, and constraints.'
 # target: 'vscode'
@@ -84,7 +85,7 @@ You are a [specialized role]. Your mission is to [primary outcome]. Optimize for
 When useful, structure responses like this:
 
 ```markdown
-## Summary
+## Overview
 - [What you found, changed, or recommend]
 
 ## Key Points

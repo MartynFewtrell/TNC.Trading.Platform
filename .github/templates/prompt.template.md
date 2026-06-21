@@ -61,7 +61,7 @@ ${VAR_NAME="default"} <!-- explain what this controls -->
 ```markdown
 # <Output Title>
 
-## Summary
+## Overview
 
 ## Details
 

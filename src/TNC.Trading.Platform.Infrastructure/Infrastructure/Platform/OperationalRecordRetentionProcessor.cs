@@ -33,8 +33,13 @@ internal sealed class OperationalRecordRetentionProcessor(
                 .Where(item => item.DispatchedAtUtc < cutoff)
                 .ExecuteDeleteAsync(cancellationToken)
                 .ConfigureAwait(false);
+            var deletedRetainedIgLoginSnapshots = await dbContext.IgLoginSnapshots
+                .Where(item => item.SnapshotKind == TNC.Trading.Platform.Application.Configuration.IgLoginSnapshotKind.RetainedDailyFirstSuccessful.ToString()
+                    && item.CapturedAtUtc < cutoff)
+                .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false);
 
-            deletedCount = deletedEvents + deletedAudits + deletedNotifications;
+            deletedCount = deletedEvents + deletedAudits + deletedNotifications + deletedRetainedIgLoginSnapshots;
         }
         else
         {
@@ -52,13 +57,18 @@ internal sealed class OperationalRecordRetentionProcessor(
                 .Where(item => item.DispatchedAtUtc < cutoff)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
+            var expiredRetainedIgLoginSnapshots = await dbContext.IgLoginSnapshots
+                .Where(item => item.SnapshotKind == "RetainedDailyFirstSuccessful" && item.CapturedAtUtc < cutoff)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
 
-            deletedCount = expiredOperationalEvents.Count + expiredConfigurationAudits.Count + expiredNotificationRecords.Count;
+            deletedCount = expiredOperationalEvents.Count + expiredConfigurationAudits.Count + expiredNotificationRecords.Count + expiredRetainedIgLoginSnapshots.Count;
             if (deletedCount > 0)
             {
                 dbContext.OperationalEvents.RemoveRange(expiredOperationalEvents);
                 dbContext.ConfigurationAudits.RemoveRange(expiredConfigurationAudits);
                 dbContext.NotificationRecords.RemoveRange(expiredNotificationRecords);
+                dbContext.IgLoginSnapshots.RemoveRange(expiredRetainedIgLoginSnapshots);
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
         }

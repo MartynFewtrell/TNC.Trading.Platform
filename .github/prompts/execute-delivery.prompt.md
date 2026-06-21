@@ -63,7 +63,7 @@ You MUST follow the plan in sequence, and you MUST keep the plan itself up to da
 - MUST NOT: Mark items as complete if they are not implemented and validated.
 - MUST NOT: Skip build/test gates to save time.
 
-- Output MUST be: a short execution summary plus the updated numbered plan file content (or a diff/patch description if the environment cannot display the whole file).
+- Output MUST be: a terse completion note plus the updated numbered plan file content (or a diff/patch description if the environment cannot display the whole file).
 
 ## Process
 
@@ -98,7 +98,7 @@ You MUST follow the plan in sequence, and you MUST keep the plan itself up to da
 
 Return:
 
-- **Summary**: What was implemented and which work items were completed.
+- **Completed**: What was implemented and which work items were completed.
 - **Validation**: The build/test commands run and their outcomes.
 - **Plan update**: The updated numbered plan file with checkboxes reflecting completed work.
 
@@ -110,4 +110,4 @@ Execute `./docs/001-add-order-endpoint/plans/001-delivery-plan.md`.
 
 ### Example response (optional)
 
-A summary of implemented work, validation results, and an updated numbered plan file with completed tasks checked off.
+A terse completion note, validation results, and an updated numbered plan file with completed tasks checked off.

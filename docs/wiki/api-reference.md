@@ -16,7 +16,8 @@ The Blazor UI talks to the API over service discovery using the internal `https+
 | `GET` | `/metadata` | Basic service metadata. |
 | `GET` | `/health/live` | Liveness endpoint. |
 | `GET` | `/health/ready` | Readiness endpoint. |
-| `GET` | `/api/platform/status` | Current runtime status and retry state for viewer-capable operators. |
+| `GET` | `/api/platform/status` | Current runtime status, IG login state, and latest stored non-secret login payload for viewer-capable operators. |
+| `GET` | `/api/platform/ig-login/history` | Retained daily first-successful non-secret login payloads within the 90-day retention window for viewer-capable operators. |
 | `GET` | `/api/platform/configuration` | Current redacted configuration snapshot for operator-capable users. |
 | `PUT` | `/api/platform/configuration` | Update operator-managed configuration for operator-capable users. |
 | `POST` | `/api/platform/auth/manual-retry` | Trigger a manual retry cycle when allowed for operator-capable users. |
@@ -111,7 +112,7 @@ Returns HTTP `200 OK` when the service is ready to serve traffic.
 
 ## GET /api/platform/status
 
-Returns the current platform runtime state.
+Returns the current platform runtime state together with the current IG login projection, the latest stored non-secret successful login payload, and the latest read-only IG proof data snapshot.
 
 ### Response shape
 
@@ -145,7 +146,43 @@ Returns the current platform runtime state.
     "retryLimitReached": false,
     "manualRetryAvailable": false
   },
-  "updatedAtUtc": "2026-04-01T10:00:00+00:00"
+  "updatedAtUtc": "2026-04-01T10:00:00+00:00",
+  "igLogin": {
+    "currentState": "Active",
+    "scheduleState": {
+      "isActive": true,
+      "reason": "Trading schedule is active."
+    },
+    "retryState": {
+      "phase": "None",
+      "automaticAttemptNumber": 0,
+      "nextRetryAtUtc": null,
+      "retryLimitReached": false,
+      "manualRetryAvailable": false
+    },
+    "lastAttemptAtUtc": "2026-04-01T09:59:45+00:00",
+    "lastSuccessfulLoginAtUtc": "2026-04-01T09:59:45+00:00",
+    "latestSnapshotId": "22222222-2222-2222-2222-222222222222",
+    "latestFailureSummary": null,
+    "latestSnapshot": {
+      "snapshotId": "22222222-2222-2222-2222-222222222222",
+      "capturedAtUtc": "2026-04-01T09:59:45+00:00",
+      "tradingDay": "2026-04-01",
+      "currentAccountId": "configured-demo-session",
+      "lightstreamerEndpoint": null,
+      "sessionExpiresAtUtc": null,
+      "responseHeaders": {
+        "Version": "3"
+      },
+      "rawNonSecretPayloadJson": "{\"currentAccountId\":\"configured-demo-session\",\"lightstreamerEndpoint\":null,\"expiresAtUtc\":null,\"headers\":{\"Version\":\"3\"}}"
+    },
+    "latestProofData": {
+      "preferredAccountName": "Demo Account",
+      "preferredAccountId": "ACC12345",
+      "balance": 5000.00,
+      "openPositionCount": 2,
+      "retrievedAtUtc": "2026-04-01T09:59:46+00:00"
+  }
 }
 ```
 
@@ -161,6 +198,95 @@ Returns the current platform runtime state.
 | `authState.sessionStatus` | Current auth-related runtime state. |
 | `retryState.phase` | Current retry phase, such as `None`, `InitialAutomatic`, or `Periodic`. |
 | `retryState.manualRetryAvailable` | Indicates whether the manual retry command may currently be used. |
+| `igLogin.currentState` | Current IG login label source used by the UI to distinguish active, retrying, failed, blocked, and out-of-schedule states. |
+| `igLogin.scheduleState` | IG-specific copy of the current schedule context kept inside the status response so the UI can show current login state without another read call. |
+| `igLogin.retryState` | IG-specific retry context used for the current login-state presentation. |
+| `igLogin.latestSnapshot` | The latest stored successful non-secret IG login payload, including summary fields, non-secret response headers, and the raw non-secret JSON payload. |
+| `igLogin.latestProofData` | The latest read-only IG Demo proof data snapshot, or `null` when no proof data has been captured yet. |
+
+### Secret-safety notes
+
+- The `igLogin.latestSnapshot` object excludes credentials, session tokens, account-security tokens, and equivalent protected values.
+- The `igLogin.latestProofData` object is read-only and excludes credentials, session tokens, account-security tokens, and any write-capable context.
+- Only approved non-secret response headers are returned.
+- The UI expands the latest payload locally from this response; there is no separate latest-payload endpoint.
+
+### igLogin.latestProofData
+
+When proof data has been successfully retrieved after a Demo session, the `latestProofData` field is populated:
+
+```json
+"igLogin": {
+  "latestProofData": {
+    "preferredAccountName": "Demo Account",
+    "preferredAccountId": "ACC12345",
+    "balance": 5000.00,
+    "openPositionCount": 2,
+    "retrievedAtUtc": "2025-01-15T10:30:00+00:00"
+  }
+}
+```
+
+When no proof data has been retrieved yet (for example, on first startup before an auth tick has completed), the field is `null`:
+
+```json
+"igLogin": {
+  "latestProofData": null
+}
+```
+
+The `latestProofData` object is read-only and derived from IG Demo account and position queries. It does not contain session tokens, credentials, or any write-capable context.
+
+## GET /api/platform/ig-login/history
+
+Returns retained daily first-successful non-secret IG login payloads within the 90-day retention window for the currently configured broker environment.
+
+### Authorization
+
+Requires a bearer token with the `viewer` scope or `Viewer`, `Operator`, or `Administrator` role.
+
+### Response shape
+
+```json
+{
+  "retainedSnapshots": [
+    {
+      "snapshotId": "33333333-3333-3333-3333-333333333333",
+      "capturedAtUtc": "2026-04-01T09:55:00+00:00",
+      "tradingDay": "2026-04-01",
+      "currentAccountId": "retained-demo-session",
+      "lightstreamerEndpoint": "https://demo-apd.marketdatasystems.com",
+      "sessionExpiresAtUtc": null,
+      "responseHeaders": {
+        "Version": "3"
+      },
+      "rawNonSecretPayloadJson": "{\"currentAccountId\":\"retained-demo-session\",\"lightstreamerEndpoint\":\"https://demo-apd.marketdatasystems.com\",\"headers\":{\"Version\":\"3\"}}"
+    }
+  ]
+}
+```
+
+### Field notes
+
+| Field | Meaning |
+| --- | --- |
+| `retainedSnapshots` | Ordered list of retained daily first-successful snapshots, newest trading day first. May be empty when no successful login has been captured yet. |
+| `snapshotId` | Unique identifier for the retained snapshot record. |
+| `capturedAtUtc` | When the snapshot was captured. |
+| `tradingDay` | The trading day the first successful login corresponds to. One retained entry per day. |
+| `currentAccountId` | Non-secret account identifier returned by the broker login response. |
+| `lightstreamerEndpoint` | Non-secret Lightstreamer endpoint returned by the broker, when supplied. |
+| `sessionExpiresAtUtc` | Session expiry time when returned by the broker. |
+| `responseHeaders` | Approved non-secret response headers from the broker login response. |
+| `rawNonSecretPayloadJson` | Full non-secret JSON payload captured from the broker login response. |
+
+### Secret-safety notes
+
+- This endpoint never returns credentials, session tokens, account-security tokens, or equivalent protected values.
+- Only the first successful non-secret payload of each trading day is retained.
+- The endpoint returns at most one entry per trading day.
+- Entries older than 90 days are removed by the shared retention processor.
+- The current-state latest snapshot is served by `GET /api/platform/status`, not this endpoint.
 
 ## GET /api/platform/configuration
 

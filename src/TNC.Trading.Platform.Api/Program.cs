@@ -21,19 +21,38 @@ builder.Services.AddScoped<UpdatePlatformConfigurationValidator>();
 
 var app = builder.Build();
 
-await using (var scope = app.Services.CreateAsyncScope())
+try
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-    await dbContext.Database.EnsureCreatedAsync();
+    await using (var scope = app.Services.CreateAsyncScope())
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        // EnsureCreatedAsync is a no-op when the database already exists, so any schema
+        // changes introduced by new work items are invisible to persistent SQL containers
+        // that were created by an earlier build. For this non-migration project the safest
+        // approach in local development is to recreate the schema so the running schema
+        // matches the current EF model.
+        if (app.Environment.IsDevelopment()
+            && string.Equals(dbContext.Database.ProviderName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal))
+        {
+            await dbContext.Database.EnsureDeletedAsync();
+        }
 
-    var configurationService = scope.ServiceProvider.GetRequiredService<PlatformConfigurationService>();
-    await configurationService.ApplyStartupConfigurationAsync(CancellationToken.None);
+        await dbContext.Database.EnsureCreatedAsync();
 
-    var retentionProcessor = scope.ServiceProvider.GetRequiredService<OperationalRecordRetentionProcessor>();
-    await retentionProcessor.ApplyAsync(CancellationToken.None);
+        var configurationService = scope.ServiceProvider.GetRequiredService<PlatformConfigurationService>();
+        await configurationService.ApplyStartupConfigurationAsync(CancellationToken.None);
 
-    var coordinator = scope.ServiceProvider.GetRequiredService<PlatformStateCoordinator>();
-    await coordinator.TickAsync(CancellationToken.None);
+        var retentionProcessor = scope.ServiceProvider.GetRequiredService<OperationalRecordRetentionProcessor>();
+        await retentionProcessor.ApplyAsync(CancellationToken.None);
+
+        var coordinator = scope.ServiceProvider.GetRequiredService<PlatformStateCoordinator>();
+        await coordinator.TickAsync(CancellationToken.None);
+    }
+}
+catch (Exception startupException)
+{
+    app.Logger.LogCritical(startupException, "Fatal error during startup scope; the application will not start.");
+    throw;
 }
 
 app.Logger.LogInformation(

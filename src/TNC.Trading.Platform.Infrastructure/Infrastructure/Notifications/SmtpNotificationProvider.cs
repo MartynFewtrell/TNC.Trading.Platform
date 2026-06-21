@@ -41,12 +41,27 @@ internal sealed class SmtpNotificationProvider(
             IsBodyHtml = false
         };
 
-        await smtpClient.SendMailAsync(mailMessage, cancellationToken).ConfigureAwait(false);
+        // SmtpClient.Timeout only applies to synchronous operations; SendMailAsync ignores it.
+        // Use an internal deadline so startup-time notification dispatch cannot hang indefinitely
+        // when the SMTP relay is slow or unresponsive.
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
+
+        try
+        {
+            await smtpClient.SendMailAsync(mailMessage, timeoutCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(
+                "SMTP notification {EventType} timed out after 10 s and was skipped.",
+                message.EventType);
+            return new NotificationDispatchResult("TimedOut", "SMTP dispatch timed out.", Name);
+        }
 
         logger.LogInformation(
-            "SMTP notification {EventType} sent to {Recipient} via {Host}:{Port}",
+            "SMTP notification {EventType} sent via {Host}:{Port}",
             message.EventType,
-            message.Recipient,
             host,
             port);
 

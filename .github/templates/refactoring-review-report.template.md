@@ -12,7 +12,7 @@
   - `src/...`
   - `test/...`
 
-## Executive summary
+## Key findings overview
 
 - **Overall refactoring urgency**: `<high|medium|low>`
 - **Overall maintainability assessment**: `<strong|mixed|weak>`

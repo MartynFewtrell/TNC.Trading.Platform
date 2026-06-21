@@ -6,10 +6,10 @@ namespace TNC.Trading.Platform.Web.UnitTests;
 public sealed class PlatformApiClientTests
 {
     /// <summary>
-    /// Trace: FR3, NF2, SR1, TR1.
-    /// Verifies: the Web-to-API client parses the protected status payload and sends the delegated bearer token to the API boundary.
-    /// Expected: the parsed platform status is returned and the outgoing request targets the protected status route with an authorization header.
-    /// Why: the operator status page depends on this client path for the cheapest validation of the protected Web-to-API boundary.
+    /// Trace: FR5, FR6, NF2, NF4, SR2, SR3, TR4, TR5, TR8.
+    /// Verifies: the Web-to-API client parses the protected status payload, including the embedded IG login detail and latest non-secret snapshot, and sends the delegated bearer token to the API boundary.
+    /// Expected: the parsed platform status is returned with the current IG login state and latest snapshot fields intact, and the outgoing request targets the protected status route with an authorization header.
+    /// Why: the status page depends on this single API contract to render current state and expandable latest-payload details without a second read call.
     /// </summary>
     [Fact]
     public async Task GetStatusAsync_ShouldReturnParsedStatus_WhenApiReturnsPayload()
@@ -25,6 +25,11 @@ public sealed class PlatformApiClientTests
 
         Assert.Equal(expectedStatus.PlatformEnvironment, status.PlatformEnvironment);
         Assert.Equal(expectedStatus.BrokerEnvironment, status.BrokerEnvironment);
+        Assert.Equal(expectedStatus.IgLogin.CurrentState, status.IgLogin.CurrentState);
+        Assert.NotNull(status.IgLogin.LatestSnapshot);
+        Assert.Equal(expectedStatus.IgLogin.LatestSnapshot?.CurrentAccountId, status.IgLogin.LatestSnapshot?.CurrentAccountId);
+        Assert.DoesNotContain("cst-token", status.IgLogin.LatestSnapshot?.RawNonSecretPayloadJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("security-token", status.IgLogin.LatestSnapshot?.RawNonSecretPayloadJson, StringComparison.OrdinalIgnoreCase);
         var request = Assert.Single(context.ApiHandler.Requests);
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.EndsWith("/api/platform/status", request.RequestUri, StringComparison.Ordinal);

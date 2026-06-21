@@ -1,0 +1,145 @@
+﻿@page "/ig-login/history"
+@attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Viewer)]
+@using System.Text.Json
+@inject PlatformApiClient PlatformApiClient
+@inject PlatformNavigationAccessCoordinator NavigationAccessCoordinator
+
+<PageTitle>IG login history</PageTitle>
+
+@if (!hasRequiredScope)
+{
+	<section class="panel platform-callout">
+		<h1>IG login history</h1>
+		<p>Redirecting...</p>
+	</section>
+}
+else if (!string.IsNullOrWhiteSpace(loadError))
+{
+	<section class="panel platform-callout">
+		<h1>IG login history</h1>
+		<p class="error">@loadError</p>
+	</section>
+}
+else if (snapshots is null)
+{
+	<section class="panel platform-callout">
+		<h1>IG login history</h1>
+		<p>Loading IG login history...</p>
+	</section>
+}
+else
+{
+	<section class="panel platform-page-header">
+		<div>
+			<h1>IG login history</h1>
+			<p class="hint">Retained daily first-successful IG login payloads. Each entry represents the first successful login captured on a given trading day. This history is separate from the current login state shown on the status page.</p>
+		</div>
+	</section>
+
+	@if (snapshots.Count == 0)
+	{
+		<section class="panel" data-testid="ig-login-history-empty">
+			<p>No retained daily IG login history is available yet.</p>
+		</section>
+	}
+	else
+	{
+		<section class="panel" data-testid="ig-login-history-panel">
+			@foreach (var snapshot in snapshots)
+			{
+				<details class="ig-login-history-entry" data-testid="ig-login-history-entry" data-trading-day="@snapshot.TradingDay">
+					<summary data-testid="ig-login-history-entry-summary">
+						<span>@snapshot.TradingDay — @snapshot.CurrentAccountId</span>
+						<span class="hint">Captured @snapshot.CapturedAtUtc.ToLocalTime().ToString("g")</span>
+					</summary>
+
+					<dl class="platform-key-value-grid">
+						<dt>Trading day</dt>
+						<dd data-testid="ig-history-entry-trading-day-value">@snapshot.TradingDay</dd>
+						<dt>Captured at</dt>
+						<dd data-testid="ig-history-entry-captured-at-value">@snapshot.CapturedAtUtc.ToLocalTime().ToString("g")</dd>
+						<dt>Current account</dt>
+						<dd data-testid="ig-history-entry-account-value">@snapshot.CurrentAccountId</dd>
+						<dt>Lightstreamer endpoint</dt>
+						<dd data-testid="ig-history-entry-lightstreamer-value">@(snapshot.LightstreamerEndpoint ?? "None")</dd>
+						<dt>Session expiry</dt>
+						<dd data-testid="ig-history-entry-expiry-value">@(snapshot.SessionExpiresAtUtc?.ToLocalTime().ToString("g") ?? "Not supplied")</dd>
+					</dl>
+
+					<h3>Response headers</h3>
+
+					@if (snapshot.ResponseHeaders.Count == 0)
+					{
+						<p data-testid="ig-history-entry-headers-empty">No non-secret response headers were stored.</p>
+					}
+					else
+					{
+						<ul data-testid="ig-history-entry-headers-list">
+							@foreach (var header in snapshot.ResponseHeaders.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase))
+							{
+								<li><strong>@header.Key:</strong> @header.Value</li>
+							}
+						</ul>
+					}
+
+					<h3>Raw non-secret payload</h3>
+					<pre data-testid="ig-history-entry-payload-json">@FormatPayloadJson(snapshot.RawNonSecretPayloadJson)</pre>
+				</details>
+			}
+		</section>
+	}
+}
+
+@code {
+	private IReadOnlyList<IgLoginHistorySnapshotViewModel>? snapshots;
+	private bool hasRequiredScope;
+	private string? loadError;
+
+	protected override async Task OnInitializedAsync()
+	{
+		hasRequiredScope = await NavigationAccessCoordinator.EnsureRequiredScopesAsync(
+			"/ig-login/history",
+			PlatformAuthenticationDefaults.Scopes.Viewer);
+		if (!hasRequiredScope)
+		{
+			return;
+		}
+
+		await LoadAsync();
+	}
+
+	private async Task LoadAsync()
+	{
+		loadError = null;
+
+		try
+		{
+			snapshots = await PlatformApiClient.GetIgLoginHistoryAsync(CancellationToken.None);
+		}
+		catch (Exception exception) when (exception is HttpRequestException or PlatformScopeChallengeRequiredException or InvalidOperationException)
+		{
+			loadError = $"Unable to load IG login history: {exception.Message}";
+		}
+	}
+
+	private static string FormatPayloadJson(string rawPayloadJson)
+	{
+		if (string.IsNullOrWhiteSpace(rawPayloadJson))
+		{
+			return "{}";
+		}
+
+		try
+		{
+			using var document = JsonDocument.Parse(rawPayloadJson);
+			return JsonSerializer.Serialize(document.RootElement, new JsonSerializerOptions
+			{
+				WriteIndented = true
+			});
+		}
+		catch (JsonException)
+		{
+			return rawPayloadJson;
+		}
+	}
+}

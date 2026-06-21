@@ -1,37 +1,63 @@
-﻿using System.Net;
+﻿using Aspire.Hosting;
+using Aspire.Hosting.Testing;
 
 namespace TNC.Trading.Platform.Api.IntegrationTests.Authentication;
 
 public sealed class RealAuthenticationIntegrationTestFixture : IAsyncLifetime
 {
-    private AppHostProcessHandle? appHostProcess;
-
-    public Uri ApiBaseUri { get; private set; } = null!;
+    private IDistributedApplicationTestingBuilder? appHostBuilder;
+    private DistributedApplication? appHost;
+    private TestEnvironmentVariableScope? apiProviderScope;
+    private TestEnvironmentVariableScope? interactiveSignInScope;
 
     public async Task InitializeAsync()
     {
-        appHostProcess = RealAppHostProcessFactory.StartAppHostProcess();
-        ApiBaseUri = await RealAppHostProcessFactory.GetApiBaseUriAsync(appHostProcess);
+        apiProviderScope = new TestEnvironmentVariableScope("Authentication__ApiProvider", "Keycloak");
+        interactiveSignInScope = new TestEnvironmentVariableScope("Authentication__Test__EnableInteractiveSignIn", bool.FalseString);
+
+        appHostBuilder = await DistributedApplicationTestingBuilder
+            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
+        appHost = await appHostBuilder.BuildAsync();
+        await appHost.StartAsync();
+
+        using var startupTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        await appHost.ResourceNotifications.WaitForResourceHealthyAsync("keycloak", startupTimeout.Token);
+        await appHost.ResourceNotifications.WaitForResourceHealthyAsync("sql", startupTimeout.Token);
+
+        using var apiReadinessClient = appHost.CreateHttpClient("api");
+        await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(apiReadinessClient);
+
         await RealKeycloakAccessTokenFactory.WaitForTokenEndpointReadinessAsync("local-viewer", "platform.viewer");
     }
 
     public async Task DisposeAsync()
     {
-        if (appHostProcess is not null)
+        if (appHost is not null)
         {
-            await appHostProcess.DisposeAsync();
-            appHostProcess = null;
+            await appHost.DisposeAsync();
+            appHost = null;
         }
+
+        if (appHostBuilder is not null)
+        {
+            await appHostBuilder.DisposeAsync();
+            appHostBuilder = null;
+        }
+
+        interactiveSignInScope?.Dispose();
+        interactiveSignInScope = null;
+
+        apiProviderScope?.Dispose();
+        apiProviderScope = null;
     }
 
     public HttpClient CreateApiClient()
     {
-        return new HttpClient(new HttpClientHandler
+        if (appHost is null)
         {
-            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-        })
-        {
-            BaseAddress = ApiBaseUri
-        };
+            throw new InvalidOperationException("The AppHost has not been started for the authentication integration fixture.");
+        }
+
+        return appHost.CreateHttpClient("api");
     }
 }
