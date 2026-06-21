@@ -113,8 +113,8 @@ The implementation stage maintains a lightweight execution log next to the mitig
 
 Use this naming convention:
 
-1. Mitigation plan: `006-work-package-refactoring-mitigation-plan.md`
-2. Execution log: `006-work-package-refactoring-mitigation-plan-execution-log.md`
+1. Mitigation plan: `00n-work-package-refactoring-mitigation-plan.md`
+2. Execution log: `00n-work-package-refactoring-mitigation-plan-execution-log.md`
 
 The execution log should capture:
 
