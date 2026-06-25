@@ -1,6 +1,6 @@
 ﻿---
-agent: 'agent'
-description: 'Reviews a work package and its current implementation to identify refactoring opportunities, structural weaknesses, and prioritized recommendations to improve maintainability safely.'
+agent: 'Work Package Refactoring Reviewer'
+description: 'Starts the refactoring-review stage for a work package, writing an evidence-backed review report and auto-continuing into mitigation planning when the review is complete.'
 name: review-refactoring-approach
 model: 'gpt-5.4'
 # tags: [refactoring, review, iterative-work, maintainability, quality]
@@ -10,17 +10,15 @@ model: 'gpt-5.4'
 
 ## Purpose
 
-You are a Senior Refactoring Architect. Review a work package under `./docs/00x-work/`, examine its documented scope and the current implementation in the repository, and produce a report that identifies refactoring opportunities, structural weaknesses, maintainability risks, and prioritized recommendations to improve the design safely.
+Use the dedicated `Work Package Refactoring Reviewer` agent to review a target work package under `./docs/00x-work/`, inspect the related implementation, and produce an evidence-backed refactoring review report that is specific enough to feed directly into mitigation planning.
 
-The review output should be specific enough to feed directly into follow-on planning and implementation prompts with minimal re-interpretation.
-
-The output MUST follow `.github/templates/refactoring-review-report.template.md`.
+When the review reaches a usable conclusion, the workflow should auto-continue into the dedicated planning agent through the configured handoff. If the review is blocked, incomplete, or not yet safe to plan from, stop and report that state instead of continuing.
 
 ## When to use
 
 - You want an independent maintainability review of a work package before implementation is considered complete.
 - You want to understand whether the current implementation should be refactored to reduce duplication, complexity, coupling, or boundary leakage.
-- You want a prioritized plan to improve code structure, testability, readability, and long-term change safety without changing intended behavior.
+- You want the review stage to flow directly into mitigation planning without manually re-entering the context.
 
 ## Inputs
 
@@ -43,6 +41,9 @@ ${REVIEW_DEPTH="standard"} <!-- quick | standard | deep: controls how much detai
 ## Constraints
 
 - MUST: Use `.github/templates/refactoring-review-report.template.md` as the output scaffold.
+- MUST: Produce a physical review report file.
+- MUST: Hand off automatically to planning only when the review is complete and usable.
+- MUST NOT: Start implementation from this prompt.
 - MUST: Review `requirements.md` in the target work package.
 - MUST: Review `technical-specification.md` when it exists in the target work package.
 - SHOULD: Review the existing numbered plan files in the target work package `plans/` folder when they exist.
@@ -67,44 +68,18 @@ ${REVIEW_DEPTH="standard"} <!-- quick | standard | deep: controls how much detai
 - SHOULD: Consider both production code and related tests when assessing refactoring safety and regression risk.
 - SHOULD: Recommend preserving or improving test coverage when a refactor affects behavior-critical paths.
 - SHOULD: Call out opportunities to simplify Blazor components when markup, state management, and service orchestration are mixed in ways that reduce maintainability.
-- Output MUST be: a single markdown report with a clear overview, evidence-backed findings, and prioritized refactoring recommendations.
+- Output MUST be: a short review summary plus a single markdown report on disk with a clear overview, evidence-backed findings, and prioritized refactoring recommendations.
 
 ## Process
 
-1. Load `.github/templates/refactoring-review-report.template.md` and use it as the report scaffold.
-2. Locate the target work package under `./docs/00x-work/` and read the available work package documents.
-   - Start with `requirements.md`.
-   - Then read `technical-specification.md` and any existing numbered plan files under `plans/` when present or explicitly supplied.
-3. Extract the scope, responsibilities, documented constraints, acceptance criteria, quality attributes, and stated delivery assumptions relevant to maintainability and refactoring.
-4. Discover the related implementation and safety-net test files under `src/` and `test/`.
-   - Prefer files explicitly referenced by the work-package artifacts.
-   - Expand the search only when needed to confirm or refute a suspected issue or boundary.
-5. Build a scope-to-implementation view that shows where responsibilities are clear, mixed, duplicated, tightly coupled, or weakly tested.
-6. Assess the current design quality, including cohesion, coupling, naming clarity, complexity, duplication, explicit dependencies, testability, and adherence to repository refactoring guidance.
-7. Identify refactoring findings, assign stable finding identifiers, and prioritize them by impact, risk, and expected benefit.
-8. Recommend concrete improvements, including where to strengthen tests before refactoring, where to apply smaller structural changes first, and which refactoring type is most appropriate for each finding.
-   - Reuse the finding identifiers in the recommendations and suggested next steps where practical.
-9. Write the final markdown report to a physical markdown file in the target work package.
-   - Default path: `./docs/00x-work/001-work-package-refactoring-review-report.md`
-   - If one or more numbered refactoring review reports already exist, write to the next available prefixed file name such as `002-work-package-refactoring-review-report.md` or `003-work-package-refactoring-review-report.md`.
-   - If the user provided a report path, use it only when it does not already exist; otherwise create a new report in the same folder using the next available three-digit prefix and the base file name.
-   - Never overwrite an existing report file unless the user explicitly asks for overwrite behavior.
-   - Ensure the file content exactly matches the final output.
+1. Route the task through the `Work Package Refactoring Reviewer` agent.
+2. Read the target work-package documents and inspect only the repository files needed to support evidence-backed findings.
+3. Write the physical review report.
+4. Auto-handoff to planning only if the review is complete and safe to plan from.
 
 ## Output format
 
-Return a single markdown report that follows `.github/templates/refactoring-review-report.template.md`.
-
-Where the template allows, format findings, risks, recommendations, and suggested next steps so they can be consumed directly by a follow-on refactoring planning prompt. Reuse finding identifiers and requirement references consistently.
-
-Also create a physical markdown file for the report inside the target work package.
-
-- Default file name: `001-work-package-refactoring-review-report.md`
-- Default location: the target `./docs/00x-work/` folder being reviewed
-- If numbered refactoring review reports already exist, create the next available file using the same `NNN-work-package-refactoring-review-report.md` naming pattern
-- If a report file path is provided and already exists, create a new sibling report using the next available `NNN-` prefix instead of overwriting
-
-The physical markdown file content must exactly match the final output.
+Return a short summary of the review and create the physical review report on disk. The agent owns the full report structure and the review-to-plan handoff behavior.
 
 ## Examples (optional)
 

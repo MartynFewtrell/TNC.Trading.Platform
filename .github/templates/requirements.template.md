@@ -1,6 +1,8 @@
 ﻿# Requirements Template
 
 > Use this template to capture *what* needs to be delivered. The output of this document is a set of `FRx`, `NFx`, `SRx` (and optional `*Rx`) requirements used by `technical-specification.md` and numbered plan files under `plans/`, starting with `plans/001-delivery-plan.md`.
+>
+> For refactoring-specific work packages, keep this baseline document but make the behavior-preservation boundary, the target implementation surfaces, and the out-of-scope cleanup boundaries explicit. Later refactoring review reports and mitigation plans supplement this file; they do not replace it.
 
 ## 1. Summary
 
@@ -14,7 +16,18 @@
   - `technical-specification.md`
   - `plans/001-delivery-plan.md`
 
-### 1.1 Links
+### 1.1 Work package profile
+
+- **Profile**: `<feature delivery | refactoring-focused | mixed>`
+- **Behavior-preservation baseline**: `<what must remain unchanged>`
+- **Primary implementation surfaces**: `<src/... | test/... | docs/...>`
+- **Expected follow-on artifacts**:
+  - `<none>` or
+  - `NNN-work-package-refactoring-review-report.md`
+  - `plans/NNN-work-package-refactoring-mitigation-plan.md`
+  - `plans/NNN-work-package-refactoring-mitigation-plan-execution-log.md`
+
+### 1.2 Links
 
 | Document | Path |
 | --- | --- |
@@ -39,6 +52,18 @@
 
 - <out-of-scope item>
 
+### 3.3 Target implementation surfaces (recommended for refactoring-focused packages)
+
+- <target boundary, component, service, route, page, or test surface>
+
+### 3.4 Behavior-preservation boundary (recommended for refactoring-focused packages)
+
+- <observable behavior that must remain unchanged>
+
+### 3.5 Refactoring cleanup boundaries (recommended for refactoring-focused packages)
+
+- <area intentionally excluded to prevent cleanup sprawl>
+
 ## 4. Functional Requirements
 
 Use `FR1`, `FR2`, ... for functional requirements.
@@ -56,7 +81,7 @@ Use `NF1`, `NF2`, ... for non-functional requirements.
 | --- | -------- | ----------- | -------------- | ------------------- |
 | NF1 | Performance | <requirement> | <e.g. p95 latency <= 200ms> | <testable statement(s)> |
 | NF2 | Reliability/Availability | <requirement> | <e.g. 99.9% uptime> | <testable statement(s)> |
-| NF3 | Maintainability/Supportability | <requirement> | <e.g. documented runbook + alarms> | <testable statement(s)> |
+| NF3 | Maintainability/Supportability | <requirement> | <e.g. clearer ownership boundaries or documented runbook + alarms> | <testable statement(s)> |
 | NF4 | Observability | <requirement> | <logs/metrics/traces> | <testable statement(s)> |
 | NF5 | Usability/Accessibility | <requirement> | <optional> | <testable statement(s)> |
 
@@ -95,6 +120,8 @@ Use `TR1`, `TR2`, ... for testing requirements.
 | ID  | Requirement | Acceptance criteria | Notes |
 | --- | ----------- | ------------------- | ----- |
 | TR1 | <requirement> | <testable statement(s)> | <optional> |
+
+For refactoring-focused packages, prefer requirements that define regression-safety, behavior-preservation checks, and the narrowest executable validation expected for each implementation slice.
 
 ## 10. Operational Requirements (optional)
 

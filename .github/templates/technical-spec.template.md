@@ -1,6 +1,8 @@
 ﻿# Technical Specification Template
 
 > Use this template to describe *how* the approved requirements will be implemented. This document should trace back to `FRx`, `NFx`, `SRx` (and optional `*Rx`) from `requirements.md` and feed into the initial delivery plan at `plans/001-delivery-plan.md`.
+>
+> For refactoring-focused work packages, use this template to describe the current structural problem, the owning boundaries to clarify, the behavior-preservation boundary, and the incremental slice strategy. Refactoring review reports and mitigation plans can extend this specification with evidence-driven findings and execution detail.
 
 ## 1. Summary
 
@@ -23,11 +25,19 @@
 
 - <constraint>
 
+### 2.4 Refactoring context (recommended for refactoring-focused packages)
+
+- **Current structural problem**: <mixed responsibilities, duplication, boundary leakage, weak cohesion, or similar>
+- **Behavior-preservation boundary**: <observable behavior that must remain unchanged>
+- **Primary owning boundaries to clarify**: <components, services, routes, pages, test seams, or modules>
+
 ## 3. Proposed Solution
 
 ### 3.1 Approach
 
 <High-level technical approach and why this is the right choice.>
+
+For refactoring-focused packages, describe the incremental slice strategy and explain how each slice stays small enough to validate locally before expanding scope.
 
 ### 3.2 Alternatives considered
 
@@ -80,6 +90,13 @@ Describe the implementation at a level that enables another developer to build i
 | 1 | <change> | <paths> | <notes> |
 | 2 | <change> | <paths> | <notes> |
 
+For refactoring-focused packages, prefer steps that:
+
+1. start from a concrete behavior, symbol, or boundary
+2. isolate the code that directly controls that outcome
+3. simplify the local structure without broad redesign
+4. validate the touched slice before expanding scope
+
 ### 5.4 Error Handling
 
 | Scenario | Expected behavior | Instrumentation |
@@ -116,6 +133,8 @@ Describe how the solution meets `SRx` requirements.
 | Unit | <what> | <path> | <notes> |
 | Integration | <what> | <path> | <notes> |
 | E2E | <what> | <path> | <notes> |
+
+For refactoring-focused packages, emphasize the narrowest falsifiable executable checks first, then broader validation only when the touched slice requires it.
 
 ## 9. Rollout Plan
 

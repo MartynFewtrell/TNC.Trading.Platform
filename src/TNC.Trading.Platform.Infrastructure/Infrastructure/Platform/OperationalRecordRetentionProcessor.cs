@@ -38,7 +38,6 @@ internal sealed class OperationalRecordRetentionProcessor(
                     && item.CapturedAtUtc < cutoff)
                 .ExecuteDeleteAsync(cancellationToken)
                 .ConfigureAwait(false);
-                .ConfigureAwait(false);
 
             deletedCount = deletedEvents + deletedAudits + deletedNotifications + deletedRetainedIgLoginSnapshots;
         }

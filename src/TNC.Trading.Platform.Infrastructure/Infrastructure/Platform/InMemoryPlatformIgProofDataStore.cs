@@ -16,5 +16,3 @@ internal sealed class InMemoryPlatformIgProofDataStore : IPlatformIgProofDataSto
         return Task.CompletedTask;
     }
 }
-    }
-}
