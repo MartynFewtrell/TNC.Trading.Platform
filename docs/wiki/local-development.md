@@ -46,6 +46,10 @@ Optional alternative when the Aspire CLI is installed:
 aspire run
 ```
 
+Do not redirect AppHost stdout or stderr into repository-root files such as `apphost.out.log`, `apphost.err.log`, `dashboard.html`, or `dashboard-cookies.txt`. Those captures are not part of the supported workflow and they create local root artifacts that are easy to restage accidentally.
+
+If you need persisted local output for troubleshooting, keep it in the terminal or write it to an ignored location such as `artifacts/local/` or a temporary folder outside the repository root.
+
 New developers should not be prompted for SQL Server or Keycloak passwords in the Aspire Dashboard during normal first-run startup. AppHost now relies on Aspire-managed local credentials for those infrastructure resources.
 
 ## Infrastructure credential handling

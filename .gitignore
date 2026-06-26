@@ -73,6 +73,11 @@ BenchmarkDotNet.Artifacts/
 project.lock.json
 project.fragment.lock.json
 artifacts/
+/apphost*.log
+/artifacts-*.log
+/artifacts-*.txt
+/dashboard-cookies.txt
+/dashboard.html
 
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt
