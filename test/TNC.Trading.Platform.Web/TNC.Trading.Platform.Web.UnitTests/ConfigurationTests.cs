@@ -1,11 +1,46 @@
 ﻿using System.Net;
 using Bunit;
+using Microsoft.Extensions.DependencyInjection;
 using TNC.Trading.Platform.Web.Components.Pages;
 
 namespace TNC.Trading.Platform.Web.UnitTests;
 
 public sealed class ConfigurationTests
 {
+    [Fact]
+    public async Task LoadAsync_ShouldReturnMappedForm_WhenConfigurationLoads()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            "local-operator",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()));
+        var presenter = context.Services.GetRequiredService<ConfigurationPagePresenter>();
+
+        var result = await presenter.LoadAsync(CancellationToken.None);
+
+        Assert.NotNull(result.Form);
+        Assert.Null(result.ErrorMessage);
+        Assert.Equal("08:00", result.Form.StartOfDayText);
+        Assert.Equal("Monday,Tuesday,Wednesday,Thursday,Friday", result.Form.TradingDaysCsv);
+    }
+
+    [Fact]
+    public async Task SaveAsync_ShouldReturnRestartMessage_WhenProtectedSaveRequiresRestart()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            "local-operator",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration(restartRequired: true)));
+        var presenter = context.Services.GetRequiredService<ConfigurationPagePresenter>();
+        var loadResult = await presenter.LoadAsync(CancellationToken.None);
+
+        var result = await presenter.SaveAsync(loadResult.Form!, CancellationToken.None);
+
+        Assert.NotNull(result.UpdatedForm);
+        Assert.Equal("Configuration saved. Startup-fixed changes apply on the next platform start.", result.Message);
+    }
+
     /// <summary>
     /// Trace: FR3, NF2, TR1, OR1.
     /// Verifies: the refreshed configuration page opens the environment accordion by default while keeping later sections collapsed initially.

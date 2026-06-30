@@ -1,0 +1,155 @@
+﻿# Requirements Template
+
+> Use this template to capture *what* needs to be delivered. The output of this document is a set of `FRx`, `NFx`, `SRx` (and optional `*Rx`) requirements used by `technical-specification.md` and numbered plan files under `plans/`, starting with `plans/001-delivery-plan.md`.
+>
+> For refactoring-specific work packages, keep this baseline document but make the behavior-preservation boundary, the target implementation surfaces, and the out-of-scope cleanup boundaries explicit. Later refactoring review reports and mitigation plans supplement this file; they do not replace it.
+
+## 1. Summary
+
+- **Work item**: <short name>
+- **Work folder**: `./docs/00x-work/`
+- **Business requirements**: `../business-requirements.md`
+- **Owner**: <name/team>
+- **Date**: <yyyy-mm-dd>
+- **Status**: <draft|review|approved>
+- **Outputs**:
+  - `technical-specification.md`
+  - `plans/001-delivery-plan.md`
+
+### 1.1 Work package profile
+
+- **Profile**: `<feature delivery | refactoring-focused | mixed>`
+- **Behavior-preservation baseline**: `<what must remain unchanged>`
+- **Primary implementation surfaces**: `<src/... | test/... | docs/...>`
+- **Expected follow-on artifacts**:
+  - `<none>` or
+  - `NNN-work-package-refactoring-review-report.md`
+  - `plans/NNN-work-package-refactoring-mitigation-plan.md`
+  - `plans/NNN-work-package-refactoring-mitigation-plan-execution-log.md`
+
+### 1.2 Links
+
+| Document | Path |
+| --- | --- |
+| Business requirements | `../business-requirements.md` |
+| Requirements | `requirements.md` |
+| Technical specification | `technical-specification.md` |
+| Initial delivery plan | `plans/001-delivery-plan.md` |
+
+## 2. Context
+
+### 2.1 Background
+
+<Why this work is needed. What problem is being solved?>
+
+## 3. Scope
+
+### 3.1 In scope
+
+- <in-scope item>
+
+### 3.2 Out of scope
+
+- <out-of-scope item>
+
+### 3.3 Target implementation surfaces (recommended for refactoring-focused packages)
+
+- <target boundary, component, service, route, page, or test surface>
+
+### 3.4 Behavior-preservation boundary (recommended for refactoring-focused packages)
+
+- <observable behavior that must remain unchanged>
+
+### 3.5 Refactoring cleanup boundaries (recommended for refactoring-focused packages)
+
+- <area intentionally excluded to prevent cleanup sprawl>
+
+## 4. Functional Requirements
+
+Use `FR1`, `FR2`, ... for functional requirements.
+
+| ID  | Requirement | Rationale | Acceptance criteria | Notes/Constraints |
+| --- | ----------- | --------- | ------------------- | ---------------- |
+| FR1 | <requirement> | <why> | <testable statement(s)> | <optional> |
+| FR2 | <requirement> | <why> | <testable statement(s)> | <optional> |
+
+## 5. Non-Functional Requirements
+
+Use `NF1`, `NF2`, ... for non-functional requirements.
+
+| ID  | Category | Requirement | Measure/Target | Acceptance criteria |
+| --- | -------- | ----------- | -------------- | ------------------- |
+| NF1 | Performance | <requirement> | <e.g. p95 latency <= 200ms> | <testable statement(s)> |
+| NF2 | Reliability/Availability | <requirement> | <e.g. 99.9% uptime> | <testable statement(s)> |
+| NF3 | Maintainability/Supportability | <requirement> | <e.g. clearer ownership boundaries or documented runbook + alarms> | <testable statement(s)> |
+| NF4 | Observability | <requirement> | <logs/metrics/traces> | <testable statement(s)> |
+| NF5 | Usability/Accessibility | <requirement> | <optional> | <testable statement(s)> |
+
+## 6. Security Requirements
+
+Use `SR1`, `SR2`, ... for security requirements.
+
+| ID  | Category | Requirement | Acceptance criteria |
+| --- | -------- | ----------- | ------------------- |
+| SR1 | Authentication/Authorization | <requirement> | <testable statement(s)> |
+| SR2 | Data Protection | <requirement> | <testable statement(s)> |
+| SR3 | Secrets/Key Management | <requirement> | <testable statement(s)> |
+| SR4 | Threats/Abuse Cases | <requirement> | <testable statement(s)> |
+
+
+## 7. Data Requirements (optional)
+
+Use `DR1`, `DR2`, ... for data requirements.
+
+| ID  | Requirement | Source | Retention | Acceptance criteria | Notes |
+| --- | ----------- | ------ | --------- | ------------------- | ----- |
+| DR1 | <requirement> | <system/user> | <duration> | <testable statement(s)> | <optional> |
+
+## 8. Interfaces and Integration Requirements (optional)
+
+Use `IR1`, `IR2`, ... for integration requirements.
+
+| ID  | Requirement | System | Contract | Acceptance criteria | Notes |
+| --- | ----------- | ------ | -------- | ------------------- | ----- |
+| IR1 | <requirement> | <name> | <API/event/file> | <testable statement(s)> | <optional> |
+
+## 9. Testing Requirements
+
+Use `TR1`, `TR2`, ... for testing requirements.
+
+| ID  | Requirement | Acceptance criteria | Notes |
+| --- | ----------- | ------------------- | ----- |
+| TR1 | <requirement> | <testable statement(s)> | <optional> |
+
+For refactoring-focused packages, prefer requirements that define regression-safety, behavior-preservation checks, and the narrowest executable validation expected for each implementation slice.
+
+## 10. Operational Requirements (optional)
+
+Use `OR1`, `OR2`, ... for operational requirements.
+
+| ID  | Requirement | Acceptance criteria | Notes |
+| --- | ----------- | ------------------- | ----- |
+| OR1 | <requirement> | <testable statement(s)> | <optional> |
+
+## 11. Assumptions, Risks, and Dependencies
+
+### 11.1 Assumptions
+
+- <assumption>
+
+### 11.2 Risks
+
+- <risk>
+  - **Mitigation**: <mitigation>
+
+### 11.3 Dependencies
+
+- <dependency>
+
+## 12. Open Questions
+
+- <question>
+
+## 13. Appendix (optional)
+
+- <links, diagrams, PRDs, prior decisions>

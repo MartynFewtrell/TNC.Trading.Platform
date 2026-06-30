@@ -24,6 +24,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\Shared\Authentication\AppHostProcessHandle.cs" Link="Shared\Authentication\AppHostProcessHandle.cs" />
+    <Compile Include="..\..\Shared\Authentication\RealAppHostProcessFactory.cs" Link="Shared\Authentication\RealAppHostProcessFactory.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Folder Include="002-environment-and-auth-foundation\" />
   </ItemGroup>
 

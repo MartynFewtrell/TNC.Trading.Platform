@@ -1,30 +1,24 @@
-﻿using Aspire.Hosting;
-using Aspire.Hosting.Testing;
+﻿using SharedAppHostProcessHandle = TNC.Trading.Platform.TestShared.Authentication.AppHostProcessHandle;
 
 namespace TNC.Trading.Platform.Api.IntegrationTests.Authentication;
 
 public sealed class RealAuthenticationIntegrationTestFixture : IAsyncLifetime
 {
-    private IDistributedApplicationTestingBuilder? appHostBuilder;
-    private DistributedApplication? appHost;
+    private SharedAppHostProcessHandle? appHostProcess;
     private TestEnvironmentVariableScope? apiProviderScope;
     private TestEnvironmentVariableScope? interactiveSignInScope;
+
+    public Uri ApiBaseUri { get; private set; } = null!;
 
     public async Task InitializeAsync()
     {
         apiProviderScope = new TestEnvironmentVariableScope("Authentication__ApiProvider", "Keycloak");
         interactiveSignInScope = new TestEnvironmentVariableScope("Authentication__Test__EnableInteractiveSignIn", bool.FalseString);
 
-        appHostBuilder = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-        appHost = await appHostBuilder.BuildAsync();
-        await appHost.StartAsync();
+        appHostProcess = RealAppHostProcessFactory.StartAppHostProcess();
+        ApiBaseUri = await appHostProcess.WaitForApiBaseUriAsync(TimeSpan.FromSeconds(120));
 
-        using var startupTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-        await appHost.ResourceNotifications.WaitForResourceHealthyAsync("keycloak", startupTimeout.Token);
-        await appHost.ResourceNotifications.WaitForResourceHealthyAsync("sql", startupTimeout.Token);
-
-        using var apiReadinessClient = appHost.CreateHttpClient("api");
+        using var apiReadinessClient = CreateApiClient();
         await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(apiReadinessClient);
 
         await RealKeycloakAccessTokenFactory.WaitForTokenEndpointReadinessAsync("local-viewer", "platform.viewer");
@@ -32,16 +26,10 @@ public sealed class RealAuthenticationIntegrationTestFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (appHost is not null)
+        if (appHostProcess is not null)
         {
-            await appHost.DisposeAsync();
-            appHost = null;
-        }
-
-        if (appHostBuilder is not null)
-        {
-            await appHostBuilder.DisposeAsync();
-            appHostBuilder = null;
+            await appHostProcess.DisposeAsync();
+            appHostProcess = null;
         }
 
         interactiveSignInScope?.Dispose();
@@ -53,11 +41,17 @@ public sealed class RealAuthenticationIntegrationTestFixture : IAsyncLifetime
 
     public HttpClient CreateApiClient()
     {
-        if (appHost is null)
+        if (appHostProcess is null)
         {
             throw new InvalidOperationException("The AppHost has not been started for the authentication integration fixture.");
         }
 
-        return appHost.CreateHttpClient("api");
+        return new HttpClient(new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        })
+        {
+            BaseAddress = ApiBaseUri
+        };
     }
 }

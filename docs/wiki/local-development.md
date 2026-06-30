@@ -140,7 +140,7 @@ dotnet test -m:1
 
 The auth work package now also includes a dedicated Web unit test project for policy registration, direct `PlatformApiClient` boundary coverage, and bUnit component coverage for the refreshed Blazor shell and operator pages. It is included in the repository-wide `dotnet test` run.
 
-The AppHost-backed Web functional and Web end-to-end auth suites validate the delivered Docker plus Keycloak topology directly. The API integration suite still prefers real Keycloak-issued bearer tokens for protected-route coverage, but it also retains a narrow synthetic slice that temporarily switches only the API project to the test auth provider so invalid JWT and claim-shape negatives can reach the API boundary deterministically. Web functional and browser suites use real sign-in helpers that discover listener URLs from AppHost runtime output instead of relying on fixed launch-settings ports, and each auth collection now reuses one AppHost-plus-Keycloak runtime so the retained distributed checks stay narrower and less flaky.
+The AppHost-backed Web functional and Web end-to-end auth suites validate the delivered Docker plus Keycloak topology directly. The API integration suite still prefers real Keycloak-issued bearer tokens for protected-route coverage, but it also retains a narrow synthetic slice that temporarily switches only the API project to the test auth provider so invalid JWT and claim-shape negatives can reach the API boundary deterministically. Web functional and browser suites now start the shared AppHost through Aspire-managed testing, discover the live Web listener from the managed runtime listener set instead of relying on fixed launch-settings ports, and force session-scoped Keycloak state for those auth collections so realm imports stay deterministic between runs.
 
 The retained real-runtime auth matrix is intentionally small:
 
@@ -239,9 +239,10 @@ Expected behavior:
 
 ### AppHost-backed auth tests fail to find the Web listener
 
-- confirm AppHost reached the running state and emitted the Web authentication entry URL in its console output
+- confirm AppHost reached the running state and that the shared harness can rediscover the current Web runtime listener set
 - confirm Docker, Keycloak, and SQL containers are healthy before rerunning the suite
 - rerun after stopping stale AppHost processes so the real-runtime test helpers can discover the current listener set cleanly
+- if Keycloak callback URLs still fail after a realm change, reset the persisted local `keycloak` resource or rerun with session-scoped Keycloak state so the latest realm import is applied
 
 ### The UI shows degraded status
 

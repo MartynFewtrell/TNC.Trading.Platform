@@ -33,17 +33,11 @@ internal sealed class NotificationDispatcher(
         Guid? retryCycleId,
         CancellationToken cancellationToken)
     {
-        var sanitizedSummary = OperationalDataRedactor.RedactText(summary) ?? string.Empty;
+        var dispatchContext = NotificationDispatchPolicy.CreateContext(notificationType, summary, configuration);
         var occurredAtUtc = timeProvider.GetUtcNow();
-
-        var recipient = string.IsNullOrWhiteSpace(configuration.NotificationSettings.EmailTo)
-            ? "unconfigured"
-            : configuration.NotificationSettings.EmailTo!;
-
-        var providerName = configuration.NotificationSettings.Provider;
         var dispatchResult = await DispatchAsync(
-            new NotificationMessage(notificationType, recipient, sanitizedSummary),
-            providerName,
+            dispatchContext.Message,
+            dispatchContext.ProviderName,
             cancellationToken).ConfigureAwait(false);
 
         dbContext.NotificationRecords.Add(new NotificationRecordEntity
@@ -51,8 +45,8 @@ internal sealed class NotificationDispatcher(
             NotificationType = notificationType,
             PlatformEnvironment = configuration.PlatformEnvironment.ToString(),
             BrokerEnvironment = configuration.BrokerEnvironment.ToString(),
-            Recipient = recipient,
-            Summary = sanitizedSummary,
+            Recipient = dispatchContext.Recipient,
+            Summary = dispatchContext.SanitizedSummary,
             DispatchStatus = dispatchResult.Status,
             Provider = dispatchResult.ProviderName,
             CorrelationId = correlationId,
@@ -67,10 +61,10 @@ internal sealed class NotificationDispatcher(
             PlatformEnvironment = configuration.PlatformEnvironment.ToString(),
             BrokerEnvironment = configuration.BrokerEnvironment.ToString(),
             Severity = dispatchResult.Status == "Failed" ? "Error" : "Information",
-            Summary = sanitizedSummary,
+            Summary = dispatchContext.SanitizedSummary,
             DetailsJson = OperationalDataRedactor.Serialize(new
             {
-                Recipient = recipient,
+                Recipient = dispatchContext.Recipient,
                 DispatchStatus = dispatchResult.Status,
                 Provider = dispatchResult.ProviderName,
                 retryCycleId
@@ -86,8 +80,8 @@ internal sealed class NotificationDispatcher(
             "Notification {DispatchStatus} for {NotificationType} to {Recipient}: {Summary}",
             dispatchResult.Status,
             notificationType,
-            recipient,
-            sanitizedSummary);
+                dispatchContext.Recipient,
+                dispatchContext.SanitizedSummary);
     }
 
     private async Task<NotificationDispatchResult> DispatchAsync(

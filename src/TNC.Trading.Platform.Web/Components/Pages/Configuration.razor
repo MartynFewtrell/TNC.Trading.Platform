@@ -1,6 +1,6 @@
 ﻿@page "/configuration"
 @attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Operator)]
-@inject PlatformApiClient PlatformApiClient
+@inject ConfigurationPagePresenter Presenter
 @inject PlatformNavigationAccessCoordinator NavigationAccessCoordinator
 
 <PageTitle>Platform configuration</PageTitle>
@@ -202,17 +202,9 @@ else
 
     private async Task LoadAsync()
     {
-        loadError = null;
-
-        try
-        {
-            var configuration = await PlatformApiClient.GetConfigurationAsync(CancellationToken.None);
-            form = ConfigurationFormModel.From(configuration);
-        }
-        catch (HttpRequestException exception)
-        {
-            loadError = $"Unable to load platform configuration: {exception.Message}";
-        }
+        var result = await Presenter.LoadAsync(CancellationToken.None);
+        form = result.Form;
+        loadError = result.ErrorMessage;
     }
 
     private async Task SaveAsync()
@@ -227,151 +219,17 @@ else
 
         try
         {
-            var updated = await PlatformApiClient.UpdateConfigurationAsync(form.ToRequest(), CancellationToken.None);
-            form = ConfigurationFormModel.From(updated);
-            saveMessage = updated.RestartRequired
-                ? "Configuration saved. Startup-fixed changes apply on the next platform start."
-                : "Configuration saved.";
-        }
-        catch (Exception exception) when (exception is FormatException or HttpRequestException or PlatformScopeChallengeRequiredException)
-        {
-            saveMessage = $"Configuration save failed: {exception.Message}";
+            var result = await Presenter.SaveAsync(form, CancellationToken.None);
+            if (result.UpdatedForm is not null)
+            {
+                form = result.UpdatedForm;
+            }
+
+            saveMessage = result.Message;
         }
         finally
         {
             saveInProgress = false;
-        }
-    }
-
-    private sealed class ConfigurationFormModel
-    {
-        public string PlatformEnvironment { get; set; } = string.Empty;
-
-        public string BrokerEnvironment { get; set; } = string.Empty;
-
-        public UpdateTradingScheduleViewModel TradingSchedule { get; set; } = new()
-        {
-            StartOfDay = new TimeOnly(8, 0),
-            EndOfDay = new TimeOnly(16, 30),
-            WeekendBehavior = "ExcludeWeekends",
-            TimeZone = "UTC"
-        };
-
-        public string StartOfDayText { get; set; } = "08:00";
-
-        public string EndOfDayText { get; set; } = "16:30";
-
-        public string TradingDaysCsv { get; set; } = "Monday,Tuesday,Wednesday,Thursday,Friday";
-
-        public string BankHolidayCsv { get; set; } = string.Empty;
-
-        public UpdateRetryPolicyViewModel RetryPolicy { get; set; } = new()
-        {
-            InitialDelaySeconds = 1,
-            MaxAutomaticRetries = 5,
-            Multiplier = 2,
-            MaxDelaySeconds = 60,
-            PeriodicDelayMinutes = 5
-        };
-
-        public UpdateNotificationSettingsViewModel NotificationSettings { get; set; } = new()
-        {
-            Provider = "RecordedOnly"
-        };
-
-        public CredentialPresenceViewModel Credentials { get; set; } = new(false, false, false);
-
-        public UpdateCredentialsViewModel CredentialsUpdate { get; set; } = new();
-
-        public bool RestartRequired { get; set; }
-
-        public string ChangedBy { get; set; } = "operator";
-
-        public static ConfigurationFormModel From(PlatformConfigurationViewModel configuration) => new()
-        {
-            PlatformEnvironment = configuration.PlatformEnvironment,
-            BrokerEnvironment = configuration.BrokerEnvironment,
-            TradingSchedule = new UpdateTradingScheduleViewModel
-            {
-                StartOfDay = configuration.TradingSchedule.StartOfDay,
-                EndOfDay = configuration.TradingSchedule.EndOfDay,
-                TradingDays = configuration.TradingSchedule.TradingDays,
-                WeekendBehavior = configuration.TradingSchedule.WeekendBehavior,
-                BankHolidayExclusions = configuration.TradingSchedule.BankHolidayExclusions,
-                TimeZone = configuration.TradingSchedule.TimeZone
-            },
-            StartOfDayText = configuration.TradingSchedule.StartOfDay.ToString("HH:mm"),
-            EndOfDayText = configuration.TradingSchedule.EndOfDay.ToString("HH:mm"),
-            TradingDaysCsv = string.Join(',', configuration.TradingSchedule.TradingDays),
-            BankHolidayCsv = string.Join(',', configuration.TradingSchedule.BankHolidayExclusions.Select(item => item.ToString("yyyy-MM-dd"))),
-            RetryPolicy = new UpdateRetryPolicyViewModel
-            {
-                InitialDelaySeconds = configuration.RetryPolicy.InitialDelaySeconds,
-                MaxAutomaticRetries = configuration.RetryPolicy.MaxAutomaticRetries,
-                Multiplier = configuration.RetryPolicy.Multiplier,
-                MaxDelaySeconds = configuration.RetryPolicy.MaxDelaySeconds,
-                PeriodicDelayMinutes = configuration.RetryPolicy.PeriodicDelayMinutes
-            },
-            NotificationSettings = new UpdateNotificationSettingsViewModel
-            {
-                Provider = configuration.NotificationSettings.Provider,
-                EmailTo = configuration.NotificationSettings.EmailTo
-            },
-            Credentials = configuration.Credentials,
-            CredentialsUpdate = new UpdateCredentialsViewModel(),
-            RestartRequired = configuration.RestartRequired
-        };
-
-        public UpdatePlatformConfigurationViewModel ToRequest() => new()
-        {
-            PlatformEnvironment = PlatformEnvironment,
-            BrokerEnvironment = BrokerEnvironment,
-            TradingSchedule = new UpdateTradingScheduleViewModel
-            {
-                StartOfDay = TimeOnly.Parse(StartOfDayText),
-                EndOfDay = TimeOnly.Parse(EndOfDayText),
-                TradingDays = ParseTradingDays(TradingDaysCsv),
-                WeekendBehavior = TradingSchedule.WeekendBehavior,
-                BankHolidayExclusions = ParseBankHolidays(BankHolidayCsv),
-                TimeZone = TradingSchedule.TimeZone
-            },
-            RetryPolicy = new UpdateRetryPolicyViewModel
-            {
-                InitialDelaySeconds = RetryPolicy.InitialDelaySeconds,
-                MaxAutomaticRetries = RetryPolicy.MaxAutomaticRetries,
-                Multiplier = RetryPolicy.Multiplier,
-                MaxDelaySeconds = RetryPolicy.MaxDelaySeconds,
-                PeriodicDelayMinutes = RetryPolicy.PeriodicDelayMinutes
-            },
-            NotificationSettings = new UpdateNotificationSettingsViewModel
-            {
-                Provider = NotificationSettings.Provider,
-                EmailTo = NotificationSettings.EmailTo
-            },
-            Credentials = new UpdateCredentialsViewModel
-            {
-                ApiKey = CredentialsUpdate.ApiKey,
-                Identifier = CredentialsUpdate.Identifier,
-                Password = CredentialsUpdate.Password
-            },
-            ChangedBy = ChangedBy
-        };
-
-        private static IReadOnlyList<DayOfWeek> ParseTradingDays(string value) =>
-            value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(item => Enum.Parse<DayOfWeek>(item, ignoreCase: true))
-                .ToArray();
-
-        private static IReadOnlyList<DateOnly> ParseBankHolidays(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return [];
-            }
-
-            return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(DateOnly.Parse)
-                .ToArray();
         }
     }
 }

@@ -283,6 +283,79 @@ public class AuthRetryCycleTests
     }
 
     /// <summary>
+    /// Trace: FR12, TR2.
+    /// Verifies: the extracted tick decision seam classifies missing-credential runtime state as a degraded transition.
+    /// Expected: the engine returns a degraded transition without scheduling retry wait or active-session recovery.
+    /// Why: the coordinator's primary branch selection should be directly testable without EF-backed orchestration setup.
+    /// </summary>
+    [Fact]
+    public void TickDecisionEngine_ShouldChooseDegraded_WhenCredentialsAreIncomplete()
+    {
+        var engine = new PlatformStateTransitionEngine();
+        var now = new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero);
+        var configurationSnapshot = CreateConfigurationSnapshot() with
+        {
+            Credentials = new CredentialPresence(false, false, false)
+        };
+        var runtimeState = new PlatformRuntimeState
+        {
+            SessionStatus = PlatformSessionStatus.Unknown
+        };
+        var scheduleStatus = new TradingScheduleStatus(true, string.Empty);
+
+        var decision = engine.DecideTickAction(configurationSnapshot, runtimeState, scheduleStatus, now);
+
+        Assert.Equal(PlatformTickDecisionKind.TransitionToDegraded, decision.Kind);
+    }
+
+    /// <summary>
+    /// Trace: FR6, FR10, TR8.
+    /// Verifies: the extracted tick decision seam prioritizes expired active sessions ahead of happy-path activation.
+    /// Expected: the engine returns a session-expired transition when the active session lifetime has elapsed.
+    /// Why: this preserves the current coordinator ordering while making the rule table-driven and explicit.
+    /// </summary>
+    [Fact]
+    public void TickDecisionEngine_ShouldChooseSessionExpired_WhenActiveSessionHasExpired()
+    {
+        var engine = new PlatformStateTransitionEngine();
+        var now = new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero);
+        var runtimeState = new PlatformRuntimeState
+        {
+            SessionStatus = PlatformSessionStatus.Active,
+            ExpiresAtUtc = now.AddSeconds(-1)
+        };
+        var scheduleStatus = new TradingScheduleStatus(true, string.Empty);
+
+        var decision = engine.DecideTickAction(CreateConfigurationSnapshot(), runtimeState, scheduleStatus, now);
+
+        Assert.Equal(PlatformTickDecisionKind.HandleSessionExpired, decision.Kind);
+    }
+
+    /// <summary>
+    /// Trace: FR2, FR6, TR2.
+    /// Verifies: the extracted tick decision seam keeps degraded retry cycles in wait mode until the scheduled retry instant arrives.
+    /// Expected: the engine returns the scheduled-wait decision while the next retry time remains in the future.
+    /// Why: this isolates the retry-timing branch from persistence and integration side effects.
+    /// </summary>
+    [Fact]
+    public void TickDecisionEngine_ShouldWaitForScheduledRetry_WhenDegradedRetryIsNotDue()
+    {
+        var engine = new PlatformStateTransitionEngine();
+        var now = new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero);
+        var runtimeState = new PlatformRuntimeState
+        {
+            SessionStatus = PlatformSessionStatus.Degraded,
+            RetryPhase = AuthRetryPhase.InitialAutomatic,
+            NextRetryAtUtc = now.AddMinutes(1)
+        };
+        var scheduleStatus = new TradingScheduleStatus(true, string.Empty);
+
+        var decision = engine.DecideTickAction(CreateConfigurationSnapshot(), runtimeState, scheduleStatus, now);
+
+        Assert.Equal(PlatformTickDecisionKind.WaitForScheduledRetry, decision.Kind);
+    }
+
+    /// <summary>
     /// Trace: FR4, FR7, TR2, TR3.
     /// Verifies: complete Demo credentials allow the coordinator to record a Demo authentication attempt without exposing secrets.
     /// Expected: the operational event records Demo environment context and excludes the raw credential values from the details payload.

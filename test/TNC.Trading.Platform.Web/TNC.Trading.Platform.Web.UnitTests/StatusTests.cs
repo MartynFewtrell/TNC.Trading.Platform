@@ -1,11 +1,54 @@
 ﻿using System.Net;
 using Bunit;
+using Microsoft.Extensions.DependencyInjection;
 using TNC.Trading.Platform.Web.Components.Pages;
 
 namespace TNC.Trading.Platform.Web.UnitTests;
 
 public sealed class StatusTests
 {
+    [Fact]
+    public async Task LoadAsync_ShouldReturnStatusAndEvents_WhenProtectedStatusLoads()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            "local-operator",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateStatus()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateEvents()));
+        var presenter = context.Services.GetRequiredService<StatusPagePresenter>();
+
+        var result = await presenter.LoadAsync(CancellationToken.None);
+
+        Assert.NotNull(result.Status);
+        Assert.NotNull(result.Events);
+        Assert.Null(result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task TriggerManualRetryAsync_ShouldReturnStatusMessage_WhenRetryStartsSuccessfully()
+    {
+        var retry = PlatformWebTestData.CreateManualRetry();
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            "local-operator",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.Accepted, retry));
+        var presenter = context.Services.GetRequiredService<StatusPagePresenter>();
+
+        var result = await presenter.TriggerManualRetryAsync(CancellationToken.None);
+
+        Assert.Equal($"Manual retry started with cycle id {retry.RetryCycleId}.", result.Message);
+    }
+
+    [Fact]
+    public void GetCurrentIgLoginState_ShouldReturnRetrying_WhenRetryCycleIsActive()
+    {
+        var status = PlatformWebTestData.CreateStatus(isDegraded: true, retryPhase: "InitialAutomatic");
+
+        var result = StatusPagePresenter.GetCurrentIgLoginState(status);
+
+        Assert.Equal("Retrying", result);
+    }
+
     /// <summary>
     /// Trace: FR3, NF2, SR1, TR1.
     /// Verifies: the status page surfaces the degraded authentication warning when the protected status payload reports degraded auth state.

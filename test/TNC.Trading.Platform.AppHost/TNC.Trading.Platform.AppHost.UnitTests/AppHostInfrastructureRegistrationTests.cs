@@ -1,5 +1,6 @@
 ﻿using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
+using System.Reflection;
 
 namespace TNC.Trading.Platform.AppHost.UnitTests;
 
@@ -48,6 +49,27 @@ public sealed class AppHostInfrastructureRegistrationTests
         Assert.Contains("http", keycloakEndpointNames);
     }
 
+    /// <summary>
+    /// Trace: FR1, FR2, NF2, TR1.
+    /// Verifies: the AppHost can disable persistent Keycloak state for repeatable authentication test runs.
+    /// Expected: when the AppHost configuration opts out of persistent Keycloak state, the Keycloak resource uses a session lifetime.
+    /// Why: AppHost-backed authentication tests need fresh realm imports so runtime listener callback changes are applied deterministically.
+    /// </summary>
+    [Fact]
+    public void Create_ShouldUseSessionLifetimeForKeycloak_WhenPersistentKeycloakStateIsDisabled()
+    {
+        var builder = DistributedApplication.CreateBuilder(new DistributedApplicationOptions
+        {
+            DisableDashboard = true,
+            AllowUnsecuredTransport = true
+        });
+        builder.Configuration["AppHost:UsePersistentKeycloakState"] = bool.FalseString;
+
+        var infrastructure = AppHostInfrastructureRegistration.Create(builder);
+
+        Assert.Equal(ContainerLifetime.Session, GetContainerLifetime(infrastructure.Keycloak.Resource));
+    }
+
     private static IDistributedApplicationBuilder CreateBuilder()
     {
         return DistributedApplication.CreateBuilder(new DistributedApplicationOptions
@@ -55,5 +77,33 @@ public sealed class AppHostInfrastructureRegistrationTests
             DisableDashboard = true,
             AllowUnsecuredTransport = true
         });
+    }
+
+    private static ContainerLifetime GetContainerLifetime(IResource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var directLifetime = resource.GetType()
+            .GetProperty("Lifetime", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?
+            .GetValue(resource);
+        if (directLifetime is ContainerLifetime containerLifetime)
+        {
+            return containerLifetime;
+        }
+
+        foreach (var annotation in resource.Annotations)
+        {
+            var lifetime = annotation.GetType()
+                .GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                .FirstOrDefault(property => property.PropertyType == typeof(ContainerLifetime))?
+                .GetValue(annotation);
+
+            if (lifetime is ContainerLifetime annotationLifetime)
+            {
+                return annotationLifetime;
+            }
+        }
+
+        throw new InvalidOperationException($"No container lifetime metadata was found for resource '{resource.Name}'.");
     }
 }

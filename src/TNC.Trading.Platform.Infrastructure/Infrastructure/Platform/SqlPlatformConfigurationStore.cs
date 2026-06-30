@@ -49,8 +49,7 @@ internal sealed class SqlPlatformConfigurationStore(
     public async Task<UpdatePlatformConfigurationResult> UpdateAsync(PlatformConfigurationUpdate update, CancellationToken cancellationToken)
     {
         var entity = await EnsureConfigurationAsync(cancellationToken).ConfigureAwait(false);
-        var restartRequired = entity.PlatformEnvironment != update.PlatformEnvironment.ToString()
-            || entity.BrokerEnvironment != update.BrokerEnvironment.ToString();
+        var restartRequired = PlatformConfigurationRestartPolicy.IsRestartRequired(entity, update);
 
         entity.PlatformEnvironment = update.PlatformEnvironment.ToString();
         entity.BrokerEnvironment = update.BrokerEnvironment.ToString();
@@ -124,112 +123,33 @@ internal sealed class SqlPlatformConfigurationStore(
             return entity;
         }
 
-        var bootstrapBrokerEnvironment = configuration["Bootstrap:BrokerEnvironment"];
-        if (string.IsNullOrWhiteSpace(bootstrapBrokerEnvironment))
-        {
-            throw new InvalidOperationException("Bootstrap:BrokerEnvironment must be configured before the platform can seed SQL-backed configuration.");
-        }
-
-        var bootstrapPlatformEnvironment = configuration["Bootstrap:PlatformEnvironment"];
-        var platformEnvironment = string.IsNullOrWhiteSpace(bootstrapPlatformEnvironment)
-            ? PlatformEnvironmentKind.Test
-            : Enum.Parse<PlatformEnvironmentKind>(bootstrapPlatformEnvironment, ignoreCase: true);
-        var brokerEnvironment = Enum.Parse<BrokerEnvironmentKind>(bootstrapBrokerEnvironment, ignoreCase: true);
-        var tradingDays = GetTradingDays();
-        var bankHolidays = GetBankHolidayExclusions();
-        var updatedBy = configuration["Bootstrap:UpdatedBy"] ?? "bootstrap";
+        var bootstrap = PlatformConfigurationBootstrapParser.Parse(configuration);
 
         entity = new PlatformConfigurationEntity
         {
-            PlatformEnvironment = platformEnvironment.ToString(),
-            BrokerEnvironment = brokerEnvironment.ToString(),
-            TradingHoursStart = GetTimeOnly("Bootstrap:TradingSchedule:StartOfDay", new TimeOnly(8, 0)),
-            TradingHoursEnd = GetTimeOnly("Bootstrap:TradingSchedule:EndOfDay", new TimeOnly(16, 30)),
-            TradingDaysCsv = string.Join(',', tradingDays),
-            WeekendBehavior = GetWeekendBehavior().ToString(),
-            BankHolidayExclusionsJson = JsonSerializer.Serialize(bankHolidays),
-            TimeZone = configuration["Bootstrap:TradingSchedule:TimeZone"] ?? "UTC",
-            RetryInitialDelaySeconds = GetInt32("Bootstrap:RetryPolicy:InitialDelaySeconds", 1),
-            RetryMaxAutomaticRetries = GetInt32("Bootstrap:RetryPolicy:MaxAutomaticRetries", 5),
-            RetryMultiplier = GetInt32("Bootstrap:RetryPolicy:Multiplier", 2),
-            RetryMaxDelaySeconds = GetInt32("Bootstrap:RetryPolicy:MaxDelaySeconds", 60),
-            RetryPeriodicDelayMinutes = GetInt32("Bootstrap:RetryPolicy:PeriodicDelayMinutes", 5),
-            NotificationProvider = GetNotificationProvider(),
-            NotificationEmailTo = configuration["Bootstrap:NotificationSettings:EmailTo"],
+            PlatformEnvironment = bootstrap.PlatformEnvironment.ToString(),
+            BrokerEnvironment = bootstrap.BrokerEnvironment.ToString(),
+            TradingHoursStart = bootstrap.TradingSchedule.StartOfDay,
+            TradingHoursEnd = bootstrap.TradingSchedule.EndOfDay,
+            TradingDaysCsv = string.Join(',', bootstrap.TradingSchedule.TradingDays),
+            WeekendBehavior = bootstrap.TradingSchedule.WeekendBehavior.ToString(),
+            BankHolidayExclusionsJson = JsonSerializer.Serialize(bootstrap.TradingSchedule.BankHolidayExclusions),
+            TimeZone = bootstrap.TradingSchedule.TimeZone,
+            RetryInitialDelaySeconds = bootstrap.RetryPolicy.InitialDelaySeconds,
+            RetryMaxAutomaticRetries = bootstrap.RetryPolicy.MaxAutomaticRetries,
+            RetryMultiplier = bootstrap.RetryPolicy.Multiplier,
+            RetryMaxDelaySeconds = bootstrap.RetryPolicy.MaxDelaySeconds,
+            RetryPeriodicDelayMinutes = bootstrap.RetryPolicy.PeriodicDelayMinutes,
+            NotificationProvider = bootstrap.NotificationSettings.Provider,
+            NotificationEmailTo = bootstrap.NotificationSettings.EmailTo,
             UpdatedAtUtc = timeProvider.GetUtcNow(),
-            UpdatedBy = updatedBy,
+            UpdatedBy = bootstrap.UpdatedBy,
             RestartRequired = false
         };
 
         dbContext.PlatformConfigurations.Add(entity);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return entity;
-    }
-
-    private string GetNotificationProvider()
-    {
-        var configuredProvider = configuration["Bootstrap:NotificationSettings:Provider"];
-        if (!string.IsNullOrWhiteSpace(configuredProvider))
-        {
-            return configuredProvider;
-        }
-
-        return string.IsNullOrWhiteSpace(configuration["NotificationTransports:Smtp:Host"])
-            ? "RecordedOnly"
-            : "Smtp";
-    }
-
-    private IReadOnlyList<DayOfWeek> GetTradingDays()
-    {
-        var configuredDays = configuration.GetSection("Bootstrap:TradingSchedule:TradingDays").Get<string[]>();
-        if (configuredDays is { Length: > 0 })
-        {
-            return configuredDays
-                .Select(value => Enum.Parse<DayOfWeek>(value, ignoreCase: true))
-                .ToArray();
-        }
-
-        return
-        [
-            DayOfWeek.Monday,
-            DayOfWeek.Tuesday,
-            DayOfWeek.Wednesday,
-            DayOfWeek.Thursday,
-            DayOfWeek.Friday
-        ];
-    }
-
-    private IReadOnlyList<DateOnly> GetBankHolidayExclusions()
-    {
-        var configuredDates = configuration.GetSection("Bootstrap:TradingSchedule:BankHolidayExclusions").Get<string[]>();
-        if (configuredDates is not { Length: > 0 })
-        {
-            return [];
-        }
-
-        return configuredDates
-            .Select(DateOnly.Parse)
-            .ToArray();
-    }
-
-    private WeekendBehavior GetWeekendBehavior()
-    {
-        var configuredWeekendBehavior = configuration["Bootstrap:TradingSchedule:WeekendBehavior"];
-        return string.IsNullOrWhiteSpace(configuredWeekendBehavior)
-            ? WeekendBehavior.ExcludeWeekends
-            : Enum.Parse<WeekendBehavior>(configuredWeekendBehavior, ignoreCase: true);
-    }
-
-    private int GetInt32(string key, int defaultValue)
-    {
-        var configuredValue = configuration[key];
-        return string.IsNullOrWhiteSpace(configuredValue) ? defaultValue : int.Parse(configuredValue);
-    }
-
-    private TimeOnly GetTimeOnly(string key, TimeOnly defaultValue)
-    {
-        var configuredValue = configuration[key];
-        return string.IsNullOrWhiteSpace(configuredValue) ? defaultValue : TimeOnly.Parse(configuredValue);
     }
 
     private Task<PlatformConfigurationSnapshot> MapAsync(PlatformConfigurationEntity entity, CancellationToken cancellationToken)
