@@ -76,12 +76,11 @@ internal sealed class NotificationDispatcher(
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        var maskedRecipient = OperationalDataRedactor.RedactText(dispatchContext.Recipient) ?? "[redacted]";
         logger.LogInformation(
             "Notification {DispatchStatus} for {NotificationType} to {Recipient}: {Summary}",
             dispatchResult.Status,
             notificationType,
-                maskedRecipient,
+                OperationalDataRedactor.RedactedValue,
                 dispatchContext.SanitizedSummary);
     }
 
