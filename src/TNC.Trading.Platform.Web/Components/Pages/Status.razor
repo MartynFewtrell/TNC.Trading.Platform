@@ -1,7 +1,6 @@
 ﻿@page "/status"
 @attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Viewer)]
-@using System.Text.Json
-@inject PlatformApiClient PlatformApiClient
+@inject StatusPagePresenter Presenter
 @inject PlatformNavigationAccessCoordinator NavigationAccessCoordinator
 @inject PlatformOperatorContextAccessor OperatorContextAccessor
 
@@ -111,13 +110,13 @@ else
         <section class="panel" data-testid="status-ig-login-panel">
             <dl class="platform-key-value-grid">
                 <dt>Current login state</dt>
-                <dd data-testid="ig-current-state-value">@GetCurrentIgLoginState(status)</dd>
+                        <dd data-testid="ig-current-state-value">@StatusPagePresenter.GetCurrentIgLoginState(status)</dd>
                 <dt>Schedule context</dt>
                 <dd data-testid="ig-schedule-context-value">@(status.IgLogin.ScheduleState.IsActive ? "In schedule" : "Out of schedule")</dd>
                 <dt>Schedule reason</dt>
                 <dd data-testid="ig-schedule-reason-value">@status.IgLogin.ScheduleState.Reason</dd>
                 <dt>Retry context</dt>
-                <dd data-testid="ig-retry-context-value">@GetRetryContext(status.IgLogin.RetryState)</dd>
+                        <dd data-testid="ig-retry-context-value">@StatusPagePresenter.GetRetryContext(status.IgLogin.RetryState)</dd>
                 <dt>Last attempt</dt>
                 <dd data-testid="ig-last-attempt-value">@(status.IgLogin.LastAttemptAtUtc?.ToLocalTime().ToString("g") ?? "None")</dd>
                 <dt>Last successful login</dt>
@@ -164,7 +163,7 @@ else
                     }
 
                     <h3>Raw non-secret payload</h3>
-                    <pre data-testid="ig-latest-payload-json">@FormatPayloadJson(status.IgLogin.LatestSnapshot.RawNonSecretPayloadJson)</pre>
+                    <pre data-testid="ig-latest-payload-json">@StatusPagePresenter.FormatPayloadJson(status.IgLogin.LatestSnapshot.RawNonSecretPayloadJson)</pre>
                 </details>
             }
         </section>
@@ -252,17 +251,10 @@ else
 
     private async Task LoadAsync()
     {
-        loadError = null;
-
-        try
-        {
-            status = await PlatformApiClient.GetStatusAsync(CancellationToken.None);
-            events = await PlatformApiClient.GetAuthEventsAsync(status.BrokerEnvironment, CancellationToken.None);
-        }
-        catch (Exception exception) when (exception is HttpRequestException or PlatformScopeChallengeRequiredException or InvalidOperationException)
-        {
-            loadError = $"Unable to load platform status: {exception.Message}";
-        }
+        var result = await Presenter.LoadAsync(CancellationToken.None);
+        status = result.Status;
+        events = result.Events;
+        loadError = result.ErrorMessage;
     }
 
     private async Task TriggerManualRetryAsync()
@@ -272,87 +264,13 @@ else
 
         try
         {
-            var retry = await PlatformApiClient.TriggerManualRetryAsync(CancellationToken.None);
-            manualRetryMessage = $"Manual retry started with cycle id {retry.RetryCycleId}.";
-        }
-        catch (HttpRequestException exception)
-        {
-            manualRetryMessage = $"Manual retry could not be started: {exception.Message}";
+            var result = await Presenter.TriggerManualRetryAsync(CancellationToken.None);
+            manualRetryMessage = result.Message;
         }
         finally
         {
             manualRetryInProgress = false;
             await LoadAsync();
-        }
-    }
-
-    private static string GetCurrentIgLoginState(PlatformStatusViewModel currentStatus)
-    {
-        if (!currentStatus.IgLogin.ScheduleState.IsActive
-            || string.Equals(currentStatus.IgLogin.CurrentState, "OutOfSchedule", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Out of schedule";
-        }
-
-        if (string.Equals(currentStatus.IgLogin.CurrentState, "Active", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Active";
-        }
-
-        if (!string.Equals(currentStatus.IgLogin.RetryState.Phase, "None", StringComparison.OrdinalIgnoreCase)
-            || currentStatus.IgLogin.RetryState.NextRetryAtUtc is not null)
-        {
-            return "Retrying";
-        }
-
-        if (string.Equals(currentStatus.IgLogin.CurrentState, "Blocked", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Blocked";
-        }
-
-        if (string.Equals(currentStatus.IgLogin.CurrentState, "Unknown", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Not signed in";
-        }
-
-        if (currentStatus.AuthState.IsDegraded
-            || string.Equals(currentStatus.IgLogin.CurrentState, "Degraded", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Failed";
-        }
-
-        return currentStatus.IgLogin.CurrentState;
-    }
-
-    private static string GetRetryContext(RetryStateViewModel retryState)
-    {
-        if (string.Equals(retryState.Phase, "None", StringComparison.OrdinalIgnoreCase))
-        {
-            return "No retry scheduled";
-        }
-
-        var nextRetry = retryState.NextRetryAtUtc?.ToLocalTime().ToString("g") ?? "pending";
-        return $"{retryState.Phase} (attempt {retryState.AutomaticAttemptNumber}, next retry {nextRetry})";
-    }
-
-    private static string FormatPayloadJson(string rawPayloadJson)
-    {
-        if (string.IsNullOrWhiteSpace(rawPayloadJson))
-        {
-            return "{}";
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(rawPayloadJson);
-            return JsonSerializer.Serialize(document.RootElement, new JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
-        }
-        catch (JsonException)
-        {
-            return rawPayloadJson;
         }
     }
 }

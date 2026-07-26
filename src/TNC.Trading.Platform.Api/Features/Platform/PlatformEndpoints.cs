@@ -80,35 +80,12 @@ internal static class PlatformEndpoints
         UpdatePlatformConfigurationValidator validator,
         AppUpdatePlatformConfiguration.UpdatePlatformConfigurationHandler handler,
         CancellationToken cancellationToken)
-    {
-        try
-        {
-            validator.Validate(request);
-
-            var result = await handler.HandleAsync(request.ToApplicationRequest(), cancellationToken);
-
-            return TypedResults.Ok(result.ToResponse());
-        }
-        catch (PlatformValidationException exception)
-        {
-            return TypedResults.ValidationProblem(exception.Errors.ToDictionary(item => item.Key, item => item.Value));
-        }
-    }
+        => await UpdatePlatformConfigurationEndpointHandler.HandleAsync(request, validator, handler, cancellationToken);
 
     private static async Task<IResult> TriggerManualAuthRetryAsync(
         AppTriggerManualAuthRetry.TriggerManualAuthRetryHandler handler,
         CancellationToken cancellationToken)
-    {
-        try
-        {
-            var response = await handler.HandleAsync(new AppTriggerManualAuthRetry.TriggerManualAuthRetryRequest(), cancellationToken);
-            return TypedResults.Accepted("/api/platform/status", response.ToResponse());
-        }
-        catch (InvalidOperationException exception)
-        {
-            return TypedResults.Conflict(new { error = exception.Message });
-        }
-    }
+        => await TriggerManualAuthRetryEndpointHandler.HandleAsync(handler, cancellationToken);
 
     private static async Task<IResult> GetPlatformEventsAsync(
         string? category,
@@ -135,41 +112,14 @@ internal static class PlatformEndpoints
         IPlatformEventStore eventStore,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
-    {
-        if (!PlatformAuthAuditEventResolver.TryResolve(request, user, out var record))
-        {
-            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
-            {
-                [nameof(request.EventType)] = ["The supplied authentication audit event type is not supported."]
-            });
-        }
-
-        var configuration = await configurationService.GetCurrentAsync(cancellationToken);
-        var correlationId = Activity.Current?.TraceId.ToString() ?? httpContext.TraceIdentifier;
-
-        await eventStore.AddAsync(
-            new PlatformEventRecord(
-                Category: "auth",
-                EventType: request.EventType,
-                PlatformEnvironment: configuration.PlatformEnvironment,
-                BrokerEnvironment: configuration.BrokerEnvironment,
-                Severity: record.Severity,
-                Summary: record.Summary,
-                Details: new
-                {
-                    record.UserName,
-                    Subject = user.FindFirstValue(ClaimTypes.NameIdentifier),
-                    request.Path,
-                    request.Scope,
-                    CorrelationId = correlationId
-                },
-                CorrelationId: correlationId,
-                RetryCycleId: null,
-                OccurredAtUtc: timeProvider.GetUtcNow()),
+        => await RecordAuthAuditEventEndpointHandler.HandleAsync(
+            request,
+            user,
+            httpContext,
+            configurationService,
+            eventStore,
+            timeProvider,
             cancellationToken);
-
-        return TypedResults.Accepted("/api/platform/events?category=auth");
-    }
 
     private static IResult GetAuthAdministration(IOptions<PlatformAuthenticationOptions> authenticationOptions)
         => TypedResults.Ok(new AuthAdministrationResponse(

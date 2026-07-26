@@ -1,4 +1,5 @@
 ﻿using Radzen;
+using TNC.Trading.Platform.Web.Components.Pages;
 using TNC.Trading.Platform.Web.Components.Layout;
 
 namespace TNC.Trading.Platform.Web;
@@ -10,6 +11,9 @@ internal static class PlatformWebUiServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.Services.AddRadzenComponents();
+        builder.Services.AddScoped<ConfigurationPagePresenter>();
+        builder.Services.AddScoped<HomePagePresenter>();
+        builder.Services.AddScoped<StatusPagePresenter>();
         builder.Services.AddScoped<PlatformThemeState>();
         builder.Services.AddScoped<PlatformShellContextProvider>();
 

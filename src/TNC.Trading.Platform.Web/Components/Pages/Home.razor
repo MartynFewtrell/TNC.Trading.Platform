@@ -1,9 +1,8 @@
 ﻿@page "/"
 @attribute [AllowAnonymous]
 @inject NavigationManager NavigationManager
-@inject PlatformAuthAuditClient AuthAuditClient
+@inject HomePagePresenter Presenter
 @inject PlatformOperatorContextAccessor OperatorContextAccessor
-@inject PlatformApiClient PlatformApiClient
 
 <PageTitle>TNC Trading Platform</PageTitle>
 
@@ -115,19 +114,24 @@ else
     protected override async Task OnInitializedAsync()
     {
         operatorContext = await OperatorContextAccessor.GetCurrentAsync();
+        var result = await Presenter.InitializeAsync(operatorContext, CancellationToken.None);
+
         if (!operatorContext.IsAuthenticated)
         {
             return;
         }
 
-        if (!operatorContext.HasAnyPlatformRole)
+        if (!string.IsNullOrWhiteSpace(result.PendingNavigationUri))
         {
-            await AuthAuditClient.RecordAccessDeniedAsync("/", CancellationToken.None);
-            pendingNavigationUri = "/authentication/access-denied";
+            pendingNavigationUri = result.PendingNavigationUri;
             return;
         }
 
-        await LoadOverviewAsync();
+        status = result.Status;
+        events = result.Events;
+        alerts.Clear();
+        alerts.AddRange(result.Alerts);
+        loadError = result.LoadError;
     }
 
     protected override Task OnAfterRenderAsync(bool firstRender)
@@ -142,46 +146,4 @@ else
         NavigationManager.NavigateTo(destination, forceLoad: true);
         return Task.CompletedTask;
     }
-
-    private async Task LoadOverviewAsync()
-    {
-        loadError = null;
-
-        try
-        {
-            status = await PlatformApiClient.GetStatusAsync(CancellationToken.None);
-            events = await PlatformApiClient.GetAuthEventsAsync(status.BrokerEnvironment, CancellationToken.None);
-            alerts.Clear();
-            alerts.AddRange(CreateAlerts(status, events));
-        }
-        catch (Exception exception) when (exception is HttpRequestException or PlatformScopeChallengeRequiredException or InvalidOperationException)
-        {
-            loadError = $"Unable to load the operator overview: {exception.Message}";
-        }
-    }
-
-    private static IEnumerable<HomeAlertItem> CreateAlerts(PlatformStatusViewModel status, PlatformEventsViewModel events)
-    {
-        if (status.AuthState.IsDegraded)
-        {
-            yield return new HomeAlertItem("warning", "Degraded", "Authentication-dependent actions are currently blocked.");
-        }
-
-        if (!status.TradingScheduleState.IsActive)
-        {
-            yield return new HomeAlertItem("info", "Schedule", status.TradingScheduleState.Reason);
-        }
-
-        if (status.RetryState.RetryLimitReached)
-        {
-            yield return new HomeAlertItem("danger", "Retry", "The automatic retry limit has been reached.");
-        }
-
-        foreach (var platformEvent in events.Events.Take(3))
-        {
-            yield return new HomeAlertItem("info", "Recent", platformEvent.Summary);
-        }
-    }
-
-    private sealed record HomeAlertItem(string SeverityCssClass, string SeverityLabel, string Summary);
 }

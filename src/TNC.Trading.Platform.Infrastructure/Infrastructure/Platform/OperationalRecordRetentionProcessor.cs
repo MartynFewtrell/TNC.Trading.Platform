@@ -13,8 +13,9 @@ internal sealed class OperationalRecordRetentionProcessor(
 {
     public async Task<int> ApplyAsync(CancellationToken cancellationToken)
     {
-        var retentionDays = GetRetentionDays();
+        var retentionDays = OperationalRecordRetentionPolicy.GetRetentionDays(configuration);
         var cutoff = timeProvider.GetUtcNow().AddDays(-retentionDays);
+        var plan = OperationalRecordRetentionPolicy.CreatePlan(cutoff);
 
         int deletedCount;
 
@@ -30,12 +31,12 @@ internal sealed class OperationalRecordRetentionProcessor(
                 .ExecuteDeleteAsync(cancellationToken)
                 .ConfigureAwait(false);
             var deletedNotifications = await dbContext.NotificationRecords
-                .Where(item => item.DispatchedAtUtc < cutoff)
+                .Where(item => item.DispatchedAtUtc < plan.Cutoff)
                 .ExecuteDeleteAsync(cancellationToken)
                 .ConfigureAwait(false);
             var deletedRetainedIgLoginSnapshots = await dbContext.IgLoginSnapshots
-                .Where(item => item.SnapshotKind == TNC.Trading.Platform.Application.Configuration.IgLoginSnapshotKind.RetainedDailyFirstSuccessful.ToString()
-                    && item.CapturedAtUtc < cutoff)
+                .Where(item => item.SnapshotKind == plan.RetainedSnapshotKind
+                    && item.CapturedAtUtc < plan.Cutoff)
                 .ExecuteDeleteAsync(cancellationToken)
                 .ConfigureAwait(false);
 
@@ -54,11 +55,11 @@ internal sealed class OperationalRecordRetentionProcessor(
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
             var expiredNotificationRecords = await dbContext.NotificationRecords
-                .Where(item => item.DispatchedAtUtc < cutoff)
+                .Where(item => item.DispatchedAtUtc < plan.Cutoff)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
             var expiredRetainedIgLoginSnapshots = await dbContext.IgLoginSnapshots
-                .Where(item => item.SnapshotKind == "RetainedDailyFirstSuccessful" && item.CapturedAtUtc < cutoff)
+                .Where(item => item.SnapshotKind == plan.RetainedSnapshotKind && item.CapturedAtUtc < plan.Cutoff)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
 
@@ -86,11 +87,4 @@ internal sealed class OperationalRecordRetentionProcessor(
         return deletedCount;
     }
 
-    private int GetRetentionDays()
-    {
-        var configuredValue = configuration["Retention:OperationalRecordsDays"];
-        return int.TryParse(configuredValue, out var retentionDays) && retentionDays > 0
-            ? retentionDays
-            : 90;
-    }
 }

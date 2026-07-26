@@ -1,14 +1,16 @@
+using SharedAppHostProcessHandle = TNC.Trading.Platform.TestShared.Authentication.AppHostProcessHandle;
+
 namespace TNC.Trading.Platform.Web.FunctionalTests.Authentication;
 
 public sealed class RealAuthenticationFunctionalTestFixture : IAsyncLifetime
 {
-    private AppHostProcessHandle? appHostProcess;
+    private SharedAppHostProcessHandle? appHostProcess;
 
     public Uri WebBaseUri { get; private set; } = null!;
 
     public async Task InitializeAsync()
     {
-        appHostProcess = RealAppHostProcessFactory.StartAppHostProcess();
+        appHostProcess = await RealAppHostProcessFactory.StartAppHostProcessAsync();
         WebBaseUri = await RealAppHostProcessFactory.GetWebBaseUriAsync(appHostProcess);
     }
 

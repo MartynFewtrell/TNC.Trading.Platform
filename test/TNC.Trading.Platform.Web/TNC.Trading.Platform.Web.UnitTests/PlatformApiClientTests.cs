@@ -14,8 +14,11 @@ public sealed class PlatformApiClientTests
     [Fact]
     public async Task GetStatusAsync_ShouldReturnParsedStatus_WhenApiReturnsPayload()
     {
-        var expectedStatus = PlatformWebTestData.CreateStatus(platformEnvironment: "Local", brokerEnvironment: "Demo");
-        using var context = new PlatformComponentTestContext(
+        var expectedStatus = PlatformWebTestData.CreateStatus(
+            platformEnvironment: "Local",
+            brokerEnvironment: "Demo",
+            latestSnapshot: PlatformWebTestData.CreateLatestSnapshot());
+        using var context = PlatformComponentTestContext.CreateServiceContext(
             userName: "local-viewer",
             apiResponses:
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, expectedStatus));
@@ -46,7 +49,7 @@ public sealed class PlatformApiClientTests
     public async Task GetConfigurationAsync_ShouldReturnParsedConfiguration_WhenApiReturnsPayload()
     {
         var expectedConfiguration = PlatformWebTestData.CreateConfiguration(restartRequired: true);
-        using var context = new PlatformComponentTestContext(
+        using var context = PlatformComponentTestContext.CreateServiceContext(
             userName: "local-operator",
             apiResponses:
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, expectedConfiguration));
@@ -72,7 +75,7 @@ public sealed class PlatformApiClientTests
     {
         var expectedEvents = PlatformWebTestData.CreateEvents(
             PlatformWebTestData.CreateEvent("OperatorSignInCompleted", "Operator local-viewer completed sign-in."));
-        using var context = new PlatformComponentTestContext(
+        using var context = PlatformComponentTestContext.CreateServiceContext(
             userName: "local-viewer",
             apiResponses:
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, expectedEvents));
@@ -95,7 +98,7 @@ public sealed class PlatformApiClientTests
     public async Task UpdateConfigurationAsync_ShouldReturnUpdatedConfiguration_WhenApiReturnsPayload()
     {
         var updatedConfiguration = PlatformWebTestData.CreateConfiguration(restartRequired: true);
-        using var context = new PlatformComponentTestContext(
+        using var context = PlatformComponentTestContext.CreateServiceContext(
             userName: "local-operator",
             apiResponses:
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, updatedConfiguration));
@@ -153,7 +156,7 @@ public sealed class PlatformApiClientTests
     public async Task TriggerManualRetryAsync_ShouldReturnRetryCycleId_WhenApiReturnsPayload()
     {
         var expectedRetry = PlatformWebTestData.CreateManualRetry();
-        using var context = new PlatformComponentTestContext(
+        using var context = PlatformComponentTestContext.CreateServiceContext(
             userName: "local-operator",
             apiResponses:
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.Accepted, expectedRetry));
@@ -177,7 +180,7 @@ public sealed class PlatformApiClientTests
     public async Task GetAuthAdministrationAsync_ShouldReturnParsedAdministration_WhenApiReturnsPayload()
     {
         var expectedAdministration = PlatformWebTestData.CreateAuthAdministration();
-        using var context = new PlatformComponentTestContext(
+        using var context = PlatformComponentTestContext.CreateServiceContext(
             userName: "local-admin",
             apiResponses:
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, expectedAdministration));
@@ -199,7 +202,7 @@ public sealed class PlatformApiClientTests
     [Fact]
     public async Task GetStatusAsync_ShouldThrowHttpRequestException_WhenApiReturnsUnauthorized()
     {
-        using var context = new PlatformComponentTestContext(
+        using var context = PlatformComponentTestContext.CreateServiceContext(
             userName: "local-viewer",
             apiResponses:
             _ => new HttpResponseMessage(HttpStatusCode.Unauthorized));
@@ -217,7 +220,7 @@ public sealed class PlatformApiClientTests
     [Fact]
     public async Task GetConfigurationAsync_ShouldThrowHttpRequestException_WhenApiReturnsForbidden()
     {
-        using var context = new PlatformComponentTestContext(
+        using var context = PlatformComponentTestContext.CreateServiceContext(
             userName: "local-operator",
             apiResponses:
             _ => new HttpResponseMessage(HttpStatusCode.Forbidden));
@@ -235,7 +238,7 @@ public sealed class PlatformApiClientTests
     [Fact]
     public async Task UpdateConfigurationAsync_ShouldThrowHttpRequestException_WhenApiReturnsValidationProblem()
     {
-        using var context = new PlatformComponentTestContext(
+        using var context = PlatformComponentTestContext.CreateServiceContext(
             userName: "local-operator",
             apiResponses:
             _ => PlatformWebTestData.CreateProblemResponse(
@@ -261,7 +264,7 @@ public sealed class PlatformApiClientTests
     [Fact]
     public async Task TriggerManualRetryAsync_ShouldThrowHttpRequestException_WhenApiReturnsConflict()
     {
-        using var context = new PlatformComponentTestContext(
+        using var context = PlatformComponentTestContext.CreateServiceContext(
             userName: "local-operator",
             apiResponses:
             _ => new HttpResponseMessage(HttpStatusCode.Conflict));
@@ -279,7 +282,7 @@ public sealed class PlatformApiClientTests
     [Fact]
     public async Task GetStatusAsync_ShouldThrowInvalidOperationException_WhenApiReturnsEmptyPayload()
     {
-        using var context = new PlatformComponentTestContext(
+        using var context = PlatformComponentTestContext.CreateServiceContext(
             userName: "local-viewer",
             apiResponses:
             _ => new HttpResponseMessage(HttpStatusCode.OK)

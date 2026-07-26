@@ -24,6 +24,9 @@ internal sealed class PlatformStateCoordinator(
 {
     private const string MissingCredentialsBlockedReason = "IG demo credentials are incomplete.";
     private static readonly ConcurrentDictionary<Guid, byte> DegradedFailureNotificationsObservedThisProcess = new();
+    private readonly PlatformStateTransitionEngine transitionEngine = new();
+    private readonly PlatformStateCoordinatorSideEffects sideEffects = new(retryCycleStore, eventStore, notificationDispatcher, timeProvider, logger);
+    private readonly PlatformIgProofDataEnricher proofDataEnricher = new(igSessionClient, igProofDataStore, timeProvider, logger);
 
     public async Task<PlatformStatusModel> GetStatusAsync(CancellationToken cancellationToken)
     {
@@ -117,10 +120,10 @@ internal sealed class PlatformStateCoordinator(
         currentState.LastValidatedAtUtc = now;
         currentState.LastTransitionAtUtc = now;
 
-        await UpsertRetryCycleAsync(cycleId, currentConfiguration, currentState, "Manual", failureNotificationSent: false, nextDelay, cancellationToken).ConfigureAwait(false);
+        await sideEffects.UpsertRetryCycleAsync(cycleId, currentConfiguration, currentState, "Manual", failureNotificationSent: false, nextDelay, cancellationToken).ConfigureAwait(false);
 
         var correlationId = CreateCorrelationId();
-        await WriteOperationalEventAsync(
+        await sideEffects.WriteOperationalEventAsync(
             currentConfiguration,
             "auth",
             "ManualRetryRequested",
@@ -147,45 +150,32 @@ internal sealed class PlatformStateCoordinator(
         var scheduleStatus = tradingScheduleGate.Evaluate(currentConfiguration.TradingSchedule, now);
         ApplyRuntimeContext(currentConfiguration, currentState, scheduleStatus);
 
-        if (!scheduleStatus.IsActive)
+        var decision = transitionEngine.DecideTickAction(currentConfiguration, currentState, scheduleStatus, now);
+
+        switch (decision.Kind)
         {
-            await TransitionToOutOfScheduleAsync(currentConfiguration, currentState, scheduleStatus.Reason, cancellationToken).ConfigureAwait(false);
-            await runtimeStateStore.SaveAsync(currentState, cancellationToken).ConfigureAwait(false);
-            return;
+            case PlatformTickDecisionKind.TransitionToOutOfSchedule:
+                await TransitionToOutOfScheduleAsync(currentConfiguration, currentState, decision.Reason!, cancellationToken).ConfigureAwait(false);
+                break;
+            case PlatformTickDecisionKind.HandleBlockedLive:
+                await HandleBlockedLiveAsync(currentConfiguration, currentState, cancellationToken).ConfigureAwait(false);
+                break;
+            case PlatformTickDecisionKind.HandleSessionExpired:
+                await HandleSessionExpiredAsync(currentConfiguration, currentState, cancellationToken).ConfigureAwait(false);
+                break;
+            case PlatformTickDecisionKind.WaitForScheduledRetry:
+                currentState.LastValidatedAtUtc = now;
+                break;
+            case PlatformTickDecisionKind.TransitionToActive:
+                await TransitionToActiveAsync(currentConfiguration, currentState, cancellationToken).ConfigureAwait(false);
+                break;
+            case PlatformTickDecisionKind.TransitionToDegraded:
+                await TransitionToDegradedAsync(currentConfiguration, currentState, cancellationToken).ConfigureAwait(false);
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported tick decision '{decision.Kind}'.");
         }
 
-        if (currentConfiguration.PlatformEnvironment == PlatformEnvironmentKind.Test && currentConfiguration.BrokerEnvironment == BrokerEnvironmentKind.Live)
-        {
-            await HandleBlockedLiveAsync(currentConfiguration, currentState, cancellationToken).ConfigureAwait(false);
-            await runtimeStateStore.SaveAsync(currentState, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        if (HasSessionExpired(currentState, now))
-        {
-            await HandleSessionExpiredAsync(currentConfiguration, currentState, cancellationToken).ConfigureAwait(false);
-            await runtimeStateStore.SaveAsync(currentState, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        if (currentState.SessionStatus == PlatformSessionStatus.Degraded
-            && currentState.RetryPhase != AuthRetryPhase.None
-            && currentState.NextRetryAtUtc is not null
-            && currentState.NextRetryAtUtc > now)
-        {
-            currentState.LastValidatedAtUtc = now;
-            await runtimeStateStore.SaveAsync(currentState, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        if (currentConfiguration.Credentials.IsComplete)
-        {
-            await TransitionToActiveAsync(currentConfiguration, currentState, cancellationToken).ConfigureAwait(false);
-            await runtimeStateStore.SaveAsync(currentState, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        await TransitionToDegradedAsync(currentConfiguration, currentState, cancellationToken).ConfigureAwait(false);
         await runtimeStateStore.SaveAsync(currentState, cancellationToken).ConfigureAwait(false);
     }
 
@@ -227,10 +217,10 @@ internal sealed class PlatformStateCoordinator(
             currentState.LastSuccessfulLoginAtUtc = successfulSnapshot.CapturedAtUtc;
             currentState.LatestIgLoginSnapshotId = successfulSnapshot.Id;
 
-            await UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, cycleType, failureNotificationSent: false, lastDelaySeconds: null, cancellationToken).ConfigureAwait(false);
+            await sideEffects.UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, cycleType, failureNotificationSent: false, lastDelaySeconds: null, cancellationToken).ConfigureAwait(false);
 
             var recoveryCorrelationId = CreateCorrelationId();
-            await WriteOperationalEventAsync(
+            await sideEffects.WriteOperationalEventAsync(
                 currentConfiguration,
                 "auth",
                 "Recovered",
@@ -241,7 +231,7 @@ internal sealed class PlatformStateCoordinator(
                 retryCycleId,
                 cancellationToken).ConfigureAwait(false);
             currentState.CurrentRetryCycleId = null;
-            await notificationDispatcher.DispatchRecoveryAsync(currentConfiguration, "IG demo auth recovered after manual retry.", recoveryCorrelationId, retryCycleId, cancellationToken).ConfigureAwait(false);
+            await sideEffects.DispatchRecoveryAsync(currentConfiguration, "IG demo auth recovered after manual retry.", recoveryCorrelationId, retryCycleId, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -258,10 +248,10 @@ internal sealed class PlatformStateCoordinator(
         currentState.LastValidatedAtUtc = now;
         currentState.LastTransitionAtUtc = now;
 
-        await UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, cycleType, failureNotificationSent: true, nextDelay, cancellationToken).ConfigureAwait(false);
+        await sideEffects.UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, cycleType, failureNotificationSent: true, nextDelay, cancellationToken).ConfigureAwait(false);
 
         var failureCorrelationId = CreateCorrelationId();
-        await WriteOperationalEventAsync(
+        await sideEffects.WriteOperationalEventAsync(
             currentConfiguration,
             "auth",
             "FailureDetected",
@@ -271,7 +261,7 @@ internal sealed class PlatformStateCoordinator(
             failureCorrelationId,
             retryCycleId,
             cancellationToken).ConfigureAwait(false);
-        await notificationDispatcher.DispatchFailureAsync(currentConfiguration, "Manual retry started a new degraded auth cycle because required IG demo credentials are still missing.", failureCorrelationId, retryCycleId, cancellationToken).ConfigureAwait(false);
+        await sideEffects.DispatchFailureAsync(currentConfiguration, "Manual retry started a new degraded auth cycle because required IG demo credentials are still missing.", failureCorrelationId, retryCycleId, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task TransitionToOutOfScheduleAsync(PlatformConfigurationSnapshot currentConfiguration, PlatformRuntimeState currentState, string reason, CancellationToken cancellationToken)
@@ -296,10 +286,10 @@ internal sealed class PlatformStateCoordinator(
         currentState.LastValidatedAtUtc = timeProvider.GetUtcNow();
         currentState.LastTransitionAtUtc = timeProvider.GetUtcNow();
 
-        await UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, lastDelaySeconds: null, cancellationToken).ConfigureAwait(false);
+        await sideEffects.UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, lastDelaySeconds: null, cancellationToken).ConfigureAwait(false);
 
         var correlationId = CreateCorrelationId();
-        await WriteOperationalEventAsync(
+        await sideEffects.WriteOperationalEventAsync(
             currentConfiguration,
             "auth",
             "TradingScheduleInactive",
@@ -337,10 +327,10 @@ internal sealed class PlatformStateCoordinator(
         currentState.LastValidatedAtUtc = timeProvider.GetUtcNow();
         currentState.LastTransitionAtUtc = timeProvider.GetUtcNow();
 
-        await UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, lastDelaySeconds: null, cancellationToken).ConfigureAwait(false);
+        await sideEffects.UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, lastDelaySeconds: null, cancellationToken).ConfigureAwait(false);
 
         var correlationId = CreateCorrelationId();
-        await WriteOperationalEventAsync(
+        await sideEffects.WriteOperationalEventAsync(
             currentConfiguration,
             "auth",
             "BlockedLiveAttempt",
@@ -352,7 +342,7 @@ internal sealed class PlatformStateCoordinator(
             cancellationToken).ConfigureAwait(false);
         ForgetDegradedFailureNotification(retryCycleId);
         currentState.CurrentRetryCycleId = null;
-        await notificationDispatcher.DispatchBlockedLiveAsync(currentConfiguration, "A live broker action was blocked because the platform environment is Test.", correlationId, retryCycleId, cancellationToken).ConfigureAwait(false);
+        await sideEffects.DispatchBlockedLiveAsync(currentConfiguration, "A live broker action was blocked because the platform environment is Test.", correlationId, retryCycleId, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task TransitionToActiveAsync(PlatformConfigurationSnapshot currentConfiguration, PlatformRuntimeState currentState, CancellationToken cancellationToken)
@@ -384,7 +374,7 @@ internal sealed class PlatformStateCoordinator(
 
         var sanitizedAuthResponse = IgAuthenticationResponseSanitizer.Sanitize(authResponse);
         var successfulSnapshot = await CaptureSuccessfulLoginSnapshotAsync(currentConfiguration, now, authResponse, cancellationToken).ConfigureAwait(false);
-        await TryCaptureLiveProofDataAsync(currentConfiguration, authResponse, cancellationToken).ConfigureAwait(false);
+        await proofDataEnricher.TryCaptureAsync(currentConfiguration, authResponse, cancellationToken).ConfigureAwait(false);
 
         currentState.SessionStatus = PlatformSessionStatus.Active;
         currentState.IsDegraded = false;
@@ -401,7 +391,7 @@ internal sealed class PlatformStateCoordinator(
         currentState.LastValidatedAtUtc = currentState.EstablishedAtUtc;
         currentState.LastTransitionAtUtc = currentState.EstablishedAtUtc;
 
-        await UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: wasDegraded, lastDelaySeconds: null, cancellationToken).ConfigureAwait(false);
+        await sideEffects.UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: wasDegraded, lastDelaySeconds: null, cancellationToken).ConfigureAwait(false);
 
         var eventType = wasDegraded ? "Recovered" : "Authenticated";
         var summary = wasDegraded
@@ -409,7 +399,7 @@ internal sealed class PlatformStateCoordinator(
             : "IG demo auth is active for the configured trading schedule.";
 
         var correlationId = CreateCorrelationId();
-        await WriteOperationalEventAsync(
+        await sideEffects.WriteOperationalEventAsync(
             currentConfiguration,
             "auth",
             eventType,
@@ -429,7 +419,7 @@ internal sealed class PlatformStateCoordinator(
 
         if (wasDegraded)
         {
-            await notificationDispatcher.DispatchRecoveryAsync(currentConfiguration, summary, correlationId, retryCycleId, cancellationToken).ConfigureAwait(false);
+            await sideEffects.DispatchRecoveryAsync(currentConfiguration, summary, correlationId, retryCycleId, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -439,7 +429,7 @@ internal sealed class PlatformStateCoordinator(
         string correlationId,
         CancellationToken cancellationToken)
     {
-        return WriteOperationalEventAsync(
+        return sideEffects.WriteOperationalEventAsync(
             currentConfiguration,
             "auth",
             "AuthAttempted",
@@ -467,7 +457,7 @@ internal sealed class PlatformStateCoordinator(
             if (ShouldDispatchDegradedFailureNotification(currentState.CurrentRetryCycleId))
             {
                 var replayCorrelationId = CreateCorrelationId();
-                await WriteOperationalEventAsync(
+                await sideEffects.WriteOperationalEventAsync(
                     currentConfiguration,
                     "auth",
                     "FailureDetected",
@@ -481,7 +471,7 @@ internal sealed class PlatformStateCoordinator(
                     replayCorrelationId,
                     currentState.CurrentRetryCycleId,
                     cancellationToken).ConfigureAwait(false);
-                await notificationDispatcher.DispatchFailureAsync(currentConfiguration, "IG demo auth is degraded because required credentials are incomplete.", replayCorrelationId, currentState.CurrentRetryCycleId, cancellationToken).ConfigureAwait(false);
+                await sideEffects.DispatchFailureAsync(currentConfiguration, "IG demo auth is degraded because required credentials are incomplete.", replayCorrelationId, currentState.CurrentRetryCycleId, cancellationToken).ConfigureAwait(false);
             }
 
             return;
@@ -504,10 +494,10 @@ internal sealed class PlatformStateCoordinator(
         currentState.LastValidatedAtUtc = now;
         currentState.LastTransitionAtUtc = now;
 
-        await UpsertRetryCycleAsync(currentState.CurrentRetryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, lastDelaySeconds: null, cancellationToken).ConfigureAwait(false);
+        await sideEffects.UpsertRetryCycleAsync(currentState.CurrentRetryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, lastDelaySeconds: null, cancellationToken).ConfigureAwait(false);
 
         var correlationId = CreateCorrelationId();
-        await WriteOperationalEventAsync(
+        await sideEffects.WriteOperationalEventAsync(
             currentConfiguration,
             "auth",
             "FailureDetected",
@@ -517,7 +507,7 @@ internal sealed class PlatformStateCoordinator(
             correlationId,
             retryCycleId,
             cancellationToken).ConfigureAwait(false);
-        await notificationDispatcher.DispatchFailureAsync(currentConfiguration, "IG demo auth is degraded because required credentials are incomplete.", correlationId, retryCycleId, cancellationToken).ConfigureAwait(false);
+        await sideEffects.DispatchFailureAsync(currentConfiguration, "IG demo auth is degraded because required credentials are incomplete.", correlationId, retryCycleId, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task TransitionToDegradedAsync(
@@ -545,10 +535,10 @@ internal sealed class PlatformStateCoordinator(
         currentState.LastValidatedAtUtc = now;
         currentState.LastTransitionAtUtc = now;
 
-        await UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, nextDelay, cancellationToken).ConfigureAwait(false);
+        await sideEffects.UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, nextDelay, cancellationToken).ConfigureAwait(false);
 
         var correlationId = CreateCorrelationId();
-        await WriteOperationalEventAsync(
+        await sideEffects.WriteOperationalEventAsync(
             currentConfiguration,
             "auth",
             "FailureDetected",
@@ -558,7 +548,7 @@ internal sealed class PlatformStateCoordinator(
             correlationId,
             retryCycleId,
             cancellationToken).ConfigureAwait(false);
-        await notificationDispatcher.DispatchFailureAsync(currentConfiguration, failureSummary, correlationId, retryCycleId, cancellationToken).ConfigureAwait(false);
+        await sideEffects.DispatchFailureAsync(currentConfiguration, failureSummary, correlationId, retryCycleId, cancellationToken).ConfigureAwait(false);
     }
 
     private static void ApplyRuntimeContext(PlatformConfigurationSnapshot currentConfiguration, PlatformRuntimeState currentState, TradingScheduleStatus scheduleStatus)
@@ -589,12 +579,12 @@ internal sealed class PlatformStateCoordinator(
         currentState.LastValidatedAtUtc = now;
         currentState.LastTransitionAtUtc = now;
 
-        await UpsertRetryCycleAsync(currentState.CurrentRetryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, nextDelay, cancellationToken).ConfigureAwait(false);
+        await sideEffects.UpsertRetryCycleAsync(currentState.CurrentRetryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, nextDelay, cancellationToken).ConfigureAwait(false);
 
         var correlationId = CreateCorrelationId();
         var summary = "The active IG demo session expired and re-authentication started.";
 
-        await WriteOperationalEventAsync(
+        await sideEffects.WriteOperationalEventAsync(
             currentConfiguration,
             "auth",
             "SessionExpired",
@@ -609,14 +599,7 @@ internal sealed class PlatformStateCoordinator(
             currentState.CurrentRetryCycleId,
             cancellationToken).ConfigureAwait(false);
 
-        await notificationDispatcher.DispatchFailureAsync(currentConfiguration, summary, correlationId, currentState.CurrentRetryCycleId, cancellationToken).ConfigureAwait(false);
-    }
-
-    private static bool HasSessionExpired(PlatformRuntimeState currentState, DateTimeOffset now)
-    {
-        return currentState.SessionStatus == PlatformSessionStatus.Active
-            && currentState.ExpiresAtUtc is not null
-            && currentState.ExpiresAtUtc <= now;
+        await sideEffects.DispatchFailureAsync(currentConfiguration, summary, correlationId, currentState.CurrentRetryCycleId, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IgLoginSnapshot> CaptureSuccessfulLoginSnapshotAsync(
@@ -640,7 +623,7 @@ internal sealed class PlatformStateCoordinator(
         var snapshot = IgLoginSnapshotMapper.MapLatestSnapshot(currentConfiguration.BrokerEnvironment, response, capturedAtUtc);
         await igLoginSnapshotStore.CaptureSuccessfulSnapshotAsync(snapshot, cancellationToken).ConfigureAwait(false);
 
-        await WriteOperationalEventAsync(
+        await sideEffects.WriteOperationalEventAsync(
             currentConfiguration,
             "auth",
             "SnapshotCaptured",
@@ -711,115 +694,14 @@ internal sealed class PlatformStateCoordinator(
         int? lastDelaySeconds,
         CancellationToken cancellationToken)
     {
-        if (retryCycleId is null)
-        {
-            return Task.CompletedTask;
-        }
-
-        return retryCycleStore.UpsertAsync(
-            new PlatformRetryCycle
-            {
-                RetryCycleId = retryCycleId.Value,
-                CycleType = cycleType,
-                PlatformEnvironment = currentConfiguration.PlatformEnvironment.ToString(),
-                BrokerEnvironment = currentConfiguration.BrokerEnvironment.ToString(),
-                RetryPhase = currentState.RetryPhase,
-                AutomaticAttemptNumber = currentState.AutomaticAttemptNumber,
-                NextRetryAtUtc = currentState.NextRetryAtUtc,
-                LastDelaySeconds = lastDelaySeconds,
-                PeriodicDelayMinutes = currentConfiguration.RetryPolicy.PeriodicDelayMinutes,
-                MaxAutomaticRetries = currentConfiguration.RetryPolicy.MaxAutomaticRetries,
-                RetryLimitReached = currentState.RetryLimitReached,
-                FailureNotificationSent = failureNotificationSent,
-                StartedAtUtc = timeProvider.GetUtcNow(),
-                UpdatedAtUtc = timeProvider.GetUtcNow()
-            },
+        return sideEffects.UpsertRetryCycleAsync(
+            retryCycleId,
+            currentConfiguration,
+            currentState,
+            cycleType,
+            failureNotificationSent,
+            lastDelaySeconds,
             cancellationToken);
-    }
-
-    private async Task WriteOperationalEventAsync(
-        PlatformConfigurationSnapshot currentConfiguration,
-        string category,
-        string eventType,
-        string summary,
-        object details,
-        string severity,
-        string correlationId,
-        Guid? retryCycleId,
-        CancellationToken cancellationToken)
-    {
-        await eventStore.AddAsync(
-            new PlatformEventRecord(
-                category,
-                eventType,
-                currentConfiguration.PlatformEnvironment,
-                currentConfiguration.BrokerEnvironment,
-                severity,
-                summary,
-                details,
-                correlationId,
-                retryCycleId,
-                timeProvider.GetUtcNow()),
-            cancellationToken).ConfigureAwait(false);
-
-        logger.LogInformation(
-            "Operational event recorded: {Category}/{EventType} - {Summary}",
-            category,
-            eventType,
-            summary);
-    }
-
-    private async Task TryCaptureLiveProofDataAsync(
-        PlatformConfigurationSnapshot currentConfiguration,
-        IgAuthenticateResponse authResponse,
-        CancellationToken cancellationToken)
-    {
-        // Traces to FR3, FR5, FR9, NF1, NF3, SR2, SR3, TR4, TR7
-        var cst = authResponse.ClientSessionToken;
-        var securityToken = authResponse.AccountSecurityToken;
-        var apiKey = authResponse.Headers.GetValueOrDefault("X-IG-API-KEY") ?? string.Empty;
-
-        if (string.IsNullOrEmpty(cst) || string.IsNullOrEmpty(securityToken))
-        {
-            logger.LogWarning("Proof-data query skipped: session tokens not present in auth response.");
-            return;
-        }
-
-        try
-        {
-            var accountsResponse = await igSessionClient
-                .GetAccountsAsync(cst, securityToken, apiKey, cancellationToken)
-                .ConfigureAwait(false);
-
-            var positionsResponse = await igSessionClient
-                .GetPositionsAsync(cst, securityToken, apiKey, cancellationToken)
-                .ConfigureAwait(false);
-
-            var preferred = accountsResponse.Accounts.FirstOrDefault(a => a.Preferred)
-                         ?? accountsResponse.Accounts.FirstOrDefault();
-
-            var snapshot = new IgProofDataSnapshot(
-                preferred?.AccountName,
-                preferred?.AccountId,
-                preferred?.Balance?.Balance,
-                positionsResponse.Positions.Count,
-                timeProvider.GetUtcNow());
-
-            await igProofDataStore
-                .SaveAsync(currentConfiguration.BrokerEnvironment, snapshot, cancellationToken)
-                .ConfigureAwait(false);
-
-            logger.LogInformation(
-                "IG proof data captured: account={AccountName}, balance={Balance}, positions={PositionCount}",
-                preferred?.AccountName ?? "none",
-                preferred?.Balance?.Balance,
-                positionsResponse.Positions.Count);
-        }
-        catch (Exception ex)
-        {
-            // Proof-data failure is non-fatal: log and continue; session is already active.
-            logger.LogWarning(ex, "IG proof-data query failed; session remains active.");
-        }
     }
 
     private TimeSpan GetSessionLifetime()

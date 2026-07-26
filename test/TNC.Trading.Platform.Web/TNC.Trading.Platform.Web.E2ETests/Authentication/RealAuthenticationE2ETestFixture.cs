@@ -1,14 +1,16 @@
+using SharedAppHostProcessHandle = TNC.Trading.Platform.TestShared.Authentication.AppHostProcessHandle;
+
 namespace TNC.Trading.Platform.Web.E2ETests.Authentication;
 
 public sealed class RealAuthenticationE2ETestFixture : IAsyncLifetime
 {
-    private AppHostProcessHandle? appHostProcess;
+    private SharedAppHostProcessHandle? appHostProcess;
 
     public Uri WebBaseUri { get; private set; } = null!;
 
     public async Task InitializeAsync()
     {
-        appHostProcess = AppHostProcessFactory.StartAppHostProcess();
+        appHostProcess = await AppHostProcessFactory.StartAppHostProcessAsync();
         WebBaseUri = await AppHostProcessFactory.GetWebBaseUriAsync(appHostProcess);
     }
 

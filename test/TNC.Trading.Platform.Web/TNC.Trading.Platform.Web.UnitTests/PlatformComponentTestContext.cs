@@ -14,17 +14,30 @@ using Microsoft.Extensions.Options;
 using Radzen;
 using TNC.Trading.Platform.Application.Authentication;
 using TNC.Trading.Platform.Web.Authentication;
+using TNC.Trading.Platform.Web.Components.Pages;
 using TNC.Trading.Platform.Web.Components.Layout;
 
 namespace TNC.Trading.Platform.Web.UnitTests;
 
 internal sealed class PlatformComponentTestContext : Bunit.TestContext
 {
+    private readonly bool includeRenderingServices;
+
     public PlatformComponentTestContext(
         string? userName = "local-operator",
         IReadOnlyCollection<string>? requestedScopes = null,
         params Func<HttpRequestMessage, HttpResponseMessage>[] apiResponses)
+        : this(true, userName, requestedScopes, apiResponses)
     {
+    }
+
+    private PlatformComponentTestContext(
+        bool includeRenderingServices,
+        string? userName,
+        IReadOnlyCollection<string>? requestedScopes,
+        params Func<HttpRequestMessage, HttpResponseMessage>[] apiResponses)
+    {
+        this.includeRenderingServices = includeRenderingServices;
         JSInterop.Mode = JSRuntimeMode.Loose;
 
         Services.AddLogging();
@@ -35,8 +48,11 @@ internal sealed class PlatformComponentTestContext : Bunit.TestContext
         Services.AddSingleton<IHostEnvironment>(hostEnvironment);
         Services.AddAuthorizationCore();
         Services.AddCascadingAuthenticationState();
-        Services.AddRadzenComponents();
-        Services.AddRazorComponents();
+        if (includeRenderingServices)
+        {
+            Services.AddRadzenComponents();
+            Services.AddRazorComponents();
+        }
 
         NavigationManager = new TestNavigationManager();
         Services.AddSingleton<NavigationManager>(NavigationManager);
@@ -101,6 +117,9 @@ internal sealed class PlatformComponentTestContext : Bunit.TestContext
             },
             accessTokenProvider);
         Services.AddSingleton(apiClient);
+        Services.AddScoped<ConfigurationPagePresenter>();
+        Services.AddScoped<HomePagePresenter>();
+        Services.AddScoped<StatusPagePresenter>();
 
         var shellContextProvider = new PlatformShellContextProvider(
             operatorContextAccessor,
@@ -112,6 +131,12 @@ internal sealed class PlatformComponentTestContext : Bunit.TestContext
         Services.AddSingleton(themeState);
     }
 
+    public static PlatformComponentTestContext CreateServiceContext(
+        string? userName = "local-operator",
+        IReadOnlyCollection<string>? requestedScopes = null,
+        params Func<HttpRequestMessage, HttpResponseMessage>[] apiResponses) =>
+        new(false, userName, requestedScopes, apiResponses);
+
     public SequencedHttpMessageHandler ApiHandler { get; }
 
     public SequencedHttpMessageHandler AuditHandler { get; }
@@ -121,6 +146,8 @@ internal sealed class PlatformComponentTestContext : Bunit.TestContext
     public TestAuthenticationStateProvider AuthenticationStateProvider { get; }
 
     public TestNavigationManager NavigationManager { get; }
+
+    public bool IncludesRenderingServices => includeRenderingServices;
 
     private (ClaimsPrincipal Principal, AuthenticationProperties Properties) CreateAuthenticationState(
         string? userName,

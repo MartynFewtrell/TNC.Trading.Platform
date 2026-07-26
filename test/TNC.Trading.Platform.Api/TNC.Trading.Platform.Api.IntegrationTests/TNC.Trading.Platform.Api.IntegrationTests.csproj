@@ -27,4 +27,9 @@
     <ProjectReference Include="..\..\..\src\TNC.Trading.Platform.AppHost\TNC.Trading.Platform.AppHost.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\..\Shared\Authentication\AppHostProcessHandle.cs" Link="Shared\Authentication\AppHostProcessHandle.cs" />
+    <Compile Include="..\..\Shared\Authentication\RealAppHostProcessFactory.cs" Link="Shared\Authentication\RealAppHostProcessFactory.cs" />
+  </ItemGroup>
+
 </Project>

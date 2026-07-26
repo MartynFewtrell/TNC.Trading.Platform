@@ -1,10 +1,42 @@
 ﻿using Bunit;
+using Microsoft.Extensions.DependencyInjection;
+using TNC.Trading.Platform.Web.Authentication;
 using TNC.Trading.Platform.Web.Components.Pages;
 
 namespace TNC.Trading.Platform.Web.UnitTests;
 
 public sealed class HomeTests
 {
+    [Fact]
+    public async Task InitializeAsync_ShouldReturnRedirect_WhenAuthenticatedUserHasNoPlatformRole()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(userName: "local-norole");
+        var presenter = context.Services.GetRequiredService<HomePagePresenter>();
+        var operatorContextAccessor = context.Services.GetRequiredService<PlatformOperatorContextAccessor>();
+        var operatorContext = await operatorContextAccessor.GetCurrentAsync();
+
+        var result = await presenter.InitializeAsync(operatorContext, CancellationToken.None);
+
+        Assert.Equal("/authentication/access-denied", result.PendingNavigationUri);
+        var auditRequest = Assert.Single(context.AuditHandler.Requests);
+        Assert.EndsWith("/api/platform/auth/audit", auditRequest.RequestUri, StringComparison.Ordinal);
+        Assert.Contains("OperatorAccessDenied", auditRequest.Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateAlerts_ShouldReturnDegradedRetryAndRecentAlerts_WhenStatusRequiresAttention()
+    {
+        var status = PlatformWebTestData.CreateStatus(isDegraded: true, retryLimitReached: true, isScheduleActive: false);
+        var events = PlatformWebTestData.CreateEvents();
+
+        var alerts = HomePagePresenter.CreateAlerts(status, events);
+
+        Assert.Contains(alerts, item => item.SeverityLabel == "Degraded");
+        Assert.Contains(alerts, item => item.SeverityLabel == "Retry");
+        Assert.Contains(alerts, item => item.SeverityLabel == "Schedule" && item.Summary == "Outside trading hours");
+        Assert.Contains(alerts, item => item.SeverityLabel == "Recent");
+    }
+
     /// <summary>
     /// Trace: FR3, NF2, TR1, OR1.
     /// Verifies: the home page renders the signed-out hero when no operator session is available.

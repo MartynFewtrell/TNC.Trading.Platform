@@ -28,7 +28,7 @@ The distributed validation model now follows the delivered Aspire topology rathe
 - AppHost-focused unit tests now cover `AppHostSettings`, provider-parity environment wiring, infrastructure/project registration, and a resource-model composition smoke that checks preserved resource names, waits, endpoint registrations, and operator-facing links before the higher-cost distributed suites run.
 - AppHost-backed integration, functional, and end-to-end suites validate the real Aspire-managed runtime with Docker-backed infrastructure, SQL Server, Mailpit, and Keycloak.
 - The only supported AppHost override is the narrow API-authentication switch used by the synthetic bearer-token integration slice; it keeps the Web runtime on Keycloak while allowing API-only invalid-token and claim-shape negatives to reach the protected boundary.
-- Shared real-runtime helpers discover listener URLs from AppHost startup output so the suites validate the delivered listener set instead of fixed launch-settings assumptions.
+- Shared real-runtime helpers now start the AppHost through Aspire-managed testing, discover runtime listener URLs from the started resource set and observed local listeners, and validate the delivered listener set instead of fixed launch-settings assumptions.
 - The real-token API authentication integration suite now reuses one AppHost-plus-Keycloak process per xUnit collection, while the synthetic-token API negatives stay isolated in their own AppHost-backed collection because they still require the API-only test-provider override.
 - The Web functional and Web end-to-end auth suites now each reuse one AppHost-plus-Keycloak process per xUnit collection so the retained distributed coverage proves the delivered topology without repeatedly paying startup cost for every test case.
 
@@ -218,9 +218,9 @@ The auth-focused distributed suites now run against the real Aspire-managed AppH
 
 The Web auth suites may still use `Authentication__Test__EnableInteractiveSignIn=true` where a browser-driven helper surface is required, but that setting no longer changes AppHost composition or switches the runtime into a synthetic mode.
 
-This keeps the suites aligned with the delivered local runtime while still exercising the distributed application shape. Distributed validation now uses the supported Docker plus Keycloak local runtime rather than an in-memory substitute path.
+This keeps the suites aligned with the delivered local runtime while still exercising the distributed application shape. Distributed validation now uses the supported Docker plus Keycloak local runtime rather than an in-memory substitute path, and the shared harness forces session-scoped Keycloak state for those auth collections so realm imports stay deterministic between runs.
 
-For Web auth scenarios, the shared real-runtime helpers start the AppHost as a real process, discover listener URLs from runtime output, and establish authenticated browser sessions before copying the resulting platform cookie into the functional client container.
+For Web auth scenarios, the shared real-runtime helpers start the AppHost through Aspire-managed testing, discover the live Web listener from the managed runtime listeners instead of fixed launch ports, and establish authenticated browser sessions before copying the resulting platform cookie into the functional client container.
 
 API integration tests now prefer real Keycloak-issued bearer tokens for protected-route coverage and reuse one shared real AppHost-plus-Keycloak runtime per collection for the retained real-token auth matrix. Only the isolated invalid-issuer, invalid-audience, expired-token, audit-validation, and display-name-fallback negatives remain synthetic, and those tests use a separate AppHost-scoped API provider override so the API can validate controlled JWT and claim-shape inputs without changing the default Keycloak-backed runtime.
 

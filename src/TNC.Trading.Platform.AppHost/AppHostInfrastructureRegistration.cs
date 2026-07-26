@@ -2,9 +2,16 @@
 
 internal static class AppHostInfrastructureRegistration
 {
+    private const string UsePersistentKeycloakStateConfigurationKey = "AppHost:UsePersistentKeycloakState";
+
     internal static AppHostInfrastructure Create(IDistributedApplicationBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
+
+        var usePersistentKeycloakState = !string.Equals(
+            builder.Configuration[UsePersistentKeycloakStateConfigurationKey],
+            bool.FalseString,
+            StringComparison.OrdinalIgnoreCase);
 
         var sql = builder.AddSqlServer("sql")
             .WithDataVolume()
@@ -25,7 +32,7 @@ internal static class AppHostInfrastructureRegistration
                 port: 8080,
                 adminUsername: keycloakAdminUser)
             .WithEndpointProxySupport(proxyEnabled: false)
-            .WithLifetime(ContainerLifetime.Persistent)
+            .WithLifetime(usePersistentKeycloakState ? ContainerLifetime.Persistent : ContainerLifetime.Session)
             .WithRealmImport("./Realms")
             .WithUrlForEndpoint("http", url =>
             {
