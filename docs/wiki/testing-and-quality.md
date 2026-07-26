@@ -15,6 +15,7 @@ The repository uses multiple test levels so the current control-plane behavior i
 | `test/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.UnitTests` | Unit | AppHost settings parsing, provider-branch environment wiring, infrastructure/project registration, and focused composition-topology smoke coverage. |
 | `test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.UnitTests` | Unit | API auth-configuration behavior, configuration validation, and auth-audit summary resolution without distributed runtime startup. |
 | `test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.IntegrationTests` | Integration | API contracts, real AppHost-backed service behavior with one shared AppHost-plus-Keycloak runtime for the retained real-token auth slice, and the isolated synthetic-token negatives that still require controlled invalid JWT and claim-shape inputs. |
+| `test/TNC.Trading.Platform.Architecture/TNC.Trading.Platform.Architecture.IntegrationTests` | Architecture integration | Topology-neutral production project-reference integrity, including missing-target and cycle diagnostics. |
 | `test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.UnitTests` | Unit | Web authentication policy registration, claim mapping, direct `PlatformApiClient` boundary behavior, and bUnit component coverage for the refreshed Blazor shell and key operator pages. |
 | `test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.FunctionalTests` | Functional | Requirement-driven redirect, sign-out, CSRF, and rendered HTML outcomes with one shared real AppHost-plus-Keycloak runtime per auth collection. |
 | `test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.E2ETests` | End-to-end | One retained browser smoke that proves the real AppHost-plus-Keycloak sign-in path from runtime listener discovery through the protected UI surface. |
@@ -190,6 +191,29 @@ In the current suites, tests trace directly to the requirement sources that intr
 This keeps the traceability view aligned with the current repository state instead of only the older environment-foundation package.
 
 ## Running the tests
+
+### Architecture graph validation
+
+The architecture integration-test project provides a focused, topology-neutral
+check over the production project graph. It verifies that direct project
+references resolve to existing project files and that the production reference
+graph is acyclic. The check does not infer architectural roles from names,
+folders, project count, or a canonical layer layout, so valid project additions,
+removals, and renames remain acceptable when the resulting graph is valid.
+
+Run the focused check from the repository root:
+
+```powershell
+dotnet test test/TNC.Trading.Platform.Architecture/TNC.Trading.Platform.Architecture.IntegrationTests/TNC.Trading.Platform.Architecture.IntegrationTests.csproj
+```
+
+This graph check does not yet enforce inward dependency direction, simple
+boundary data or adapter translation, policy placement, inner-owned ports,
+composition-root constraints, or stable component roles. Those properties
+require source review, behavior-focused tests, or a repository-specific boundary
+policy after the refactoring establishes stable boundaries. A passing graph
+check is therefore evidence of reference integrity and acyclicity only, not
+proof of complete Clean Architecture adoption.
 
 From the repository root:
 

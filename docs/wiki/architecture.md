@@ -1,6 +1,6 @@
 ﻿# Architecture
 
-This document describes the implemented architecture of the current solution, including project boundaries, runtime topology, request flow, and persistence responsibilities.
+This document describes the implemented architecture of the current solution, including project boundaries, runtime topology, request flow, and persistence responsibilities. The current project layout is a transitional factual snapshot, not a target architecture or a universal mapping of project names to Clean Architecture roles.
 
 ## Architectural style
 
@@ -13,7 +13,50 @@ The solution currently uses a small distributed-application layout:
 - feature endpoints in the API remain thin and delegate to application handlers
 - successful backend IG auth transitions now also produce a secret-safe persisted login snapshot and read-only proof data for current and historical review
 
+## Portable architectural direction
+
+Clean Architecture is defined here by responsibility ownership and source-code
+dependency direction, not by project names, project count, folder names, or a
+mandatory set of layers. The following principles remain valid if the current
+topology changes:
+
+- Policy contains stable business rules and remains independent of transport,
+    UI, persistence, frameworks, providers, and hosting details.
+- Use cases contain application-specific policy and coordinate one user or
+    system goal.
+- Inbound adapters receive external input, translate it into simple data owned
+    by the inward consumer, invoke a use case, and translate the result outward.
+- Outbound adapters implement narrow ports owned by the inward consumer and
+    translate between inward data and persistence, identity, notification, or
+    external-service representations.
+- Frameworks, drivers, hosts, and deployment mechanisms remain replaceable
+    details at the boundary.
+
+The Dependency Rule applies to source dependencies: references point inward
+toward more general and stable policy. Runtime calls may travel outward through
+dependency inversion, but a runtime call path does not justify reversing the
+source dependency. Boundary data should use simple records, structures,
+arguments, or maps shaped for the inner consumer. Framework contexts,
+persistence entities, provider responses, transport models, and UI component
+models must be translated before they cross inward.
+
+Composition roots may reference concrete adapters for registration,
+configuration, adapter selection, startup orchestration, and hosting. They must
+not use that privilege to move business decisions into endpoints, hosts, or
+integration code. Policy and use-case behavior should remain testable without a
+web host, database, container, UI, broker, or external service when the behavior
+permits.
+
+Vertical slices and CQRS-style request/response contracts complement these
+rules. They organize feature behavior and operation contracts, while Clean
+Architecture governs responsibility and dependency direction. Neither requires
+one project per role, a separate Domain project, or a fixed deployment shape.
+
 ## Solution structure
+
+The following diagram records the implemented project topology at this point in
+the refactoring. It is non-normative and may change as responsibilities move;
+the project names and count are not the Clean Architecture target.
 
 ```mermaid
 flowchart TD
