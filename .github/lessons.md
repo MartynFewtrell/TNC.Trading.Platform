@@ -7,3 +7,4 @@
 - Stop after three failed attempts on the same slice and re-plan rather than continuing with the same approach.
 - Prefer repository scripts or tasks for repeated validation and maintenance workflows instead of institutionalizing the same ad hoc command sequences across multiple assets.
 - Record explicit routine-or-complex tier intent in agent metadata or the central tier registry when only one approved model identifier is available.
+- Clean Architecture adoption is defined by responsibility ownership and dependency direction, not by project names, project count, or canonical folders.
