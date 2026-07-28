@@ -1,4 +1,12 @@
-﻿# Testing and quality
+﻿---
+title: Testing and quality
+description: Test levels, quality gates, and regression coverage for the trading platform
+author: TNC Trading
+ms.date: 2026-07-27
+ms.topic: reference
+---
+
+Framework-boundary coverage includes an architecture rule that rejects ASP.NET Core framework references from Application, plus focused Application, API, Web, and AppHost tests that protect composition and authentication parity. Phase 8.2 requires the solution build and the unfiltered `phase-8-2-framework-reference-removal` quality gate before further migration work.
 
 This document explains how the current solution is validated, what each test suite covers, and what kinds of regressions the repository is already protecting against.
 
@@ -6,12 +14,69 @@ This document explains how the current solution is validated, what each test sui
 
 The repository uses multiple test levels so the current control-plane behavior is validated from unit level up to browser-driven flows.
 
+### Coordinator retirement coverage
+
+The Phase 6.6 retirement check searches live `src/`, `test/`, and project files
+for `PlatformStateCoordinator` references before running the focused suites and
+the complete solution gate. The search must find no active coordinator caller,
+registration, or test construction. Reconciliation coverage now targets the
+explicit `ReconcilePlatformAuthenticationHandler` and its
+`PlatformAuthenticationReconciler`; status, events, configuration, manual
+retry, audit, and IG login-history coverage targets their individual handlers
+and inward ports. This keeps ownership assertions focused on observable
+behavior while proving the retired broad coordinator cannot return through a
+registration or dependency path.
+
+## Phase 1 safety-rail coverage
+
+Characterization tests protect observable behavior that later migration phases
+may change: API route results, status codes, JSON response shape, validation
+Problem Details, authorization boundaries, startup readiness, configuration
+updates, manual retry acceptance and conflict outcomes, status and event reads,
+and representative Web rendering and API-client behavior. These tests assert
+transport, persistence, and rendered outcomes rather than coordinator calls,
+service registration details, or folder structure.
+
+The architecture integration suite retains the topology-neutral graph checks and
+adds a separate role-policy validator. It checks project-file references,
+framework references, and stable package families, while keeping the temporary
+Web-to-Application authentication-contract exception explicit. Domain checks
+activate only when a Domain project exists. The validator tests include a
+disposable forbidden-reference probe so the new rule is demonstrated without
+leaving a deliberate violation in the repository.
+
+Run the focused Phase 1 checks from the repository root:
+
+```powershell
+dotnet test test/TNC.Trading.Platform.Architecture/TNC.Trading.Platform.Architecture.IntegrationTests/TNC.Trading.Platform.Architecture.IntegrationTests.csproj
+dotnet test test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.UnitTests/TNC.Trading.Platform.Api.UnitTests.csproj
+```
+
+The focused checks are necessary feedback, but they do not replace the
+unfiltered solution gate below.
+
+### Supervision hosting coverage
+
+The API unit suite directly tests the host adapter's lifecycle boundary:
+
+- `ExecuteAsync_ShouldContinueAfterTransientFailure_WhenNextTickRuns` proves a
+   transient reconciliation exception is logged and does not stop later ticks.
+- `ExecuteAsync_ShouldStopPromptly_WhenCancellationIsRequested` proves host
+   cancellation exits the loop without waiting for another cadence.
+- `StartAsync_ShouldCompleteInitialReconciliation_BeforeReadinessIsHealthy`
+   proves the initial reconciliation is completed before hosted startup proceeds.
+
+These tests inject the tick and delay seams, so they remain in-process and do
+not require SQL Server, Docker, Keycloak, or a web listener. Application tests
+continue to cover the reconciliation command and its feature-local workflow;
+API tests cover only hosting and composition behavior.
+
 ## Test projects
 
 | Project | Test type | Focus |
 | --- | --- | --- |
-| `test/TNC.Trading.Platform.Application/TNC.Trading.Platform.Application.UnitTests` | Unit | Retry timing, schedule evaluation, auth-state behavior, and application logic. |
-| `test/TNC.Trading.Platform.Infrastructure/TNC.Trading.Platform.Infrastructure.UnitTests` | Unit | Configuration persistence, secret protection, notification providers, redaction, and retention behavior. |
+| `test/TNC.Trading.Platform.Application/TNC.Trading.Platform.Application.UnitTests` | Unit | Pure retry timing, schedule evaluation, auth-state policy, use-case handlers, and application logic using fakes and in-memory state only. |
+| `test/TNC.Trading.Platform.Infrastructure/TNC.Trading.Platform.Infrastructure.UnitTests` | Unit | EF/Data Protection-backed workflow scenarios, configuration persistence, secret protection, notification providers, IG adapter translation, redaction, retention behavior, and persistence adapters using EF Core's in-memory provider. |
 | `test/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.UnitTests` | Unit | AppHost settings parsing, provider-branch environment wiring, infrastructure/project registration, and focused composition-topology smoke coverage. |
 | `test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.UnitTests` | Unit | API auth-configuration behavior, configuration validation, and auth-audit summary resolution without distributed runtime startup. |
 | `test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.IntegrationTests` | Integration | API contracts, real AppHost-backed service behavior with one shared AppHost-plus-Keycloak runtime for the retained real-token auth slice, and the isolated synthetic-token negatives that still require controlled invalid JWT and claim-shape inputs. |
@@ -48,8 +113,29 @@ The unit tests cover:
 - notification suppression and retry-cycle updates
 - schedule evaluation
 - proof-data query paths, including successful capture, accounts-query failure, positions-query failure, fallback account selection, status projection with proof data, and status projection with null proof data
+- pure status projection reads that do not invoke reconciliation and return an explicit missing-state outcome when no runtime row exists
+- freshness metadata from the persisted last-validation timestamp
+- pure event projection reads that preserve newest-first ordering and perform no writes
 
-The application unit suites now prefer direct compile-time access to internal coordinator, schedule, and IG sanitization types instead of generic string-based reflection helpers. The only supporting seam added for this hardening was an internal visibility expansion for the test projects together with making the targeted retry-cycle helper callable as an internal member, so renamed members now fail at compile time rather than surfacing as runtime reflection errors.
+Phase 6.4 query-boundary tests also verify cancellation propagation for both
+status and event handlers, explicit missing-state and freshness metadata, and
+the Infrastructure event projection adapter's filter forwarding with zero
+write calls. These tests keep no-write behavior executable rather than relying
+only on constructor shape or source inspection.
+
+Application unit tests do not reference Infrastructure. Adapter-backed workflow
+coverage that constructs EF Core, Data Protection, notification, or provider
+implementations is owned by the Infrastructure unit project instead. This keeps
+the Application boundary limited to use-case and policy behavior that can run
+with fakes and in-memory state.
+
+The application unit suites now prefer direct compile-time access to internal
+reconciliation, schedule, and IG sanitization types instead of generic
+string-based reflection helpers. The only supporting seam added for this
+hardening was an internal visibility expansion for the test projects together
+with making the targeted retry-cycle helper callable as an internal member, so
+renamed members now fail at compile time rather than surfacing as runtime
+reflection errors.
 
 ### Infrastructure behavior
 
@@ -62,11 +148,88 @@ The unit tests cover:
 - notification provider fallback and dispatch recording
 - retention cleanup for operational records
 
+- retry-cycle and IG proof-data workflow scenarios that exercise EF stores,
+  protected credentials, notification dispatch, and provider-shaped ports
+
 The infrastructure unit suites now instantiate internal persistence, notification, and configuration components directly through compile-time references. The remaining infrastructure test helper is limited to typed in-memory `PlatformDbContext` and data-protection setup so the tests no longer rely on string-based constructor, method, enum, or property lookup.
 
-The infrastructure notification tests now also cover the `NotificationDispatcher` runtime branches for unconfigured recipients, missing provider registrations, and handled provider exceptions. This keeps notification routing, failed dispatch persistence, and secret-safe failure shaping in the low-cost unit layer instead of relying on broader runtime scenarios.
+The Infrastructure integration project now runs a focused real SQL Server
+suite against a unique database created inside the already-running Docker SQL
+container. The fixture discovers the container endpoint and managed local
+credential through Docker metadata, creates its own database, resets only that
+database between tests, and drops it during cleanup. It does not launch the API
+   or exercise a destructive startup reset branch; no such branch is used by the
+   startup initializer.
+
+The Infrastructure unit suite also covers `PlatformStartupInitializer` directly:
+
+* `InitializeAsync_ShouldApplyStepsInRequiredOrder_WhenApiStarts`
+* `InitializeAsync_ShouldFailReadiness_WhenMigrationFails`
+* `InitializeAsync_ShouldPropagateCancellation_WhenBootstrapIsCancelled`
+
+These tests prove the schema, bootstrap configuration, and retention order,
+fail-closed startup behavior, and cancellation propagation without replacing the
+real SQL migration and provider-specific retention assertions in the integration
+suite.
+
+The SQL suite covers:
+
+* `MigrateAsync_ShouldCreateCurrentSchema_WhenDatabaseIsEmpty`
+* `MigrateAsync_ShouldUpgradeWithoutDataLoss_WhenNoHistoryDatabaseIsTransitioned`
+   using an explicit guarded history baseline
+* `InitializeAsync_ShouldFailClosedAndPreserveSchema_WhenMigrationConflictsWithExistingObject`,
+   which injects an incompatible SQL object, verifies that the prior migration
+   history and object remain, and confirms bootstrap configuration does not run
+* `InitializeAsync_ShouldRecoverAfterOperatorCorrection_WhenPartialSchemaHasNoMigrationHistory`,
+   which verifies that a partial no-history schema fails without destructive repair,
+   then succeeds after the operator removes the partial object and retries startup
+* `CommitAsync_ShouldRollbackAllLocalWrites_WhenOneWriteFails`
+* `CommitAsync_ShouldRollbackConfigurationCredentialsAndAudit_WhenAuditWriteFails`,
+   which injects a real SQL audit-write failure and verifies that the previous
+   configuration, protected credentials, and audit history remain unchanged
+* `HandleAsync_ShouldCommitAndReconcile_WhenConfigurationIsValid`, which also
+   verifies the commit-before-reconcile call order
+* `AcquireAsync_ShouldRejectConcurrentOwner_WhenAnotherSqlSessionOwnsTheLease`
+   and `AcquireAsync_ShouldRecoverAfterOwnerRelease_WhenReplicaSessionEnds`,
+   which prove SQL Server session-owned cross-replica exclusion and recovery
+* `DeleteExpiredAsync_ShouldPreserveCurrentRecords_WhenSqlServerExecutesRetention`
+* `GetLatestAsync_ShouldReadProofDataAfterContextRestart_WhenSnapshotWasSavedToSqlServer`,
+   which writes a latest proof snapshot, disposes the writing context, reads it
+   through a new context, and verifies replacement remains one row per broker
+   environment.
+
+Phase 10.1 also runs `ProtectAndUnprotect_ShouldSurviveProviderRestartAndKeyRotation_WhenSqlKeyRingIsShared`.
+It uses a unique SQL database, creates the source-controlled schema, protects
+with one Data Protection provider, generates a newer key, and unprotects with
+a separately constructed provider. This is the executable evidence for shared
+key-ring persistence and rotation compatibility. It does not claim recovery
+after the database or key material is deleted.
+
+Phase 10.2 proves the selected proof-data durability guarantee with the SQL
+restart/readback test above and an AppHost composition assertion that the SQL
+resource uses persistent container lifetime. Unit tests continue to use the
+explicit in-memory proof store only when testing reconciliation behavior
+without external infrastructure; production DI always selects the EF SQL
+adapter. The focused proof-data test therefore checks the real SQL adapter,
+while the composition and documentation establish that the running API uses
+the same durable path.
+
+The provider-specific migration and retention assertions are intentionally not
+represented only by EF Core InMemory tests. The no-history test proves data
+preservation after a guarded baseline, while the startup initializer uses SQL
+migrations for production and an explicit disposable schema path only for
+isolated in-memory tests.
+
+The infrastructure notification tests now also cover the `NotificationDispatcher` runtime branches for unconfigured recipients, missing provider registrations, handled provider exceptions, failure-then-retry behavior, and repeated-attempt recording. This keeps notification routing, best-effort at-least-once semantics, failed dispatch persistence, and secret-safe failure shaping in the low-cost unit layer instead of relying on broader runtime scenarios. The tests intentionally do not claim durable duplicate prevention because the current design has no outbox or cross-process idempotency key.
 
 ### API behavior
+
+The API and Web authentication registration tests are parity checks for the
+host-owned policy boundary. `AddPlatformApiAuthentication_ShouldRegisterExpectedRolePolicies_WhenConfiguredForTests`
+and `AddPlatformWebAuthentication_ShouldRegisterExpectedRolePolicies_WhenConfiguredForTests`
+must continue to find the same Viewer, Operator, and Administrator policy names
+and allowed-role semantics. This proves the move out of Application does not
+alter route authorization while keeping ASP.NET Core registration at each host.
 
 The API tests cover:
 
@@ -75,6 +238,8 @@ The API tests cover:
 - invalid issuer, invalid audience, invalid signature, expired, and no-role bearer-token fail-closed behavior
 - viewer, operator, and administrator bearer-token access behavior across status, configuration, manual-retry, events, and administrator auth-summary endpoints
 - current `/api/platform/status` contract coverage for IG login current-state detail and the latest stored non-secret login payload embedded in the existing response
+- explicit `stateAvailability` and `lastReconciledAtUtc` status fields for missing and persisted runtime state
+- status and event contract coverage proving reads do not reconcile or write
 - `GetPlatformStatusMappingTests` validation of the `IgProofDataResponse` contract shape for both populated and null cases
 - persisted operator auth audit-event recording through the protected API boundary for sign-in, sign-out, access-denied, and token-acquisition-failure outcomes
 - validation-problem payloads for unsupported or malformed auth-audit event submissions
@@ -89,7 +254,7 @@ The API unit suite now uses direct compile-time access to internal authenticatio
 
 The Web unit, functional, and end-to-end tests cover:
 
-- shared authorization policy registration for viewer, operator, and administrator routes
+- host-local authorization policy registration for viewer, operator, and administrator routes, with API/Web parity checks
 - anonymous, no-role, and elevated-role operator-context mapping
 - theme-mode parsing and Radzen Software theme selection for the shared UI shell
 - delegated-scope token evaluation and navigation recovery decisions for protected UI flows
@@ -104,6 +269,38 @@ The Web unit, functional, and end-to-end tests cover:
 - one retained functional insufficient-role smoke that proves a signed-in viewer is denied from the operator-only configuration route through the real runtime
 - one retained functional CSRF negative that proves the real sign-out POST rejects requests without the antiforgery token
 - one retained real Keycloak browser smoke that discovers the live Web listener from AppHost startup output and reaches the protected UI without fixed-port assumptions
+
+### Keycloak readiness and isolation
+
+The real-runtime authentication harness uses layered readiness gates. `StartAsync()` only starts the distributed application. The harness then waits for the Aspire-managed Keycloak resource to become Healthy, verifies that the application realm discovery document returns an issuer exactly matching `http://localhost:8080/realms/tnc-trading-platform`, and performs a behavior-level check before the suite uses the runtime. API suites prove token issuance for the seeded test user, client, and scope. Web suites follow the sign-in challenge through to the Keycloak login page and later prove the protected UI flow.
+
+The readiness policy classifies failures deliberately:
+
+- Connection failures, temporary `404`, `429`, and `503` responses are transient and are retried against one bounded deadline.
+- `400`, `401`, other permanent HTTP failures, an exact-issuer mismatch, and malformed successful discovery data fail immediately with URI, status, and safe diagnostic context.
+- Timeouts retain the last transient status or exception without response content, tokens, or credentials.
+
+Each distributed fixture attempts complete cleanup even when startup or disposal fails. It kills and waits for external AppHost processes, drains captured output, disposes the managed application and builder, restores environment-variable scopes, and preserves secondary cleanup exceptions with the primary failure. A failed readiness check must not leave a process, container, or test override behind.
+
+The real-authentication projects disable persistent Keycloak state. Each AppHost test session therefore receives volume-free, session-scoped Keycloak state and imports the checked-in realm into a clean container. This is test isolation, not a change to the persistent local-development mode. Container lifetime, durable data, and test session state remain separate concerns.
+
+The imported realm contains wildcard localhost callback and origin entries. The retained browser sign-in smoke proves that the randomized Web listener can complete the Keycloak callback without mutating the client through the Admin API. This keeps the session fixture free from cross-test client configuration changes while preserving the real provider path.
+
+### Port coordination and concurrent validation
+
+Keycloak intentionally owns host port `8080` because the local issuer, browser redirects, cookies, and authority all use that origin. The participating real-authentication processes acquire a machine-local file lease at `%TEMP%\TNC.Trading.Platform\leases\keycloak-port-8080.lock` before starting the fixed-port AppHost. Acquisition waits up to five minutes and polls for release; disposal closes the lock and removes the file.
+
+The lease coordinates processes on the same machine that use this shared lock path. It does not coordinate separate machines, isolated CI containers, or processes that do not participate in the harness. xUnit collection fixtures serialize tests inside one test assembly only. They cannot prevent the API, Web functional, and Web E2E projects from starting concurrently, so the cross-process lease remains necessary. An independently running external AppHost can still bind port 8080 first and cause a test startup conflict.
+
+Use these focused commands from the repository root when validating the retained real-runtime slices:
+
+```powershell
+dotnet test test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.IntegrationTests/TNC.Trading.Platform.Api.IntegrationTests.csproj --filter "FullyQualifiedName~PlatformAuthenticationIntegrationTests"
+dotnet test test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.FunctionalTests/TNC.Trading.Platform.Web.FunctionalTests.csproj --filter "FullyQualifiedName~Authentication"
+dotnet test test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.E2ETests/TNC.Trading.Platform.Web.E2ETests.csproj --filter "FullyQualifiedName~Authentication"
+```
+
+To prove cross-process coordination, start the API, Web functional, and Web E2E commands concurrently. They should serialize fixed-port ownership through the five-minute lease. A timeout or bind error should be recorded as an environment conflict, not interpreted as an authentication assertion failure. Stop any separately running AppHost before repeating the proof.
 
 Focused manual validation still complements the automated suite for the refreshed shared shell, theme switching, remembered browser preference, header presentation, and narrower-width layout behavior.
 
@@ -124,7 +321,21 @@ The current real-runtime auth matrix is intentionally narrow: one browser sign-i
 
 ## Deterministic vs. real-IG validation
 
-All proof-data tests in `TNC.Trading.Platform.Application.UnitTests` and `TNC.Trading.Platform.Api.UnitTests` use fake implementations of `IIgSessionClient` and `IPlatformIgProofDataStore`. Running `dotnet test` without any additional configuration is fully deterministic and does not require IG credentials or network access.
+Application authentication and proof-data tests use fake
+`IBrokerAuthenticationGateway` implementations plus in-memory stores. They
+exercise `PlatformAuthenticationReconciler` behavior without HTTP, provider
+DTOs, session headers, or Infrastructure exceptions. Direct reconciliation
+coverage includes serialized writer contention, cancellation, provider and
+persistence failure continuation, missing credentials, retry scheduling, and
+idempotent replay behavior.
+
+Infrastructure `IgBrokerAuthenticationGatewayTests` use a deterministic fake
+`HttpMessageHandler` to cover successful session and proof translation, provider
+rejection classes, malformed responses, caller cancellation, secret exclusion,
+Demo routing, proof-query degradation, and Live rejection before any network
+call. The architecture suite scans Application source for HTTP-client usage, IG
+session-header literals, and retired provider contract names. Running
+`dotnet test` requires no IG credentials or external network access.
 
 ### Opt-in real-IG smoke verification
 
@@ -192,6 +403,39 @@ This keeps the traceability view aligned with the current repository state inste
 
 ## Running the tests
 
+### Clean Architecture migration quality gate
+
+The migration gate runs the solution-qualified build and the complete,
+unfiltered test suite from the repository root. It includes all solution-listed
+projects, including Docker-backed Aspire, functional, and end-to-end tests.
+
+Prerequisites are the SDK pinned by `global.json`, Docker Desktop for the
+distributed suites, and the repository's Playwright browser prerequisites.
+Provide any required local secrets through the existing user-secret or
+environment configuration. The gate does not print or persist secret values.
+
+Run it with a phase or subphase identifier:
+
+```powershell
+.github/scripts/Invoke-CleanArchitectureQualityGate.ps1 -GateId phase-0-baseline
+```
+
+Timestamped command logs and TRX results are written below
+`artifacts/quality-gates/<GateId>/<timestamp>/`. The script reports aggregate
+passed, failed, and skipped test counts and returns a non-zero exit code when
+the build or complete test command fails.
+
+If the complete test command reports the documented intermittent MSBuild
+child-node failure, rerun only the serialized equivalent and record both
+attempts:
+
+```powershell
+dotnet test TNC.Trading.Platform.slnx -m:1
+```
+
+Do not silently retry, add filters, or treat an environment prerequisite failure
+as a passing baseline.
+
 ### Architecture graph validation
 
 The architecture integration-test project provides a focused, topology-neutral
@@ -242,7 +486,7 @@ The auth-focused distributed suites now run against the real Aspire-managed AppH
 
 The Web auth suites may still use `Authentication__Test__EnableInteractiveSignIn=true` where a browser-driven helper surface is required, but that setting no longer changes AppHost composition or switches the runtime into a synthetic mode.
 
-This keeps the suites aligned with the delivered local runtime while still exercising the distributed application shape. Distributed validation now uses the supported Docker plus Keycloak local runtime rather than an in-memory substitute path, and the shared harness forces session-scoped Keycloak state for those auth collections so realm imports stay deterministic between runs.
+This keeps the suites aligned with the delivered local runtime while still exercising the distributed application shape. Distributed validation now uses the supported Docker plus Keycloak local runtime rather than an in-memory substitute path, and the shared harness forces volume-free, session-scoped Keycloak state for those auth collections so realm imports stay deterministic between runs. The harness gates startup on Aspire health, exact application-realm issuer discovery, and the behavior under test; a healthy container alone is not proof that token issuance or browser sign-in is ready.
 
 For Web auth scenarios, the shared real-runtime helpers start the AppHost through Aspire-managed testing, discover the live Web listener from the managed runtime listeners instead of fixed launch ports, and establish authenticated browser sessions before copying the resulting platform cookie into the functional client container.
 

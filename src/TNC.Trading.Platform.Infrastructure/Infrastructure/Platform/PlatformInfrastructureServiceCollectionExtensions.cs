@@ -3,12 +3,26 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using TNC.Trading.Platform.Application.Configuration;
-using TNC.Trading.Platform.Application.Infrastructure.Ig;
+using TNC.Trading.Platform.Application.Features.GetIgLoginHistory.Ports;
+using TNC.Trading.Platform.Application.Features.PlatformAuthentication.Ports;
+using TNC.Trading.Platform.Application.Features.TriggerManualAuthRetry.Ports;
+using TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration;
+using TNC.Trading.Platform.Application.Features.GetPlatformEvents.Ports;
+using TNC.Trading.Platform.Application.Features.GetPlatformStatus.Ports;
+using TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent.Ports;
 using TNC.Trading.Platform.Application.Services;
-using TNC.Trading.Platform.Infrastructure.Infrastructure.Platform;
-using TNC.Trading.Platform.Infrastructure.Infrastructure.Platform.Ig;
+using TNC.Trading.Platform.Infrastructure.Configuration.SqlServer;
+using TNC.Trading.Platform.Infrastructure.Credentials.DataProtection;
+using TNC.Trading.Platform.Infrastructure.Integrations.Ig;
 using TNC.Trading.Platform.Infrastructure.Notifications;
-using TNC.Trading.Platform.Infrastructure.Persistence;
+using TNC.Trading.Platform.Infrastructure.Notifications.AzureCommunicationServices;
+using TNC.Trading.Platform.Infrastructure.Notifications.Recorded;
+using TNC.Trading.Platform.Infrastructure.Notifications.Smtp;
+using TNC.Trading.Platform.Infrastructure.Operations.Retention;
+using TNC.Trading.Platform.Infrastructure.Platform;
+using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
+using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
+using TNC.Trading.Platform.Infrastructure.Startup;
 using AppNotificationDispatcher = TNC.Trading.Platform.Application.Services.INotificationDispatcher;
 
 namespace TNC.Trading.Platform.Infrastructure.Platform;
@@ -45,21 +59,35 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
 
         services.AddScoped<ProtectedCredentialService>();
         services.AddScoped<IProtectedCredentialService>(serviceProvider => serviceProvider.GetRequiredService<ProtectedCredentialService>());
-        services.AddScoped<IPlatformConfigurationStore, SqlPlatformConfigurationStore>();
+        services.AddScoped<SqlPlatformConfigurationStore>();
+        services.AddScoped<IPlatformConfigurationStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<SqlPlatformConfigurationStore>());
+        services.AddScoped<IUpdatePlatformConfigurationCommitter>(serviceProvider =>
+            serviceProvider.GetRequiredService<SqlPlatformConfigurationStore>());
         services.AddScoped<IPlatformRuntimeStateStore, EfPlatformRuntimeStateStore>();
-        services.AddScoped<IPlatformIgLoginSnapshotStore, EfPlatformIgLoginSnapshotStore>();
+        services.AddScoped<IPlatformStatusProjectionReader, EfPlatformStatusProjectionReader>();
+        services.AddScoped<EfPlatformIgLoginSnapshotStore>();
+        services.AddScoped<IPlatformIgLoginSnapshotStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<EfPlatformIgLoginSnapshotStore>());
+        services.AddScoped<IGetIgLoginHistoryReader>(serviceProvider =>
+            serviceProvider.GetRequiredService<EfPlatformIgLoginSnapshotStore>());
         services.AddScoped<IPlatformRetryCycleStore, EfPlatformRetryCycleStore>();
         services.AddScoped<IPlatformEventStore, EfPlatformEventStore>();
+        services.AddScoped<IRecordAuthAuditEventConfigurationReader, RecordAuthAuditEventConfigurationReader>();
+        services.AddScoped<IRecordAuthAuditEventCommitter, RecordAuthAuditEventCommitter>();
+        services.AddScoped<IManualAuthRetryCommitter, ManualAuthRetryCommitter>();
+        services.AddScoped<IPlatformEventsProjectionReader, EfPlatformEventsProjectionReader>();
         services.AddScoped<INotificationProvider, RecordedNotificationProvider>();
         services.AddScoped<INotificationProvider, SmtpNotificationProvider>();
         services.AddScoped<INotificationProvider, AzureCommunicationServicesEmailNotificationProvider>();
         services.AddScoped<AppNotificationDispatcher, NotificationDispatcher>();
         services.AddScoped<OperationalRecordRetentionProcessor>();
+        services.AddScoped<PlatformStartupInitializer>();
         services.AddHostedService<OperationalRecordRetentionService>();
 
-        services.AddSingleton<IPlatformIgProofDataStore, InMemoryPlatformIgProofDataStore>();
+        services.AddScoped<IPlatformIgProofDataStore, EfPlatformIgProofDataStore>();
 
-        services.AddHttpClient<IIgSessionClient, IgSessionClient>(client =>
+        services.AddHttpClient<IBrokerAuthenticationGateway, IgBrokerAuthenticationGateway>(client =>
         {
             client.BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/");
         });

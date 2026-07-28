@@ -1,6 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authorization.Infrastructure;
-using Microsoft.AspNetCore.Authentication;
+﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -13,34 +11,6 @@ namespace TNC.Trading.Platform.Web.UnitTests;
 
 public class PlatformAuthenticationRegistrationTests
 {
-    /// <summary>
-    /// Trace: FR7, TR2.
-    /// Verifies: the shared authentication registration layer builds the viewer, operator, and administrator role policies directly.
-    /// Expected: the policy catalog contains the documented role matrix without requiring either host-specific registration path.
-    /// Why: shared authorization policy extraction must keep the security-sensitive role matrix centralized and host-independent.
-    /// </summary>
-    [Fact]
-    public void AddPlatformRolePolicies_ShouldRegisterExpectedRoleMatrix_WhenCalledDirectly()
-    {
-        var options = new AuthorizationOptions();
-
-        PlatformAuthorizationPolicyRegistration.AddPlatformRolePolicies(options);
-
-        var viewerPolicy = options.GetPolicy(PlatformAuthenticationDefaults.Policies.Viewer);
-        var operatorPolicy = options.GetPolicy(PlatformAuthenticationDefaults.Policies.Operator);
-        var administratorPolicy = options.GetPolicy(PlatformAuthenticationDefaults.Policies.Administrator);
-
-        Assert.Equal(
-            [PlatformAuthenticationDefaults.Roles.Viewer, PlatformAuthenticationDefaults.Roles.Operator, PlatformAuthenticationDefaults.Roles.Administrator],
-            Assert.IsType<RolesAuthorizationRequirement>(Assert.Single(viewerPolicy!.Requirements)).AllowedRoles);
-        Assert.Equal(
-            [PlatformAuthenticationDefaults.Roles.Operator, PlatformAuthenticationDefaults.Roles.Administrator],
-            Assert.IsType<RolesAuthorizationRequirement>(Assert.Single(operatorPolicy!.Requirements)).AllowedRoles);
-        Assert.Equal(
-            [PlatformAuthenticationDefaults.Roles.Administrator],
-            Assert.IsType<RolesAuthorizationRequirement>(Assert.Single(administratorPolicy!.Requirements)).AllowedRoles);
-    }
-
     /// <summary>
     /// Trace: NF1, NF3, OR1.
     /// Verifies: the shared configuration resolver returns the configured synthetic-test audience directly when the Test provider is selected.

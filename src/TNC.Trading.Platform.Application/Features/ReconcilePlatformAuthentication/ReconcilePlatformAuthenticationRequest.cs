@@ -1,0 +1,3 @@
+namespace TNC.Trading.Platform.Application.Features.ReconcilePlatformAuthentication;
+
+internal sealed record ReconcilePlatformAuthenticationRequest;

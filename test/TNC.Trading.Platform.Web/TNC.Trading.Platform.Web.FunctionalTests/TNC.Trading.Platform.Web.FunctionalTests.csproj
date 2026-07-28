@@ -25,6 +25,8 @@
 
   <ItemGroup>
     <Compile Include="..\..\Shared\Authentication\AppHostProcessHandle.cs" Link="Shared\Authentication\AppHostProcessHandle.cs" />
+    <Compile Include="..\..\Shared\Authentication\KeycloakReadinessPolicy.cs" Link="Shared\Authentication\KeycloakReadinessPolicy.cs" />
+    <Compile Include="..\..\Shared\Authentication\KeycloakPortLease.cs" Link="Shared\Authentication\KeycloakPortLease.cs" />
     <Compile Include="..\..\Shared\Authentication\RealAppHostProcessFactory.cs" Link="Shared\Authentication\RealAppHostProcessFactory.cs" />
   </ItemGroup>
 

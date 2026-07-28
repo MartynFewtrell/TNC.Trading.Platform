@@ -36,7 +36,7 @@ public sealed class AppHostCompositionTests
 
         var infrastructure = AppHostInfrastructureRegistration.Create(builder);
         var apiProject = AppHostProjectRegistration.AddApiProject(builder, infrastructure);
-        var webProject = AppHostProjectRegistration.AddWebProject(builder, apiProject);
+        var webProject = AppHostProjectRegistration.AddWebProject(builder, apiProject, infrastructure);
 
         AppHostEnvironmentWiring.ConfigureApiProject(apiProject, infrastructure, settings);
         AppHostEnvironmentWiring.ConfigureWebProject(webProject);

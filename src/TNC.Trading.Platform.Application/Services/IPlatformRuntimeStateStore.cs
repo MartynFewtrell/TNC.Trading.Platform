@@ -4,6 +4,8 @@ namespace TNC.Trading.Platform.Application.Services;
 
 internal interface IPlatformRuntimeStateStore
 {
+    Task<PlatformRuntimeState?> GetAsync(CancellationToken cancellationToken);
+
     Task<PlatformRuntimeState> GetOrCreateAsync(CancellationToken cancellationToken);
 
     Task SaveAsync(PlatformRuntimeState state, CancellationToken cancellationToken);

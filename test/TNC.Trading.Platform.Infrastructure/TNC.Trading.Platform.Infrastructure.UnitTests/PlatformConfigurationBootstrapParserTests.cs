@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Configuration;
-using TNC.Trading.Platform.Infrastructure.Platform;
+using TNC.Trading.Platform.Infrastructure.Configuration.SqlServer;
 
 namespace TNC.Trading.Platform.Infrastructure.UnitTests;
 

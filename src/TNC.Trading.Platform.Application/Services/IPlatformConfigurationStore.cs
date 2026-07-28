@@ -13,5 +13,4 @@ internal interface IPlatformConfigurationStore
         BrokerEnvironmentKind? brokerEnvironment,
         CancellationToken cancellationToken);
 
-    Task<UpdatePlatformConfigurationResult> UpdateAsync(PlatformConfigurationUpdate update, CancellationToken cancellationToken);
 }

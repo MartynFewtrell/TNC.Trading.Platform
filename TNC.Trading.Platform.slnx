@@ -22,6 +22,7 @@
     <Project Path="test/TNC.Trading.Platform.Application/TNC.Trading.Platform.Application.UnitTests/TNC.Trading.Platform.Application.UnitTests.csproj" />
   </Folder>
   <Folder Name="/test/TNC.Trading.Platform.Infrastructure/">
+    <Project Path="test/TNC.Trading.Platform.Infrastructure/TNC.Trading.Platform.Infrastructure.IntegrationTests/TNC.Trading.Platform.Infrastructure.IntegrationTests.csproj" />
     <Project Path="test/TNC.Trading.Platform.Infrastructure/TNC.Trading.Platform.Infrastructure.UnitTests/TNC.Trading.Platform.Infrastructure.UnitTests.csproj" />
   </Folder>
   <Folder Name="/test/TNC.Trading.Platform.Web/">

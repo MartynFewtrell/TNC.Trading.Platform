@@ -12,15 +12,12 @@ public class UpdatePlatformConfigurationValidatorTests
     /// Why: the Test-platform safeguard must prevent unsafe live activation before configuration can be persisted.
     /// </summary>
     [Fact]
-    public void Validate_ShouldThrowPlatformValidationException_WhenPlatformIsTestAndBrokerIsLive()
+    public void Validate_ShouldAcceptBusinessRuleViolation_WhenPlatformIsTestAndBrokerIsLive()
     {
         var validator = new UpdatePlatformConfigurationValidator();
         var request = CreateRequest("Test", "Live", new TimeOnly(8, 0), new TimeOnly(16, 30));
 
-        var exception = Assert.Throws<PlatformValidationException>(() => validator.Validate(request));
-
-        var errors = exception.Errors;
-        Assert.Contains("BrokerEnvironment", errors.Keys);
+        validator.Validate(request);
     }
 
     /// <summary>
@@ -30,15 +27,12 @@ public class UpdatePlatformConfigurationValidatorTests
     /// Why: invalid trading-window values must be blocked before unusable schedule configuration is stored.
     /// </summary>
     [Fact]
-    public void Validate_ShouldThrowPlatformValidationException_WhenTradingWindowIsInvalid()
+    public void Validate_ShouldAcceptBusinessRuleViolation_WhenTradingWindowIsInvalid()
     {
         var validator = new UpdatePlatformConfigurationValidator();
         var request = CreateRequest("Live", "Demo", new TimeOnly(16, 30), new TimeOnly(8, 0));
 
-        var exception = Assert.Throws<PlatformValidationException>(() => validator.Validate(request));
-
-        var errors = exception.Errors;
-        Assert.Contains("TradingSchedule", errors.Keys.Single());
+        validator.Validate(request);
     }
 
     private static UpdatePlatformConfigurationRequest CreateRequest(string platformEnvironment, string brokerEnvironment, TimeOnly startOfDay, TimeOnly endOfDay)

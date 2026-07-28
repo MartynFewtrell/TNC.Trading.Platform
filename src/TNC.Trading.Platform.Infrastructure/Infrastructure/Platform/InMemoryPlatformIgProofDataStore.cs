@@ -1,7 +1,7 @@
 ﻿using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Services;
 
-namespace TNC.Trading.Platform.Infrastructure.Infrastructure.Platform;
+namespace TNC.Trading.Platform.Infrastructure.Platform;
 
 internal sealed class InMemoryPlatformIgProofDataStore : IPlatformIgProofDataStore
 {

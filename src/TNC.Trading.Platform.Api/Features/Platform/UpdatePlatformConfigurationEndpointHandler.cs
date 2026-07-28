@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration;
 using TNC.Trading.Platform.Api.Infrastructure.Platform;
+using ApplicationConfigurationValidationException = TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration.ConfigurationValidationException;
 using AppUpdatePlatformConfiguration = TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration;
 
 namespace TNC.Trading.Platform.Api.Features.Platform;
@@ -22,6 +23,10 @@ internal static class UpdatePlatformConfigurationEndpointHandler
             return TypedResults.Ok(result.ToResponse());
         }
         catch (PlatformValidationException exception)
+        {
+            return TypedResults.ValidationProblem(exception.Errors.ToDictionary(item => item.Key, item => item.Value));
+        }
+        catch (ApplicationConfigurationValidationException exception)
         {
             return TypedResults.ValidationProblem(exception.Errors.ToDictionary(item => item.Key, item => item.Value));
         }

@@ -8,31 +8,21 @@ internal static class PlatformAuthAuditEventResolver
     internal static bool TryResolve(
         RecordAuthAuditEventRequest request,
         ClaimsPrincipal user,
-        out PlatformAuthAuditRecord record)
+        out string userName)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(user);
 
-        var userName = ResolveUserName(user);
+        userName = ResolveUserName(user);
 
-        switch (request.EventType)
+        return request.EventType switch
         {
-            case var eventType when string.Equals(eventType, PlatformAuthenticationDefaults.AuditEvents.SignInCompleted, StringComparison.Ordinal):
-                record = new PlatformAuthAuditRecord($"Operator {userName} completed sign-in.", "Information", userName);
-                return true;
-            case var eventType when string.Equals(eventType, PlatformAuthenticationDefaults.AuditEvents.SignOutCompleted, StringComparison.Ordinal):
-                record = new PlatformAuthAuditRecord($"Operator {userName} completed sign-out.", "Information", userName);
-                return true;
-            case var eventType when string.Equals(eventType, PlatformAuthenticationDefaults.AuditEvents.AccessDenied, StringComparison.Ordinal):
-                record = new PlatformAuthAuditRecord($"Operator {userName} was denied access to {request.Path ?? "a protected platform surface"}.", "Warning", userName);
-                return true;
-            case var eventType when string.Equals(eventType, PlatformAuthenticationDefaults.AuditEvents.TokenAcquisitionFailed, StringComparison.Ordinal):
-                record = new PlatformAuthAuditRecord($"Operator {userName} could not acquire delegated access for {request.Scope ?? "the requested scope set"}.", "Warning", userName);
-                return true;
-            default:
-                record = default!;
-                return false;
-        }
+            PlatformAuthenticationDefaults.AuditEvents.SignInCompleted => true,
+            PlatformAuthenticationDefaults.AuditEvents.SignOutCompleted => true,
+            PlatformAuthenticationDefaults.AuditEvents.AccessDenied => true,
+            PlatformAuthenticationDefaults.AuditEvents.TokenAcquisitionFailed => true,
+            _ => false
+        };
     }
 
     internal static string ResolveUserName(ClaimsPrincipal user)

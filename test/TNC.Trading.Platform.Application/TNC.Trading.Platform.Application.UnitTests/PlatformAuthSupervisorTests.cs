@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging.Abstractions;
 using TNC.Trading.Platform.Application.Services;
 
 namespace TNC.Trading.Platform.Application.UnitTests;

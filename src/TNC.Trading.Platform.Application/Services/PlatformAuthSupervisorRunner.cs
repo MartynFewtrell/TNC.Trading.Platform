@@ -1,5 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using TNC.Trading.Platform.Application.Features.ReconcilePlatformAuthentication;
 
 namespace TNC.Trading.Platform.Application.Services;
 
@@ -9,16 +8,15 @@ internal interface IPlatformAuthSupervisorTickRunner
 }
 
 internal sealed class PlatformAuthSupervisorTickRunner(
-    IServiceScopeFactory serviceScopeFactory,
-    ILogger<PlatformAuthSupervisorTickRunner> logger) : IPlatformAuthSupervisorTickRunner
+    Func<ReconcilePlatformAuthenticationHandler> handlerFactory,
+    IPlatformApplicationLogger logger) : IPlatformAuthSupervisorTickRunner
 {
     public async Task RunSingleTickAsync(CancellationToken cancellationToken)
     {
         try
         {
-            using var scope = serviceScopeFactory.CreateScope();
-            var coordinator = scope.ServiceProvider.GetRequiredService<PlatformStateCoordinator>();
-            await coordinator.TickAsync(cancellationToken).ConfigureAwait(false);
+            var handler = handlerFactory();
+            await handler.HandleAsync(new ReconcilePlatformAuthenticationRequest(), cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

@@ -16,6 +16,7 @@ using AppGetIgLoginHistory = TNC.Trading.Platform.Application.Features.GetIgLogi
 using AppGetPlatformConfiguration = TNC.Trading.Platform.Application.Features.GetPlatformConfiguration;
 using AppGetPlatformEvents = TNC.Trading.Platform.Application.Features.GetPlatformEvents;
 using AppGetPlatformStatus = TNC.Trading.Platform.Application.Features.GetPlatformStatus;
+using AppRecordAuthAuditEvent = TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent;
 using AppTriggerManualAuthRetry = TNC.Trading.Platform.Application.Features.TriggerManualAuthRetry;
 using AppUpdatePlatformConfiguration = TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration;
 
@@ -108,17 +109,13 @@ internal static class PlatformEndpoints
         RecordAuthAuditEventRequest request,
         ClaimsPrincipal user,
         HttpContext httpContext,
-        PlatformConfigurationService configurationService,
-        IPlatformEventStore eventStore,
-        TimeProvider timeProvider,
+        AppRecordAuthAuditEvent.RecordAuthAuditEventHandler handler,
         CancellationToken cancellationToken)
         => await RecordAuthAuditEventEndpointHandler.HandleAsync(
             request,
             user,
             httpContext,
-            configurationService,
-            eventStore,
-            timeProvider,
+            handler,
             cancellationToken);
 
     private static IResult GetAuthAdministration(IOptions<PlatformAuthenticationOptions> authenticationOptions)

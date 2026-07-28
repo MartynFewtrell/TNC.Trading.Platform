@@ -28,13 +28,16 @@ internal static class AppHostProjectRegistration
 
     internal static IResourceBuilder<ProjectResource> AddWebProject(
         IDistributedApplicationBuilder builder,
-        IResourceBuilder<ProjectResource> apiProject)
+        IResourceBuilder<ProjectResource> apiProject,
+        AppHostInfrastructure infrastructure)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(apiProject);
+        ArgumentNullException.ThrowIfNull(infrastructure);
 
         return builder.AddProject<Projects.TNC_Trading_Platform_Web>("web")
             .WithReference(apiProject)
+            .WithReference(infrastructure.PlatformDatabase)
             .WaitFor(apiProject)
             .WithExternalHttpEndpoints()
             .WithUrlForEndpoint("https", _ => new()

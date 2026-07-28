@@ -6,6 +6,68 @@ namespace TNC.Trading.Platform.Application.UnitTests;
 public class TradingScheduleGateTests
 {
     /// <summary>
+    /// Trace: Clean Architecture Migration Phase 3, Step 3.2 trading-schedule policy.
+    /// Verifies: the Application-owned schedule policy blocks a Live broker target when the platform runs in Test.
+    /// Expected: the decision is BlockedLive before any provider, persistence, host, or transport mechanism is invoked.
+    /// Why: the safety boundary must be directly enforceable by every in-process caller and cannot depend on Infrastructure.
+    /// </summary>
+    [Fact]
+    public void DecideTickAction_ShouldReturnBlockedLive_WhenTestPlatformTargetsLiveBroker()
+    {
+        var gate = new TradingScheduleGate();
+        var scheduleStatus = new TradingScheduleStatus(true, "Trading schedule is active.");
+
+        var decision = gate.DecideTickAction(
+            PlatformEnvironmentKind.Test,
+            BrokerEnvironmentKind.Live,
+            scheduleStatus);
+
+        Assert.Equal(TradingScheduleTickAction.BlockedLive, decision.Action);
+        Assert.Null(decision.Reason);
+    }
+
+    /// <summary>
+    /// Trace: Clean Architecture Migration Phase 3, Step 3.2 trading-schedule policy.
+    /// Verifies: an inactive schedule takes precedence over the environment safety classification.
+    /// Expected: the policy preserves the inactive reason so reconciliation can transition out of schedule.
+    /// Why: rule precedence must remain stable while schedule ownership moves inward.
+    /// </summary>
+    [Fact]
+    public void DecideTickAction_ShouldReturnBlockedBySchedule_WhenScheduleIsInactive()
+    {
+        var gate = new TradingScheduleGate();
+        const string reason = "Trading schedule is inactive for the current day.";
+
+        var decision = gate.DecideTickAction(
+            PlatformEnvironmentKind.Test,
+            BrokerEnvironmentKind.Live,
+            new TradingScheduleStatus(false, reason));
+
+        Assert.Equal(TradingScheduleTickAction.BlockedBySchedule, decision.Action);
+        Assert.Equal(reason, decision.Reason);
+    }
+
+    /// <summary>
+    /// Trace: Clean Architecture Migration Phase 3, Step 3.2 trading-schedule policy.
+    /// Verifies: an active schedule permits combinations other than Test platform with Live broker.
+    /// Expected: the policy returns Allowed without an explanatory failure reason.
+    /// Why: moving the safety decision must not suppress valid Demo operation.
+    /// </summary>
+    [Fact]
+    public void DecideTickAction_ShouldReturnAllowed_WhenActiveScheduleTargetsDemoBroker()
+    {
+        var gate = new TradingScheduleGate();
+
+        var decision = gate.DecideTickAction(
+            PlatformEnvironmentKind.Test,
+            BrokerEnvironmentKind.Demo,
+            new TradingScheduleStatus(true, "Trading schedule is active."));
+
+        Assert.Equal(TradingScheduleTickAction.Allowed, decision.Action);
+        Assert.Null(decision.Reason);
+    }
+
+    /// <summary>
     /// Trace: FR21, FR22, TR13.
     /// Verifies: schedule evaluation reports an active trading window when the current time falls inside the configured weekday session.
     /// Expected: the gate returns an active result with the active trading-schedule reason.

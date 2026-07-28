@@ -1,8 +1,12 @@
 ﻿using Microsoft.Extensions.Configuration;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Infrastructure.Notifications;
-using TNC.Trading.Platform.Infrastructure.Persistence;
+using TNC.Trading.Platform.Infrastructure.Notifications.AzureCommunicationServices;
+using TNC.Trading.Platform.Infrastructure.Notifications.Recorded;
+using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
+using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 using TNC.Trading.Platform.Infrastructure.Platform;
+using TNC.Trading.Platform.Infrastructure.Notifications.Smtp;
 
 namespace TNC.Trading.Platform.Infrastructure.UnitTests;
 
@@ -319,6 +323,74 @@ public class NotificationProviderTests
         Assert.DoesNotContain("provider-secret", notificationEvent.DetailsJson, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Trace: Phase 10.3 notification delivery.
+    /// Verifies: a handled provider failure is persisted as one failed attempt and a later retry invokes the provider again and persists its successful result.
+    /// Expected: two notification records exist in call order, with Failed followed by Sent, and the provider is called twice.
+    /// Why: notification I/O is outside the SQL consistency unit, so recovery depends on a subsequent supervised attempt rather than an in-transaction outbox.
+    /// </summary>
+    [Fact]
+    public async Task DispatchFailureAsync_ShouldPersistFailureAndRetryAttempt_WhenProviderFailsThenSucceeds()
+    {
+        using var dbContext = InfrastructureReflection.CreateDbContext();
+        var provider = new RetryingNotificationProvider("RetryingProvider", failuresBeforeSuccess: 1);
+        var dispatcher = CreateNotificationDispatcher(dbContext, provider);
+        var configuration = CreateConfigurationSnapshot("Live", "Demo", "RetryingProvider", "owner@example.com");
+
+        await dispatcher.DispatchFailureAsync(
+            configuration,
+            "Notification summary",
+            "retry-correlation",
+            Guid.NewGuid(),
+            CancellationToken.None);
+        await dispatcher.DispatchFailureAsync(
+            configuration,
+            "Notification summary",
+            "retry-correlation",
+            Guid.NewGuid(),
+            CancellationToken.None);
+
+        var records = GetNotificationRecords(dbContext).OrderBy(item => item.NotificationRecordId).ToArray();
+
+        Assert.Collection(
+            records,
+            first => Assert.Equal("Failed", first.DispatchStatus),
+            second => Assert.Equal("Sent", second.DispatchStatus));
+        Assert.Equal(2, provider.DispatchCount);
+    }
+
+    /// <summary>
+    /// Trace: Phase 10.3 notification delivery.
+    /// Verifies: repeated dispatches with the same notification type, correlation, and retry identity are recorded as separate attempts.
+    /// Expected: both provider calls and both notification records remain visible.
+    /// Why: the selected guarantee is best-effort at-least-once delivery; durable cross-process duplicate suppression is not promised without an outbox or idempotency key.
+    /// </summary>
+    [Fact]
+    public async Task DispatchFailureAsync_ShouldRecordSeparateAttempts_WhenSameNotificationIdentityIsRetried()
+    {
+        using var dbContext = InfrastructureReflection.CreateDbContext();
+        var provider = new RetryingNotificationProvider("RetryingProvider", failuresBeforeSuccess: 0);
+        var dispatcher = CreateNotificationDispatcher(dbContext, provider);
+        var configuration = CreateConfigurationSnapshot("Live", "Demo", "RetryingProvider", "owner@example.com");
+        var retryCycleId = Guid.NewGuid();
+
+        await dispatcher.DispatchFailureAsync(
+            configuration,
+            "Notification summary",
+            "same-correlation",
+            retryCycleId,
+            CancellationToken.None);
+        await dispatcher.DispatchFailureAsync(
+            configuration,
+            "Notification summary",
+            "same-correlation",
+            retryCycleId,
+            CancellationToken.None);
+
+        Assert.Equal(2, GetNotificationRecords(dbContext).Length);
+        Assert.Equal(2, provider.DispatchCount);
+    }
+
     private static NotificationDispatcher CreateNotificationDispatcher(PlatformDbContext dbContext, params INotificationProvider[] providers)
     {
         var resolvedProviders = providers.Length == 0
@@ -389,6 +461,24 @@ public class NotificationProviderTests
         public Task<NotificationDispatchResult> DispatchAsync(NotificationMessage message, CancellationToken cancellationToken)
         {
             throw exception;
+        }
+    }
+
+    private sealed class RetryingNotificationProvider(string name, int failuresBeforeSuccess) : INotificationProvider
+    {
+        public string Name { get; } = name;
+
+        public int DispatchCount { get; private set; }
+
+        public Task<NotificationDispatchResult> DispatchAsync(NotificationMessage message, CancellationToken cancellationToken)
+        {
+            DispatchCount++;
+            if (DispatchCount <= failuresBeforeSuccess)
+            {
+                throw new InvalidOperationException("Transient notification provider failure.");
+            }
+
+            return Task.FromResult(new NotificationDispatchResult("Sent", message.Summary, Name));
         }
     }
 }

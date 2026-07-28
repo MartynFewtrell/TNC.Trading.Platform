@@ -1,6 +1,9 @@
 using System;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -17,6 +20,8 @@ namespace Microsoft.Extensions.Hosting;
 // To learn more about using this project, see https://aka.ms/dotnet/aspire/service-defaults
 public static class Extensions
 {
+    private const string DataProtectionApplicationName = "TNC.Trading.Platform";
+    private const int DefaultDataProtectionKeyLifetimeDays = 90;
     private const string DefaultReadinessEndpointPath = "/health/ready";
     private const string DefaultLivenessEndpointPath = "/health/live";
 
@@ -48,6 +53,37 @@ public static class Extensions
         // {
         //     options.AllowedSchemes = ["https"];
         // });
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Configures the shared SQL-backed Data Protection key ring used by platform hosts.
+    /// </summary>
+    /// <typeparam name="TBuilder">The host builder type.</typeparam>
+    /// <param name="builder">The host builder instance.</param>
+    /// <returns>The original builder for fluent chaining.</returns>
+    public static TBuilder AddPlatformDataProtection<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
+    {
+        var connectionString = builder.Configuration.GetConnectionString("platformdb");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException(
+                "The 'platformdb' connection string is required for the shared Data Protection key ring.");
+        }
+
+        var keyLifetimeDays = builder.Configuration.GetValue<int?>("DataProtection:KeyLifetimeDays")
+            ?? DefaultDataProtectionKeyLifetimeDays;
+        if (keyLifetimeDays <= 0)
+        {
+            throw new InvalidOperationException("DataProtection:KeyLifetimeDays must be greater than zero.");
+        }
+
+        builder.Services.AddDbContext<PlatformDataProtectionKeyContext>(options => options.UseSqlServer(connectionString));
+        builder.Services.AddDataProtection()
+            .SetApplicationName(DataProtectionApplicationName)
+            .SetDefaultKeyLifetime(TimeSpan.FromDays(keyLifetimeDays))
+            .PersistKeysToDbContext<PlatformDataProtectionKeyContext>();
 
         return builder;
     }
@@ -149,7 +185,8 @@ public static class Extensions
             })
             .WithName("HealthReadiness")
             .WithSummary("Readiness health check")
-            .WithDescription("Returns 200 when the service is ready to serve traffic, otherwise 503.");
+            .WithDescription("Returns 200 when the service is ready to serve traffic, otherwise 503.")
+            .AllowAnonymous();
 
         app.MapGet(livenessEndpointPath, async (HealthCheckService healthCheckService, CancellationToken cancellationToken) =>
             {
@@ -161,7 +198,8 @@ public static class Extensions
             })
             .WithName("HealthLiveness")
             .WithSummary("Liveness health check")
-            .WithDescription("Returns 200 when the service process is alive, otherwise 503.");
+            .WithDescription("Returns 200 when the service process is alive, otherwise 503.")
+            .AllowAnonymous();
 
         return app;
     }

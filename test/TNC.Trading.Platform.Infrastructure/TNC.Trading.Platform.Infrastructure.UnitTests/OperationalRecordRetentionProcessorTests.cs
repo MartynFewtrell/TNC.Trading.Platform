@@ -1,7 +1,8 @@
 ﻿using Microsoft.Extensions.Configuration;
 using TNC.Trading.Platform.Application.Configuration;
-using TNC.Trading.Platform.Infrastructure.Persistence;
-using TNC.Trading.Platform.Infrastructure.Platform;
+using TNC.Trading.Platform.Infrastructure.Operations.Retention;
+using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
+using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 
 namespace TNC.Trading.Platform.Infrastructure.UnitTests;
 
@@ -20,12 +21,16 @@ public class OperationalRecordRetentionProcessorTests
         await using var dbContext = InfrastructureReflection.CreateDbContext();
 
         dbContext.Add(CreateOperationalEvent(now.AddDays(-91), "expired-auth-event"));
+        dbContext.Add(CreateOperationalEvent(now.AddDays(-90), "cutoff-auth-event"));
         dbContext.Add(CreateOperationalEvent(now.AddDays(-5), "recent-auth-event"));
         dbContext.Add(CreateConfigurationAudit(now.AddDays(-91), "expired-audit"));
+        dbContext.Add(CreateConfigurationAudit(now.AddDays(-90), "cutoff-audit"));
         dbContext.Add(CreateConfigurationAudit(now.AddDays(-5), "recent-audit"));
         dbContext.Add(CreateNotificationRecord(now.AddDays(-91), "expired-notification"));
+        dbContext.Add(CreateNotificationRecord(now.AddDays(-90), "cutoff-notification"));
         dbContext.Add(CreateNotificationRecord(now.AddDays(-5), "recent-notification"));
         dbContext.Add(CreateIgLoginSnapshot(now.AddDays(-91), IgLoginSnapshotKind.RetainedDailyFirstSuccessful, "expired-login-snapshot"));
+        dbContext.Add(CreateIgLoginSnapshot(now.AddDays(-90), IgLoginSnapshotKind.RetainedDailyFirstSuccessful, "cutoff-login-snapshot"));
         dbContext.Add(CreateIgLoginSnapshot(now.AddDays(-5), IgLoginSnapshotKind.RetainedDailyFirstSuccessful, "recent-login-snapshot"));
         dbContext.Add(CreateIgLoginSnapshot(now.AddDays(-120), IgLoginSnapshotKind.Latest, "latest-login-snapshot"));
         await dbContext.SaveChangesAsync();
@@ -46,10 +51,10 @@ public class OperationalRecordRetentionProcessorTests
         var deletedCount = await processor.ApplyAsync(CancellationToken.None);
 
         Assert.Equal(4, deletedCount);
-        Assert.Equal(1, dbContext.OperationalEvents.Count());
-        Assert.Equal(1, dbContext.ConfigurationAudits.Count());
-        Assert.Equal(1, dbContext.NotificationRecords.Count());
-        Assert.Equal(2, dbContext.IgLoginSnapshots.Count());
+        Assert.Equal(2, dbContext.OperationalEvents.Count());
+        Assert.Equal(2, dbContext.ConfigurationAudits.Count());
+        Assert.Equal(2, dbContext.NotificationRecords.Count());
+        Assert.Equal(3, dbContext.IgLoginSnapshots.Count());
     }
 
     private static IgLoginSnapshotEntity CreateIgLoginSnapshot(DateTimeOffset capturedAtUtc, IgLoginSnapshotKind snapshotKind, string currentAccountId)

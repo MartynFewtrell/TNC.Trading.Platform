@@ -1,15 +1,19 @@
-using TNC.Trading.Platform.Application.Services;
+using TNC.Trading.Platform.Application.Features.ReconcilePlatformAuthentication;
 
 namespace TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration;
 
 internal sealed class UpdatePlatformConfigurationHandler(
-    PlatformConfigurationService configurationService,
-    PlatformStateCoordinator coordinator)
+    IUpdatePlatformConfigurationCommitter committer,
+    ReconcilePlatformAuthenticationHandler reconcileHandler,
+    UpdatePlatformConfigurationValidator validator)
 {
     public async Task<UpdatePlatformConfigurationResponse> HandleAsync(UpdatePlatformConfigurationRequest request, CancellationToken cancellationToken)
     {
-        var result = await configurationService.UpdateAsync(request.Update, cancellationToken).ConfigureAwait(false);
-        await coordinator.TickAsync(cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(request);
+        validator.Validate(request.Update);
+
+        var result = await committer.CommitAsync(request.Update, cancellationToken).ConfigureAwait(false);
+        await reconcileHandler.HandleAsync(new ReconcilePlatformAuthenticationRequest(), cancellationToken).ConfigureAwait(false);
         return new UpdatePlatformConfigurationResponse(result);
     }
 }

@@ -1,6 +1,7 @@
 ﻿using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
+using TNC.Trading.Platform.TestShared.Authentication;
 
 namespace TNC.Trading.Platform.Api.IntegrationTests.Authentication;
 
@@ -21,33 +22,28 @@ internal static class RealKeycloakAccessTokenFactory
 
     public static async Task WaitForTokenEndpointReadinessAsync(string userName, string? scope = null, CancellationToken cancellationToken = default)
     {
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(90));
-
-        while (!timeoutCts.IsCancellationRequested)
-        {
-            try
+        using var tokenResponse = await KeycloakReadinessPolicy.SendWithRetryAsync(
+            TokenEndpoint,
+            TimeSpan.FromSeconds(90),
+            async token =>
             {
-                var payload = await RequestTokenAsync(userName, scope, timeoutCts.Token);
-                if (!string.IsNullOrWhiteSpace(payload?.AccessToken))
+                using var tokenClient = new HttpClient();
+                using var tokenRequest = new HttpRequestMessage(HttpMethod.Post, TokenEndpoint)
                 {
-                    return;
-                }
-            }
-            catch (HttpRequestException) when (!timeoutCts.IsCancellationRequested)
-            {
-            }
-            catch (TaskCanceledException) when (!timeoutCts.IsCancellationRequested)
-            {
-            }
-            catch (InvalidOperationException) when (!timeoutCts.IsCancellationRequested)
-            {
-            }
+                    Content = new FormUrlEncodedContent(CreateTokenForm(userName, scope))
+                };
 
-            await Task.Delay(TimeSpan.FromMilliseconds(500), timeoutCts.Token);
+                return await tokenClient.SendAsync(tokenRequest, token).ConfigureAwait(false);
+            },
+            static (delay, token) => Task.Delay(TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds, 500)), token),
+            cancellationToken).ConfigureAwait(false);
+
+        var payload = await tokenResponse.Content.ReadFromJsonAsync<KeycloakTokenResponse>(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The Keycloak token response was empty.");
+        if (string.IsNullOrWhiteSpace(payload.AccessToken))
+        {
+            throw new InvalidOperationException("The Keycloak token response did not contain an access token.");
         }
-
-        throw new TimeoutException("The Keycloak token endpoint did not become ready within the expected time for the authentication integration tests.");
     }
 
     private static async Task<KeycloakTokenResponse> RequestTokenAsync(string userName, string? scope, CancellationToken cancellationToken = default)

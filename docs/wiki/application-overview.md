@@ -1,4 +1,6 @@
-﻿# Application overview
+﻿Application exposes framework-neutral use cases and ports. Dependency injection registration is owned by the API composition root, so Application receives explicit values and dependencies without depending on ASP.NET Core hosting, configuration, logging, or DI types. Web continues to reference Application only for the shared authentication contract surface; this is a deliberate transitional contract until that surface is relocated or removed.
+
+# Application overview
 
 This document explains the implemented application at a high level so a developer or reviewer can quickly understand its current purpose, boundaries, and major moving parts.
 
@@ -25,7 +27,7 @@ The implemented application is focused on:
 - Blazor Server operator UI through `src/TNC.Trading.Platform.Web`
 - Minimal API backend through `src/TNC.Trading.Platform.Api`
 - shared observability and health defaults through `src/TNC.Trading.Platform.ServiceDefaults`
-- application services for platform configuration, schedule gating, runtime state, and auth supervision
+- application feature handlers for platform configuration, schedule gating, runtime state, explicit authentication reconciliation, and auth supervision
 - SQL Server persistence when a `platformdb` connection string is available
 - in-memory persistence fallback when no SQL connection string is available
 - protected credential storage using ASP.NET Core Data Protection
@@ -63,7 +65,7 @@ The proof data includes the preferred account name, account ID, balance, open-po
 | `src/TNC.Trading.Platform.AppHost` | Aspire composition root for local development. Starts the API and Blazor UI, and optionally SQL Server, Mailpit, and Keycloak. |
 | `src/TNC.Trading.Platform.Api` | HTTP service that exposes protected platform status, configuration, event history, manual retry, and admin auth endpoints plus public metadata and health endpoints. |
 | `src/TNC.Trading.Platform.Web` | Blazor Server operator UI with a public landing page, protected operator routes, and authentication lifecycle endpoints. |
-| `src/TNC.Trading.Platform.Application` | Application-level models, feature handlers, runtime coordination, retry policy logic, and schedule evaluation. |
+| `src/TNC.Trading.Platform.Application` | Application-level models, framework-neutral authentication vocabulary, feature handlers, explicit reconciliation and retry workflows, retry policy logic, and schedule evaluation. |
 | `src/TNC.Trading.Platform.Infrastructure` | Persistence, credential protection, notification providers, retention processing, and configuration storage. |
 | `src/TNC.Trading.Platform.ServiceDefaults` | Shared health, service discovery, resilience, and OpenTelemetry defaults. |
 | `test/*` | Unit, integration, functional, and end-to-end test suites. |
@@ -122,7 +124,7 @@ The current implementation defines three named platform roles:
 - `Operator`
 - `Administrator`
 
-The public landing page is anonymous. The `/status`, `/configuration`, and `/administration/authentication` surfaces then layer progressively stricter role and scope checks on top of the signed-in operator session.
+The public landing page is anonymous. The `/status`, `/configuration`, and `/administration/authentication` surfaces then layer progressively stricter role and scope checks on top of the signed-in operator session. ASP.NET Core policy and options registration remains host-local in API and Web; Application supplies only the shared role, scope, claim, provider, and audit vocabulary needed by those hosts.
 
 ### Auth state
 

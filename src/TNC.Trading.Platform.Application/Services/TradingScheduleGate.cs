@@ -4,6 +4,27 @@ namespace TNC.Trading.Platform.Application.Services;
 
 internal sealed class TradingScheduleGate
 {
+    public TradingScheduleTickDecision DecideTickAction(
+        PlatformEnvironmentKind platformEnvironment,
+        BrokerEnvironmentKind brokerEnvironment,
+        TradingScheduleStatus scheduleStatus)
+    {
+        if (!scheduleStatus.IsActive)
+        {
+            return TradingScheduleTickDecision.BlockedBySchedule(scheduleStatus.Reason);
+        }
+
+        return IsLiveTargetBlocked(platformEnvironment, brokerEnvironment)
+                ? TradingScheduleTickDecision.BlockedLive()
+                : TradingScheduleTickDecision.Allowed();
+    }
+
+    public static bool IsLiveTargetBlocked(
+        PlatformEnvironmentKind platformEnvironment,
+        BrokerEnvironmentKind brokerEnvironment) =>
+        platformEnvironment == PlatformEnvironmentKind.Test
+        && brokerEnvironment == BrokerEnvironmentKind.Live;
+
     public TradingScheduleStatus Evaluate(TradingScheduleConfiguration tradingSchedule, DateTimeOffset utcNow)
     {
         var timeZone = ResolveTimeZone(tradingSchedule.TimeZone);

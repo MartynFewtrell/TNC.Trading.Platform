@@ -44,6 +44,10 @@ internal static class RealAppHostProcessFactory
 
     public static async Task<AppHostProcessHandle> StartManagedAppHostProcessAsync(bool enableInteractiveSignIn = false)
     {
+        var startupDeadline = TimeSpan.FromSeconds(90);
+        var startupStopwatch = Stopwatch.StartNew();
+        using var startupCancellationTokenSource = new CancellationTokenSource(startupDeadline);
+        var startupToken = startupCancellationTokenSource.Token;
         var existingPlatformProcessIds = AppHostProcessHandle.CapturePlatformProcessIds();
         var existingListeningPorts = AppHostProcessHandle.CaptureListeningPorts();
         var environmentOverrides = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -59,13 +63,19 @@ internal static class RealAppHostProcessFactory
             .Cast<IDisposable>()
             .ToArray();
 
+        IDistributedApplicationTestingBuilder? applicationBuilder = null;
+        DistributedApplication? application = null;
         try
         {
-            var applicationBuilder = await DistributedApplicationTestingBuilder
-                .CreateAsync<Projects.TNC_Trading_Platform_AppHost>(["DcpPublisher:RandomizePorts=false"])
+            applicationBuilder = await DistributedApplicationTestingBuilder
+                .CreateAsync<Projects.TNC_Trading_Platform_AppHost>([
+                    "DcpPublisher:RandomizePorts=false"
+                ], startupToken)
                 .ConfigureAwait(false);
-            var application = await applicationBuilder.BuildAsync().ConfigureAwait(false);
-            await application.StartAsync().ConfigureAwait(false);
+            application = await applicationBuilder.BuildAsync().ConfigureAwait(false);
+            await application.StartAsync(startupToken).ConfigureAwait(false);
+            await application.ResourceNotifications.WaitForResourceHealthyAsync("keycloak", startupToken).ConfigureAwait(false);
+            var webBaseUri = application.GetEndpoint("web", "https");
 
             return new AppHostProcessHandle(
                 process: null,
@@ -76,13 +86,32 @@ internal static class RealAppHostProcessFactory
                 application: application,
                 applicationBuilder: applicationBuilder,
                 environmentScopes: environmentScopes,
-                preferredWebBaseUri: null);
+                preferredWebBaseUri: webBaseUri);
         }
-        catch
+        catch (Exception initializationException)
         {
+            List<Exception>? cleanupExceptions = null;
+            if (application is not null)
+            {
+                try { await application.DisposeAsync().ConfigureAwait(false); }
+                catch (Exception exception) { (cleanupExceptions ??= []).Add(exception); }
+            }
+
+            if (applicationBuilder is not null)
+            {
+                try { await applicationBuilder.DisposeAsync().ConfigureAwait(false); }
+                catch (Exception exception) { (cleanupExceptions ??= []).Add(exception); }
+            }
+
             for (var index = environmentScopes.Length - 1; index >= 0; index--)
             {
-                environmentScopes[index].Dispose();
+                try { environmentScopes[index].Dispose(); }
+                catch (Exception exception) { (cleanupExceptions ??= []).Add(exception); }
+            }
+
+            if (cleanupExceptions is { Count: > 0 })
+            {
+                initializationException.Data["CleanupExceptions"] = cleanupExceptions;
             }
 
             throw;

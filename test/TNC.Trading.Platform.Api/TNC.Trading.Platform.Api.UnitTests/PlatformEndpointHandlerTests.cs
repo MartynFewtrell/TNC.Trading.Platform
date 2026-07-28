@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using TNC.Trading.Platform.Api.Features.Platform;
+using TNC.Trading.Platform.Api.Features.TriggerManualAuthRetry;
 using TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration;
 using TNC.Trading.Platform.Application.Authentication;
 using AppTriggerManualAuthRetry = TNC.Trading.Platform.Application.Features.TriggerManualAuthRetry;
@@ -9,10 +10,47 @@ namespace TNC.Trading.Platform.Api.UnitTests;
 
 public class PlatformEndpointHandlerTests
 {
+    /// <summary>
+    /// Verifies the manual-retry transport contract for an accepted application outcome.
+    /// Expected: the endpoint returns HTTP 202 with the retry cycle identifier.
+    /// Why: clients use this stable response to begin their status refresh flow without depending on coordinator internals.
+    /// </summary>
+    [Fact]
+    public async Task TriggerManualAuthRetryHandleAsync_ShouldReturnAccepted_WhenManualRetryIsAccepted()
+    {
+        var retryCycleId = Guid.NewGuid();
+
+        var result = await TriggerManualAuthRetryEndpointHandler.HandleAsync(
+            _ => Task.FromResult(new AppTriggerManualAuthRetry.TriggerManualAuthRetryResponse(
+                AppTriggerManualAuthRetry.TriggerManualAuthRetryOutcome.Accepted(retryCycleId))),
+            CancellationToken.None);
+
+        var accepted = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.Accepted<TriggerManualAuthRetryResponse>>(result.Result);
+        Assert.Equal(retryCycleId, accepted.Value.RetryCycleId);
+    }
+
+    /// <summary>
+    /// Verifies the manual-retry transport contract for an expected rejection.
+    /// Expected: the endpoint maps the rejection to HTTP 409 with the conflict error.
+    /// Why: the UI and API clients need a stable conflict response for unavailable retry operations.
+    /// </summary>
+    [Fact]
+    public async Task TriggerManualAuthRetryHandleAsync_ShouldReturnConflictProblemDetails_WhenManualRetryIsRejected()
+    {
+        var result = await TriggerManualAuthRetryEndpointHandler.HandleAsync(
+            _ => Task.FromResult(new AppTriggerManualAuthRetry.TriggerManualAuthRetryResponse(
+                AppTriggerManualAuthRetry.TriggerManualAuthRetryOutcome.Rejected(
+                    AppTriggerManualAuthRetry.ManualAuthRetryRejectionReason.RetryLimitNotReached))),
+            CancellationToken.None);
+
+        var conflict = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.Conflict<ManualAuthRetryConflictResponse>>(result.Result);
+        Assert.Equal("Manual retry becomes available only after the initial automatic retries are exhausted.", conflict.Value.Error);
+    }
+
     [Fact]
     public async Task UpdatePlatformConfigurationHandleAsync_ShouldReturnValidationProblem_WhenRequestIsInvalid()
     {
-        var request = CreateUpdateRequest("Test", "Live");
+        var request = CreateUpdateRequest("invalid", "Demo");
         var validator = new UpdatePlatformConfigurationValidator();
 
         var result = await UpdatePlatformConfigurationEndpointHandler.HandleAsync(
@@ -22,18 +60,22 @@ public class PlatformEndpointHandlerTests
             CancellationToken.None);
 
         var validationProblem = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.ValidationProblem>(result.Result);
-        Assert.Contains("BrokerEnvironment", validationProblem.ProblemDetails.Errors.Keys);
+        Assert.Contains(nameof(request.PlatformEnvironment), validationProblem.ProblemDetails.Errors.Keys);
+        Assert.Equal(400, validationProblem.StatusCode);
+        Assert.Equal("One or more validation errors occurred.", validationProblem.ProblemDetails.Title);
     }
 
     [Fact]
     public async Task TriggerManualAuthRetryHandleAsync_ShouldReturnConflict_WhenManualRetryIsUnavailable()
     {
         var result = await TriggerManualAuthRetryEndpointHandler.HandleAsync(
-            _ => throw new InvalidOperationException("Retry is not available."),
+            _ => Task.FromResult(new AppTriggerManualAuthRetry.TriggerManualAuthRetryResponse(
+                AppTriggerManualAuthRetry.TriggerManualAuthRetryOutcome.Rejected(
+                    AppTriggerManualAuthRetry.ManualAuthRetryRejectionReason.RetryLimitNotReached))),
             CancellationToken.None);
 
         var conflict = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.Conflict<ManualAuthRetryConflictResponse>>(result.Result);
-        Assert.Equal("Retry is not available.", conflict.Value.Error);
+        Assert.Equal("Manual retry becomes available only after the initial automatic retries are exhausted.", conflict.Value.Error);
     }
 
     [Fact]
@@ -47,9 +89,7 @@ public class PlatformEndpointHandlerTests
             request,
             user,
             httpContext,
-            configurationService: null!,
-            eventStore: null!,
-            TimeProvider.System,
+            handler: null!,
             CancellationToken.None);
 
         var validationProblem = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.ValidationProblem>(result.Result);
