@@ -8,6 +8,23 @@ internal static class GetPlatformStatusMapping
     {
         var status = response.Status;
 
+        if (status is null)
+        {
+            return new GetPlatformStatusResponse(
+                null,
+                null,
+                false,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "Missing",
+                response.LastReconciledAtUtc);
+        }
+
         return new GetPlatformStatusResponse(
             status.PlatformEnvironment.ToString(),
             status.BrokerEnvironment.ToString(),
@@ -67,6 +84,8 @@ internal static class GetPlatformStatusMapping
                         status.IgLoginStatus.LatestProofData.PreferredAccountId,
                         status.IgLoginStatus.LatestProofData.Balance,
                         status.IgLoginStatus.LatestProofData.OpenPositionCount,
-                        status.IgLoginStatus.LatestProofData.RetrievedAtUtc)));
+                        status.IgLoginStatus.LatestProofData.RetrievedAtUtc)),
+            "Available",
+            response.LastReconciledAtUtc);
     }
 }

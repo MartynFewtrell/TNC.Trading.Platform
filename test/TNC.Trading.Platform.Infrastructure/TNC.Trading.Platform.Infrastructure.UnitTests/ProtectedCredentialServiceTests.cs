@@ -1,10 +1,42 @@
 ﻿using TNC.Trading.Platform.Application.Configuration;
-using TNC.Trading.Platform.Infrastructure.Platform;
+using TNC.Trading.Platform.Infrastructure.Credentials.DataProtection;
+using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 
 namespace TNC.Trading.Platform.Infrastructure.UnitTests;
 
 public class ProtectedCredentialServiceTests
 {
+    /// <summary>
+    /// Trace: Phase 10.1 shared key-ring transition and invalid stored credential behavior.
+    /// Verifies: ciphertext whose Data Protection key is unavailable is treated as unusable credentials.
+    /// Expected: the service returns empty credential values so reconciliation can enter the existing degraded path.
+    /// Why: a legacy process-local key must not crash API startup after the durable key-ring transition.
+    /// </summary>
+    [Fact]
+    public async Task GetCredentialsAsync_ShouldReturnEmptyValues_WhenStoredKeyIsUnavailable()
+    {
+        using var dbContext = InfrastructureReflection.CreateDbContext();
+        dbContext.ProtectedCredentials.Add(new ProtectedCredentialEntity
+        {
+            BrokerEnvironment = BrokerEnvironmentKind.Demo.ToString(),
+            CredentialType = "ApiKey",
+            ProtectedValue = "invalid-key-payload",
+            ProtectionKind = "DataProtection"
+        });
+        await dbContext.SaveChangesAsync();
+
+        var service = new ProtectedCredentialService(
+            dbContext,
+            InfrastructureReflection.CreateDataProtectionProvider(),
+            TimeProvider.System);
+
+        var credentials = await service.GetCredentialsAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
+
+        Assert.Equal(string.Empty, credentials.ApiKey);
+        Assert.Equal(string.Empty, credentials.Identifier);
+        Assert.Equal(string.Empty, credentials.Password);
+    }
+
     /// <summary>
     /// Trace: SR2, SR3, TR3, TR12.
     /// Verifies: saved credentials are protected at rest and scoped to the selected broker environment.

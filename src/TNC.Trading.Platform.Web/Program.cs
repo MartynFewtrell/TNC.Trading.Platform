@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddPlatformDataProtection();
 builder.AddPlatformWebAuthentication();
 builder.AddPlatformWebUi();
 builder.Services.AddRazorComponents()

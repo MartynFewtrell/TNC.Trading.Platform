@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 using TNC.Trading.Platform.Application.Authentication;
 
@@ -20,7 +21,23 @@ internal static class PlatformWebAuthenticationServiceCollectionExtensions
         builder.Services.AddScoped<TestAuthenticationTokenFactory>();
         builder.Services.AddScoped<PlatformTestAuthenticationSignInHandler>();
 
-        builder.Services.AddAuthorization(PlatformAuthorizationPolicyRegistration.AddPlatformRolePolicies);
+        builder.Services.AddAuthorization(options =>
+        {
+            options.AddPolicy(
+                PlatformAuthenticationDefaults.Policies.Viewer,
+                policy => policy.RequireRole(
+                    PlatformAuthenticationDefaults.Roles.Viewer,
+                    PlatformAuthenticationDefaults.Roles.Operator,
+                    PlatformAuthenticationDefaults.Roles.Administrator));
+            options.AddPolicy(
+                PlatformAuthenticationDefaults.Policies.Operator,
+                policy => policy.RequireRole(
+                    PlatformAuthenticationDefaults.Roles.Operator,
+                    PlatformAuthenticationDefaults.Roles.Administrator));
+            options.AddPolicy(
+                PlatformAuthenticationDefaults.Policies.Administrator,
+                policy => policy.RequireRole(PlatformAuthenticationDefaults.Roles.Administrator));
+        });
 
         var authenticationOptions = builder.Configuration
             .GetSection(PlatformAuthenticationDefaults.ConfigurationSectionName)

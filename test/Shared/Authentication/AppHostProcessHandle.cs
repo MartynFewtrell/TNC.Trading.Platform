@@ -117,7 +117,7 @@ internal sealed class AppHostProcessHandle : IAsyncDisposable
             }
         }
 
-        throw new TimeoutException($"The AppHost-started API base URL could not be discovered from runtime listeners before the timeout expired. Discovered listener URIs: {string.Join(", ", discoveredListeningUris.Keys.OrderBy(static value => value, StringComparer.OrdinalIgnoreCase))}. Newly observed local ports: {string.Join(", ", CaptureNewLocalListeningPorts())}.");
+        throw new TimeoutException($"The AppHost-started API base URL could not be discovered from runtime listeners before the timeout expired. Process status: {GetProcessStatus()}. Launch command: {launchCommand}. Environment overrides: {FormatEnvironmentOverrides()}. Discovered listener URIs: {string.Join(", ", discoveredListeningUris.Keys.OrderBy(static value => value, StringComparer.OrdinalIgnoreCase))}. Newly observed local ports: {string.Join(", ", CaptureNewLocalListeningPorts())}. Recent process output:{FormatRecentEntries(recentProcessOutput)}");
     }
 
     public async Task<Uri> WaitForWebSignInUriAsync(TimeSpan timeout)
@@ -173,6 +173,8 @@ internal sealed class AppHostProcessHandle : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        Exception? firstException = null;
+        List<Exception>? cleanupExceptions = null;
         try
         {
             if (process is not null && !process.HasExited)
@@ -181,35 +183,51 @@ internal sealed class AppHostProcessHandle : IAsyncDisposable
                 {
                     process.Kill(entireProcessTree: true);
                 }
-                catch (InvalidOperationException)
+                catch (Exception exception)
                 {
+                    firstException ??= exception;
+                    (cleanupExceptions ??= []).Add(exception);
                 }
 
-                await process.WaitForExitAsync().ConfigureAwait(false);
+                try { await process.WaitForExitAsync().ConfigureAwait(false); }
+                catch (Exception exception) { firstException ??= exception; (cleanupExceptions ??= []).Add(exception); }
             }
 
-            await Task.WhenAll(standardOutputPump, standardErrorPump).ConfigureAwait(false);
+            try { await Task.WhenAll(standardOutputPump, standardErrorPump).ConfigureAwait(false); }
+            catch (Exception exception) { firstException ??= exception; (cleanupExceptions ??= []).Add(exception); }
 
             if (application is not null)
             {
-                await application.DisposeAsync().ConfigureAwait(false);
+                try { await application.DisposeAsync().ConfigureAwait(false); }
+                catch (Exception exception) { firstException ??= exception; (cleanupExceptions ??= []).Add(exception); }
             }
 
             if (applicationBuilder is not null)
             {
-                await applicationBuilder.DisposeAsync().ConfigureAwait(false);
+                try { await applicationBuilder.DisposeAsync().ConfigureAwait(false); }
+                catch (Exception exception) { firstException ??= exception; (cleanupExceptions ??= []).Add(exception); }
             }
 
             for (var index = environmentScopes.Count - 1; index >= 0; index--)
             {
-                environmentScopes[index].Dispose();
+                try { environmentScopes[index].Dispose(); }
+                catch (Exception exception) { firstException ??= exception; (cleanupExceptions ??= []).Add(exception); }
             }
-
-            KillSpawnedPlatformProcesses();
         }
         finally
         {
-            process?.Dispose();
+            try { process?.Dispose(); }
+            catch (Exception exception) { firstException ??= exception; (cleanupExceptions ??= []).Add(exception); }
+        }
+
+        if (firstException is not null)
+        {
+            if (cleanupExceptions is { Count: > 1 })
+            {
+                firstException.Data["CleanupExceptions"] = cleanupExceptions.Skip(1).ToArray();
+            }
+
+            throw firstException;
         }
     }
 
@@ -347,32 +365,6 @@ internal sealed class AppHostProcessHandle : IAsyncDisposable
         return loginMarkupMatched ? absoluteRedirectUri : null;
     }
 
-    private void KillSpawnedPlatformProcesses()
-    {
-        var priorProcesses = existingPlatformProcessIds.ToHashSet();
-        foreach (var candidate in CapturePlatformProcesses())
-        {
-            if (priorProcesses.Contains(candidate.Id))
-            {
-                candidate.Dispose();
-                continue;
-            }
-
-            try
-            {
-                candidate.Kill(entireProcessTree: true);
-                candidate.WaitForExit();
-            }
-            catch (InvalidOperationException)
-            {
-            }
-            finally
-            {
-                candidate.Dispose();
-            }
-        }
-    }
-
     private IEnumerable<int> CaptureNewLocalListeningPorts() =>
         CaptureLocalListeningPorts()
             .Except(existingLocalListeningPorts)
@@ -402,6 +394,18 @@ internal sealed class AppHostProcessHandle : IAsyncDisposable
                 : $"Still running (PID {process.Id}).";
 
         return $"The AppHost-started Web sign-in URL could not be discovered from runtime listeners before the timeout expired. Process status: {processStatus} Launch command: {launchCommand}. Environment overrides: {FormatEnvironmentOverrides()}. Discovered listener URIs: {discoveredUris}. Newly observed local ports: {newlyObservedPorts}. Recent web probe events:{FormatRecentEntries(recentWebProbeEvents)} Recent process output:{FormatRecentEntries(recentProcessOutput)}";
+    }
+
+    private string GetProcessStatus()
+    {
+        if (process is null)
+        {
+            return "Managed by Aspire test host.";
+        }
+
+        return process.HasExited
+            ? $"Exited with code {process.ExitCode}."
+            : $"Still running (PID {process.Id}).";
     }
 
     private string FormatEnvironmentOverrides()

@@ -27,6 +27,7 @@ public sealed class AppHostInfrastructureRegistrationTests
         Assert.Contains("platformdb", resources.Keys);
         Assert.Contains("mailpit", resources.Keys);
         Assert.Contains("keycloak", resources.Keys);
+        Assert.Equal(ContainerLifetime.Persistent, GetContainerLifetime(resources["sql"]));
 
         Assert.Contains(
             infrastructure.Mailpit.Resource.Annotations,

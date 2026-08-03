@@ -1,7 +1,10 @@
 ﻿using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using TNC.Trading.Platform.Application.Configuration;
-using TNC.Trading.Platform.Infrastructure.Persistence;
+using TNC.Trading.Platform.Infrastructure.Configuration.SqlServer;
+using TNC.Trading.Platform.Infrastructure.Credentials.DataProtection;
+using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
+using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 using TNC.Trading.Platform.Infrastructure.Platform;
 
 namespace TNC.Trading.Platform.Infrastructure.UnitTests;
@@ -49,7 +52,6 @@ public class SqlPlatformConfigurationStoreTests
         Assert.Equal(new TimeOnly(9, 0), snapshot.TradingSchedule.StartOfDay);
         Assert.Equal(BrokerEnvironmentKind.Demo, snapshot.BrokerEnvironment);
     }
-
     /// <summary>
     /// Trace: FR3, FR20, TR1.
     /// Verifies: existing durable configuration is preserved even when later bootstrap values differ.
@@ -119,7 +121,7 @@ public class SqlPlatformConfigurationStoreTests
             password: "rotated-password",
             changedBy: "unit-test");
 
-        var result = await store.UpdateAsync(update, CancellationToken.None);
+        var result = await store.CommitAsync(update, CancellationToken.None);
         var audit = Assert.Single(GetConfigurationAudits(dbContext));
         var detailsJson = audit.DetailsJson;
 
@@ -138,6 +140,43 @@ public class SqlPlatformConfigurationStoreTests
 
         using var details = JsonDocument.Parse(detailsJson);
         Assert.Equal("[redacted]", details.RootElement.GetProperty("secretsUpdated").GetString());
+    }
+
+    /// <summary>
+    /// Trace: FR20, OR7.
+    /// Verifies: the SQL adapter persists Application restart classification for runtime-managed configuration changes.
+    /// Expected: an update with unchanged platform and broker environments persists without a restart requirement.
+    /// Why: persistence translation must not turn an immediately applicable setting change into operator restart guidance.
+    /// </summary>
+    [Fact]
+    public async Task UpdateAsync_ShouldPersistNoRestartRequirement_WhenStartupFixedSettingsAreUnchanged()
+    {
+        using var dbContext = InfrastructureReflection.CreateDbContext();
+        var store = CreateConfigurationStore(
+            dbContext,
+            CreateConfiguration(new Dictionary<string, string?>
+            {
+                ["Bootstrap:PlatformEnvironment"] = "Test",
+                ["Bootstrap:BrokerEnvironment"] = "Demo"
+            }));
+
+        _ = await store.GetCurrentAsync(CancellationToken.None);
+
+        var result = await store.CommitAsync(
+            CreateConfigurationUpdate(
+                platformEnvironment: "Test",
+                brokerEnvironment: "Demo",
+                provider: "RecordedOnly",
+                emailTo: "updated-owner@example.com",
+                apiKey: null,
+                identifier: null,
+                password: null,
+                changedBy: "unit-test"),
+            CancellationToken.None);
+
+        var persisted = Assert.Single(dbContext.PlatformConfigurations);
+        Assert.False(result.RestartRequired);
+        Assert.False(persisted.RestartRequired);
     }
 
     /// <summary>
@@ -161,7 +200,7 @@ public class SqlPlatformConfigurationStoreTests
 
         _ = await store.GetCurrentAsync(CancellationToken.None);
 
-        _ = await store.UpdateAsync(
+        _ = await store.CommitAsync(
             CreateConfigurationUpdate(
                 platformEnvironment: "Live",
                 brokerEnvironment: "Demo",
@@ -173,7 +212,7 @@ public class SqlPlatformConfigurationStoreTests
                 changedBy: "demo-operator"),
             CancellationToken.None);
 
-        _ = await store.UpdateAsync(
+        _ = await store.CommitAsync(
             CreateConfigurationUpdate(
                 platformEnvironment: "Live",
                 brokerEnvironment: "Live",
@@ -219,7 +258,7 @@ public class SqlPlatformConfigurationStoreTests
 
         _ = await store.GetCurrentAsync(CancellationToken.None);
 
-        _ = await store.UpdateAsync(
+        _ = await store.CommitAsync(
             CreateConfigurationUpdate(
                 platformEnvironment: "Live",
                 brokerEnvironment: "Live",

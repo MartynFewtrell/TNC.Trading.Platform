@@ -163,6 +163,13 @@ The hint text shown in the panel is: **Data sourced from IG Demo (read-only). No
 
 The proof-data view is refreshed after each successful Demo auth tick. It is not continuously polled.
 
+The latest snapshot is durable platform state. Restarting the API does not
+clear the displayed proof values when the persistent SQL resource is
+available. The values disappear only when no snapshot has been captured or
+when the platform database, including its local Docker volume, is reset.
+The in-memory proof store is reserved for isolated tests and is not selected by
+the running API.
+
 ## IG login history page
 
 The IG login history page (`/ig-login/history`) shows retained daily first-successful non-secret login payloads within the 90-day retention window.
@@ -218,6 +225,14 @@ The recent auth events section is now lower-priority and collapsed by default.
 
 When expanded, it shows recent auth events filtered from the event history.
 
+Refreshing the status page or expanding recent events is read-only. These
+queries do not trigger broker authentication, reconciliation, notifications,
+or database writes. On a new environment the status page can report that
+runtime state is missing until the supervised startup/reconciliation path has
+created the first projection; refreshing the page does not create it. The
+status freshness timestamp reflects the last persisted validation, not the
+time of the browser request.
+
 Each row includes:
 
 - occurrence time
@@ -225,6 +240,12 @@ Each row includes:
 - summary
 
 Only redacted event details are exposed.
+
+Sensitive credential, token, authorization, connection, and protected-value
+metadata is replaced with `[redacted]` before operational JSON is persisted.
+Matching is case-insensitive. Ordinary and unknown metadata remains available
+for diagnosis, and raw bearer tokens or sensitive text assignments are scrubbed
+by the Infrastructure redaction mechanism.
 
 This table can now show both broker-auth supervision events and operator-session audit events, including sign-in, sign-out, access-denied, and delegated-scope acquisition failures.
 
@@ -243,6 +264,21 @@ It is designed for safe review and update of configuration without exposing stor
 It is available only to `Operator` and `Administrator` users.
 
 It now uses grouped accordion sections aligned with the status page so the form remains easier to scan without losing in-progress edits while sections are expanded or collapsed.
+
+## Protected credential and key-ring operations
+
+IG credentials are encrypted with the shared ASP.NET Data Protection key ring
+stored in the durable `platformdb` database. Operators can replace credentials
+through the configuration page, but existing secret values are never displayed
+back to the UI or included in status, audit, notification, or diagnostic data.
+
+The platform rotates Data Protection keys on a 90-day default lifetime while
+retaining older keys so existing protected credentials remain decryptable. A
+deployment may set `DataProtection:KeyLifetimeDays` to a positive value. Do not
+delete the SQL data or key material as a routine troubleshooting action: loss
+of the key ring invalidates protected local credentials and cookies, after
+which credentials must be entered again and affected browser sessions must
+sign in again.
 
 ## Authentication administration page
 
@@ -269,6 +305,7 @@ Important behavior:
 
 - the `Live` broker option is shown but disabled when the platform environment is `Test`
 - changing startup-fixed values can set `RestartRequired`
+- changing only schedule, retry, notification, or credentials does not require restart when both environment selections remain unchanged
 - the page explains that startup-fixed changes apply on the next platform start
 - UI theme switching is provided from the shared header control rather than from the configuration form
 
@@ -285,6 +322,10 @@ The trading schedule section lets the operator review or update:
 
 The page accepts comma-separated values for trading days and bank holidays.
 
+The save operation requires a later end time, at least one trading day, and a time zone known by the running platform. The selected environment combination is checked by the Application use case, so the `Test` platform cannot activate the `Live` broker.
+
+At runtime, reconciliation and manual retry use the same Application-owned schedule policy. An inactive schedule blocks activity before broker access, and an active Test platform targeting the Live broker is classified as blocked before provider transport runs.
+
 ### Retry policy
 
 The retry policy section exposes the operator-managed values used by runtime supervision:
@@ -295,6 +336,14 @@ The retry policy section exposes the operator-managed values used by runtime sup
 - max delay seconds
 - periodic delay minutes
 
+The initial delay must be positive, the multiplier must be at least `2`, and max delay must be greater than or equal to initial delay.
+
+Automatic retry timing starts at the configured initial delay and increases by
+the configured multiplier for each subsequent attempt. The configured maximum
+delay is a hard cap. When a retry cycle resets its attempt counter, timing starts
+again at the initial delay. These calculations are owned by the Application
+policy; runtime clocks and waiting remain host mechanisms.
+
 ### Notifications
 
 The notifications section exposes:
@@ -302,7 +351,16 @@ The notifications section exposes:
 - provider
 - email recipient
 
+The supported providers are `RecordedOnly`, `Smtp`, and `AzureCommunicationServicesEmail`.
+
 The application records notification activity even when real delivery transports are not configured.
+
+Notification delivery is best-effort at-least-once. A `Failed`, `Skipped`, or
+`TimedOut` record describes the provider attempt and does not confirm recipient
+delivery. The next supervised retry can create another attempt, and repeated
+attempts are intentionally retained for diagnosis. The platform does not
+provide a durable cross-process idempotency key or exactly-once external
+delivery guarantee.
 
 ### IG credentials
 
@@ -323,10 +381,19 @@ To replace a secret, the operator enters a new value in the corresponding field 
 When the operator saves configuration:
 
 1. the UI sends a `PUT /api/platform/configuration` request
-2. the API validates the request
-3. the configuration store persists the update
-4. the API returns a redacted updated configuration snapshot
-5. the page reloads from the returned model and shows a save result message
+2. the API validates transport shape and maps the request to the Application use case
+3. the Application validates configuration invariants before any store or reconciliation call
+4. the SQL configuration store atomically persists the configuration, supplied protected credentials, and audit record
+5. after a successful commit, the Application dispatches reconciliation so runtime state is refreshed from durable values
+6. the API returns a redacted updated configuration snapshot
+7. the page reloads from the returned model and shows a save result message
+
+Invalid values return the normal validation error surface and leave the existing configuration unchanged. Invalid persisted or bootstrap configuration is an operator error and fails closed at startup; it is not silently replaced with defaults.
+
+A database failure during the local commit leaves the prior configuration and
+credential set in place and does not start reconciliation. IG and notification
+provider calls occur after the local commit and may be retried by the next
+serialized reconciliation if an external effect is interrupted.
 
 If the updated values require restart to take effect at runtime, the page displays restart guidance.
 
@@ -406,9 +473,60 @@ Check these items first:
 - whether retry scheduling is active
 - whether manual retry has become available
 
+### The status page shows `Missing`
+
+`stateAvailability: Missing` means the database has no persisted runtime state
+yet. Reading the status page does not create that state and does not contact IG.
+The API-owned reconciliation supervisor or an explicit manual/startup command
+must establish the first runtime projection. Until then, freshness is shown as
+`lastReconciledAtUtc: null`.
+
+Refreshing status or events is safe during this interval: reads do not write,
+send notifications, or change authentication transitions.
+
+### The API does not become ready after an upgrade
+
+API startup applies the Infrastructure-owned SQL migration lifecycle, bootstrap
+configuration, retention cleanup, and then the initial authentication
+reconciliation before readiness can become healthy. A migration or initialization
+failure stops startup and keeps `/health/ready` unavailable; this is intentional
+and prevents traffic from reaching a partially initialized platform.
+
+If the error reports missing or incompatible migration history, do not delete the
+persistent SQL resource as a first response. Follow the explicit database
+transition procedure for the affected schema, preserve data where possible, and
+restart only after the migration history is compatible.
+
+Migration failure recovery is deliberately explicit:
+
+1. Keep the SQL resource and its existing tables, rows, and migration history.
+2. Capture the startup error and inspect the affected schema object and
+    `__EFMigrationsHistory` with the approved database procedure.
+3. Correct or remove only the incompatible or partial object after confirming
+    that the change is safe for the retained data and the target migration.
+4. Restart the application. The initializer resumes from the recorded migration
+    history, applies the remaining migrations, and then runs bootstrap configuration
+    and retention.
+5. Confirm that `/health/ready` is healthy before allowing normal traffic.
+
+Do not delete migration history, guess a baseline, or reset a persistent database
+to make startup pass. The disposable database reset used by integration tests and
+the local Docker reset procedure are not production recovery procedures.
+
+If logs report that platform reconciliation is already owned by another replica,
+allow the supervisor to retry on its next tick. This is expected during
+overlapping replica startup or manual retry requests. If ownership does not
+recover after the owning replica is stopped, inspect SQL connectivity and
+connection-pool health before restarting the remaining API replica; the
+session-owned lock is released when its SQL connection ends.
+
 ### The configuration page says restart is required
 
 This means a startup-fixed setting changed. The new value is persisted, but the currently running runtime state continues using the prior startup-applied environment selection until the next application start.
+
+Changing only schedule, retry, notification, or credential settings does not
+produce this guidance when the platform and broker environment selections stay
+the same.
 
 ### The manual retry button is disabled
 
@@ -427,7 +545,7 @@ This is expected when:
 - the environment has been freshly provisioned and no first-successful snapshot has been captured
 - all retained entries have aged outside the 90-day retention window
 
-To populate history, a successful IG login must occur during an active trading-schedule period. The retention processor removes entries older than 90 days automatically.
+To populate history, a successful IG login must occur during an active trading-schedule period. The retention processor removes entries older than 90 days automatically. Entries exactly 90 days old at the cleanup cutoff remain until a later run, and the current `Latest` snapshot is never removed by age-based cleanup. A missing, invalid, negative, or zero `Retention:OperationalRecordsDays` value uses the 90-day default rather than disabling retention.
 
 ## Related documents
 

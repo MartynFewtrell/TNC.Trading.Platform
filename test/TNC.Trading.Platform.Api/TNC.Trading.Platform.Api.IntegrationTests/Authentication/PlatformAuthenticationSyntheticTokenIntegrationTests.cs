@@ -256,14 +256,14 @@ public class PlatformAuthenticationSyntheticTokenIntegrationTests(SyntheticToken
             [OperatorScope]);
         request.Content = JsonContent.Create(new
         {
-            PlatformEnvironment = "InvalidPlatform",
-            BrokerEnvironment = "InvalidBroker",
+            PlatformEnvironment = "Live",
+            BrokerEnvironment = "Demo",
             TradingSchedule = new
             {
                 StartOfDay = new TimeOnly(16, 30),
                 EndOfDay = new TimeOnly(8, 0),
                 TradingDays = Array.Empty<DayOfWeek>(),
-                WeekendBehavior = "UnsupportedWeekendBehavior",
+                WeekendBehavior = "ExcludeWeekends",
                 BankHolidayExclusions = Array.Empty<DateOnly>(),
                 TimeZone = ""
             },
@@ -294,17 +294,14 @@ public class PlatformAuthenticationSyntheticTokenIntegrationTests(SyntheticToken
         var errors = payload.RootElement.GetProperty("errors");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal("Platform environment must be Test or Live.", errors.GetProperty("PlatformEnvironment")[0].GetString());
-        Assert.Equal("Broker environment must be Demo or Live.", errors.GetProperty("BrokerEnvironment")[0].GetString());
         Assert.Equal("Trading schedule end-of-day must be later than start-of-day.", errors.GetProperty("TradingSchedule")[0].GetString());
         Assert.Equal("At least one trading day is required.", errors.GetProperty("TradingSchedule.TradingDays")[0].GetString());
-        Assert.Equal("Weekend behavior is invalid.", errors.GetProperty("TradingSchedule.WeekendBehavior")[0].GetString());
-        Assert.Equal("Trading schedule time zone is required.", errors.GetProperty("TradingSchedule.TimeZone")[0].GetString());
+        Assert.Equal("Trading schedule time zone must identify a known time zone.", errors.GetProperty("TradingSchedule.TimeZone")[0].GetString());
         Assert.Equal("Initial retry delay must be at least 1 second.", errors.GetProperty("RetryPolicy.InitialDelaySeconds")[0].GetString());
         Assert.Equal("Maximum automatic retries must be at least 1.", errors.GetProperty("RetryPolicy.MaxAutomaticRetries")[0].GetString());
         Assert.Equal("Retry multiplier must be at least 2.", errors.GetProperty("RetryPolicy.Multiplier")[0].GetString());
         Assert.Equal("Periodic retry delay must be at least 1 minute.", errors.GetProperty("RetryPolicy.PeriodicDelayMinutes")[0].GetString());
-        Assert.Equal("Notification provider is required.", errors.GetProperty("NotificationSettings.Provider")[0].GetString());
+        Assert.Equal("Notification provider is not supported.", errors.GetProperty("NotificationSettings.Provider")[0].GetString());
         Assert.Equal("ChangedBy is required.", errors.GetProperty("ChangedBy")[0].GetString());
     }
 

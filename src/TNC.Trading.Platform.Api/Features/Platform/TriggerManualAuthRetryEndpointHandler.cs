@@ -9,26 +9,31 @@ internal static class TriggerManualAuthRetryEndpointHandler
     public static async Task<Results<Accepted<TriggerManualAuthRetryResponse>, Conflict<ManualAuthRetryConflictResponse>>> HandleAsync(
         AppTriggerManualAuthRetry.TriggerManualAuthRetryHandler handler,
         CancellationToken cancellationToken)
-        => await HandleAsync(
-            async currentCancellationToken =>
-            {
-                var response = await handler.HandleAsync(new AppTriggerManualAuthRetry.TriggerManualAuthRetryRequest(), currentCancellationToken);
-                return response.ToResponse();
-            },
-            cancellationToken);
+    {
+        var response = await handler.HandleAsync(new AppTriggerManualAuthRetry.TriggerManualAuthRetryRequest(), cancellationToken);
+        return response.Outcome.IsAccepted
+            ? TypedResults.Accepted("/api/platform/status", response.ToResponse())
+            : TypedResults.Conflict(new ManualAuthRetryConflictResponse(response.Outcome.RejectionReason!.Value.ToConflictMessage()));
+    }
 
     internal static async Task<Results<Accepted<TriggerManualAuthRetryResponse>, Conflict<ManualAuthRetryConflictResponse>>> HandleAsync(
-        Func<CancellationToken, Task<TriggerManualAuthRetryResponse>> execute,
+        Func<CancellationToken, Task<AppTriggerManualAuthRetry.TriggerManualAuthRetryResponse>> execute,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var response = await execute(cancellationToken);
-            return TypedResults.Accepted("/api/platform/status", response);
-        }
-        catch (InvalidOperationException exception)
-        {
-            return TypedResults.Conflict(new ManualAuthRetryConflictResponse(exception.Message));
-        }
+        var response = await execute(cancellationToken);
+        return response.Outcome.IsAccepted
+            ? TypedResults.Accepted("/api/platform/status", response.ToResponse())
+            : TypedResults.Conflict(new ManualAuthRetryConflictResponse(response.Outcome.RejectionReason!.Value.ToConflictMessage()));
     }
+}
+
+internal static class ManualAuthRetryRejectionReasonMapping
+{
+    public static string ToConflictMessage(this AppTriggerManualAuthRetry.ManualAuthRetryRejectionReason reason) => reason switch
+    {
+        AppTriggerManualAuthRetry.ManualAuthRetryRejectionReason.ScheduleInactive => "Manual retry is unavailable while the trading schedule is inactive.",
+        AppTriggerManualAuthRetry.ManualAuthRetryRejectionReason.BlockedLive => "IG live is unavailable while the platform environment is Test.",
+        AppTriggerManualAuthRetry.ManualAuthRetryRejectionReason.RetryLimitNotReached => "Manual retry becomes available only after the initial automatic retries are exhausted.",
+        _ => "Manual retry is unavailable."
+    };
 }

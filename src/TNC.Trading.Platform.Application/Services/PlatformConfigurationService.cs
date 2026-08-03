@@ -16,6 +16,4 @@ internal sealed class PlatformConfigurationService(IPlatformConfigurationStore s
         CancellationToken cancellationToken) =>
         store.GetRuntimeAsync(platformEnvironment, brokerEnvironment, cancellationToken);
 
-    public Task<UpdatePlatformConfigurationResult> UpdateAsync(PlatformConfigurationUpdate update, CancellationToken cancellationToken) =>
-        store.UpdateAsync(update, cancellationToken);
 }

@@ -5,5 +5,5 @@ namespace TNC.Trading.Platform.Api.Features.TriggerManualAuthRetry;
 internal static class TriggerManualAuthRetryMapping
 {
     public static TriggerManualAuthRetryResponse ToResponse(this AppTriggerManualAuthRetry.TriggerManualAuthRetryResponse response)
-        => new(response.Result.RetryCycleId);
+        => new(response.RetryCycleId);
 }

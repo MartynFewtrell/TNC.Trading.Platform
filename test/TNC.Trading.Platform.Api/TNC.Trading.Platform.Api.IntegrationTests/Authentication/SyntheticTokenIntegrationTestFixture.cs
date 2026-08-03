@@ -1,5 +1,6 @@
 ﻿using Aspire.Hosting;
 using Aspire.Hosting.Testing;
+using TNC.Trading.Platform.TestShared.Authentication;
 
 namespace TNC.Trading.Platform.Api.IntegrationTests.Authentication;
 
@@ -12,19 +13,29 @@ public sealed class SyntheticTokenIntegrationTestFixture : IAsyncLifetime
 {
     private IDistributedApplicationTestingBuilder? appHostBuilder;
     private DistributedApplication? appHost;
+    private KeycloakPortLease? appHostLease;
     private TestEnvironmentVariableScope? apiProviderScope;
 
     public async Task InitializeAsync()
     {
-        apiProviderScope = new TestEnvironmentVariableScope("Authentication__ApiProvider", "Test");
+        appHostLease = await KeycloakPortLease.AcquireAsync();
+        try
+        {
+            apiProviderScope = new TestEnvironmentVariableScope("Authentication__ApiProvider", "Test");
 
-        appHostBuilder = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-        appHost = await appHostBuilder.BuildAsync();
-        await appHost.StartAsync();
+            appHostBuilder = await DistributedApplicationTestingBuilder
+                .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
+            appHost = await appHostBuilder.BuildAsync();
+            await appHost.StartAsync();
 
-        using var apiReadinessClient = appHost.CreateHttpClient("api");
-        await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(apiReadinessClient);
+            using var apiReadinessClient = appHost.CreateHttpClient("api");
+            await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(apiReadinessClient);
+        }
+        catch
+        {
+            await DisposeAsync();
+            throw;
+        }
     }
 
     public async Task DisposeAsync()
@@ -43,6 +54,12 @@ public sealed class SyntheticTokenIntegrationTestFixture : IAsyncLifetime
 
         apiProviderScope?.Dispose();
         apiProviderScope = null;
+
+        if (appHostLease is not null)
+        {
+            await appHostLease.DisposeAsync();
+            appHostLease = null;
+        }
     }
 
     public HttpClient CreateApiClient()

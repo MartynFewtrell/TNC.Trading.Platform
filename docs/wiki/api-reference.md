@@ -31,7 +31,7 @@ The Blazor UI talks to the API over service discovery using the internal `https+
 - `/health/live`, `/health/ready`, `/`, and `/metadata` remain anonymous.
 - protected endpoints require a bearer token issued for the platform API and return `401 Unauthorized` or `403 Forbidden` without browser redirects.
 - Secret values are never returned by configuration or status endpoints.
-- Validation failures on configuration updates return a validation-problem payload.
+- Validation failures on configuration updates return a validation-problem payload with the existing field keys and `400` status.
 - Manual retry conflicts return `409 Conflict` when the current runtime state does not allow the action.
 
 ## GET /
@@ -56,6 +56,8 @@ The auth event feed can include broker-auth supervision records and operator-ses
 ## POST /api/platform/auth/audit
 
 Persists an authenticated operator auth audit event through the API so the shared auth event history can retain Web sign-in lifecycle outcomes.
+
+The HTTP adapter extracts the authenticated operator claims and correlation metadata before dispatching the Application auth-audit use case. A successful request preserves the existing `202 Accepted` response and event-feed location; unsupported event types remain validation problems and do not write an event.
 
 ### Request shape
 
@@ -203,6 +205,20 @@ Returns the current platform runtime state together with the current IG login pr
 | `igLogin.retryState` | IG-specific retry context used for the current login-state presentation. |
 | `igLogin.latestSnapshot` | The latest stored successful non-secret IG login payload, including summary fields, non-secret response headers, and the raw non-secret JSON payload. |
 | `igLogin.latestProofData` | The latest read-only IG Demo proof data snapshot, or `null` when no proof data has been captured yet. |
+| `stateAvailability` | `Available` when persisted runtime state exists, or `Missing` when no runtime state row exists yet. Missing state does not create a row or trigger reconciliation. |
+| `lastReconciledAtUtc` | The persisted timestamp of the latest validation/reconciliation represented by the status projection, or `null` when state is missing or has not been validated. |
+
+Status and event reads are projection-only operations. They do not call IG,
+write or insert records, dispatch notifications, change transitions, or run
+reconciliation. Event results are ordered newest first and use event ID to
+stabilize equal timestamps.
+
+If no persisted runtime state exists, the status projection returns
+`stateAvailability: "Missing"` with a null status and null
+`lastReconciledAtUtc`; the read does not create state. A populated status
+returns the persisted freshness timestamp without updating it. Event filters
+are applied by the read projection and retain the existing newest-first,
+event-ID tie-break ordering and 50-item limit.
 
 ### Secret-safety notes
 
@@ -374,6 +390,8 @@ Updates operator-managed configuration.
 - Empty or omitted credential values do not reveal the existing stored values.
 - Changing startup-fixed values can set `restartRequired` in the response.
 - The response body is the same redacted configuration model returned by `GET /api/platform/configuration`.
+- The API validates transport shape and enum syntax, then the Application use case validates business invariants before any persistence, credential update, audit write, or reconciliation occurs. This also protects non-HTTP callers.
+- After successful Application validation, the feature handler commits configuration, supplied credential replacements, and the audit through one inward-owned commit port, then dispatches reconciliation. A commit failure or cancellation is not mapped to a successful response.
 
 ### Validation rules
 
@@ -384,13 +402,13 @@ The current validator enforces these main rules:
 - trading schedule end time must be later than start time
 - at least one trading day is required
 - weekend behavior must be valid
-- time zone is required
+- time zone must identify a known runtime time zone
 - initial retry delay must be at least `1`
 - max automatic retries must be at least `1`
 - multiplier must be at least `2`
 - max delay must be greater than or equal to initial delay
 - periodic delay minutes must be at least `1`
-- notification provider is required
+- notification provider must be `RecordedOnly`, `Smtp`, or `AzureCommunicationServicesEmail`
 - `changedBy` is required
 - `Test` platform plus `Live` broker is rejected
 
@@ -405,6 +423,8 @@ The current validator enforces these main rules:
   }
 }
 ```
+
+The same Problem Details field names are used when the Application use case rejects a mapped request. The API translates that typed outcome at the HTTP boundary; it does not own the business rules.
 
 ## POST /api/platform/auth/manual-retry
 
@@ -424,6 +444,14 @@ Triggers manual retry when the current runtime state allows it.
 ### Conflict response
 
 When the action is not currently allowed, the endpoint returns `409 Conflict`.
+The Application handler returns a typed rejection and the API performs this
+transport mapping. The current reasons and messages are:
+
+| Reason | Message |
+| --- | --- |
+| `ScheduleInactive` | Manual retry is unavailable while the trading schedule is inactive. |
+| `BlockedLive` | IG live is unavailable while the platform environment is Test. |
+| `RetryLimitNotReached` | Manual retry becomes available only after the initial automatic retries are exhausted. |
 
 ```json
 {

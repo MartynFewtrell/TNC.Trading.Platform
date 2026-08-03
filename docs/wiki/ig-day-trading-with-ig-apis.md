@@ -1,4 +1,10 @@
-# Day trading with IG APIs
+---
+title: Day trading with IG APIs
+description: Implementation-oriented guidance for IG REST and Streaming API integration
+author: TNC Trading
+ms.date: 2026-07-27
+ms.topic: concept
+---
 
 This document gives a high-level, implementation-oriented overview of how a day trading application typically uses IG’s REST and Streaming APIs for market data and trade execution. It is written for software developers building a custom trading interface and automation.
 
@@ -35,6 +41,35 @@ IG Labs documents separate base URLs for demo and production environments:
 - Live environment base URL: https://api.ig.com/gateway/deal
 
 Your application should make it easy to switch between these.
+
+## Phase 0 platform decisions
+
+The platform migration uses the following environment and credential decisions.
+They are provisional deployment decisions where no product authorization has
+been recorded.
+
+* IG Demo is the only environment supported by the current implementation and
+   automated proof-data coverage. IG Live requests must be rejected before any
+   network call until Live operation is explicitly authorized, tested, and
+   separately configured. A Live request must never be routed to the Demo URL.
+* IG session proof data is non-secret and may be retained according to the
+   platform's operational retention policy. Provider credentials, `CST`,
+   `X-SECURITY-TOKEN`, and equivalent tokens remain inside Infrastructure and
+   are never persisted in runtime state, API responses, UI state, or logs.
+* Provider tokens are operation-scoped. The current implementation consumes
+   them inside `IgBrokerAuthenticationGateway` while creating the session and
+   collecting account and position proof data. It discards them before returning
+   provider-neutral evidence to Application rather than treating them as durable
+   application sessions. Token lifetime and any future streaming-session scope
+   require explicit provider validation before trading features are enabled.
+* Application owns the narrow `IBrokerAuthenticationGateway` capability.
+   Its request contains only the selected broker environment. Infrastructure
+   owns protected credential retrieval, Demo routing, IG JSON records, HTTP
+   status and exception translation, session headers, and token mechanics. Live
+   is rejected before the HTTP pipeline is invoked.
+* IG credential values are protected with ASP.NET Core Data Protection. The
+   deployed Data Protection key ring must be shared and durable across API/Web
+   restarts; local key loss requires re-entering protected credentials.
 
 ## Authentication and session management
 

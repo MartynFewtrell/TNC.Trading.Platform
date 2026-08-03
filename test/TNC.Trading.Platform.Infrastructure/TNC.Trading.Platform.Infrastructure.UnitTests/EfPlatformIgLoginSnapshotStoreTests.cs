@@ -1,5 +1,5 @@
 ﻿using TNC.Trading.Platform.Application.Configuration;
-using TNC.Trading.Platform.Infrastructure.Platform;
+using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 
 namespace TNC.Trading.Platform.Infrastructure.UnitTests;
 

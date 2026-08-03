@@ -1,12 +1,12 @@
-using TNC.Trading.Platform.Application.Services;
+using TNC.Trading.Platform.Application.Features.GetPlatformStatus.Ports;
 
 namespace TNC.Trading.Platform.Application.Features.GetPlatformStatus;
 
-internal sealed class GetPlatformStatusHandler(PlatformStateCoordinator coordinator)
+internal sealed class GetPlatformStatusHandler(IPlatformStatusProjectionReader projectionReader)
 {
     public async Task<GetPlatformStatusResponse> HandleAsync(GetPlatformStatusRequest request, CancellationToken cancellationToken)
     {
-        var status = await coordinator.GetStatusAsync(cancellationToken).ConfigureAwait(false);
-        return new GetPlatformStatusResponse(status);
+        var projection = await projectionReader.ReadAsync(cancellationToken).ConfigureAwait(false);
+        return new GetPlatformStatusResponse(projection.Status, projection.LastReconciledAtUtc);
     }
 }

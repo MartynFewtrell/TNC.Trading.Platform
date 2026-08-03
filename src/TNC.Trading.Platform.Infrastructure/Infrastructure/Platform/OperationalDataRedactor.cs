@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using TNC.Trading.Platform.Application.Services;
 
 namespace TNC.Trading.Platform.Infrastructure.Platform;
 
@@ -24,18 +25,6 @@ internal static class OperationalDataRedactor
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
-
-    private static readonly string[] SensitiveNameFragments =
-    [
-        "apikey",
-        "identifier",
-        "password",
-        "secret",
-        "token",
-        "authorization",
-        "connectionstring",
-        "protectedvalue"
-    ];
 
     public static string Serialize(object? value)
     {
@@ -126,13 +115,5 @@ internal static class OperationalDataRedactor
     }
 
     private static bool IsSensitive(string? propertyName)
-    {
-        if (string.IsNullOrWhiteSpace(propertyName))
-        {
-            return false;
-        }
-
-        return SensitiveNameFragments.Any(fragment =>
-            propertyName.Contains(fragment, StringComparison.OrdinalIgnoreCase));
-    }
+        => OperationalDataSensitivityPolicy.Classify(propertyName) == OperationalDataSensitivity.Sensitive;
 }

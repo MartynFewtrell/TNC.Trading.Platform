@@ -20,7 +20,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\TNC.Trading.Platform.Application\TNC.Trading.Platform.Application.csproj" />
-    <ProjectReference Include="..\..\..\src\TNC.Trading.Platform.Infrastructure\TNC.Trading.Platform.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

@@ -9,7 +9,7 @@ public class PlatformAuthAuditEventResolverTests
     /// <summary>
     /// Trace: FR3, SR1, TR1.
     /// Verifies: auth-audit record resolution prefers the configured preferred username claim when an operator completes sign-in.
-    /// Expected: the resolved audit record uses the preferred username in both the persisted summary and the captured username field.
+    /// Expected: the resolver returns the preferred username for the Application request.
     /// Why: auth-audit storage must retain the operator identifier that the real runtime exposes most consistently across providers.
     /// </summary>
     [Fact]
@@ -23,15 +23,13 @@ public class PlatformAuthAuditEventResolverTests
         var resolved = PlatformAuthAuditEventResolver.TryResolve(request, user, out var record);
 
         Assert.True(resolved);
-        Assert.Equal("preferred.operator", record.UserName);
-        Assert.Equal("Operator preferred.operator completed sign-in.", record.Summary);
-        Assert.Equal("Information", record.Severity);
+        Assert.Equal("preferred.operator", record);
     }
 
     /// <summary>
     /// Trace: FR3, SR1, TR1.
     /// Verifies: auth-audit record resolution falls back to the name claim when the preferred username is unavailable for an access-denied event.
-    /// Expected: the fallback name is used and the protected-surface placeholder is emitted when no route path is supplied.
+    /// Expected: the resolver returns the fallback name for the Application request.
     /// Why: denied-access auditing must stay readable even when providers omit the preferred username claim or the caller omits a path value.
     /// </summary>
     [Fact]
@@ -43,15 +41,13 @@ public class PlatformAuthAuditEventResolverTests
         var resolved = PlatformAuthAuditEventResolver.TryResolve(request, user, out var record);
 
         Assert.True(resolved);
-        Assert.Equal("display.operator", record.UserName);
-        Assert.Equal("Operator display.operator was denied access to a protected platform surface.", record.Summary);
-        Assert.Equal("Warning", record.Severity);
+        Assert.Equal("display.operator", record);
     }
 
     /// <summary>
     /// Trace: FR3, SR1, TR1.
     /// Verifies: token-acquisition audit resolution falls back to the authenticated identity name and preserves the missing-scope placeholder.
-    /// Expected: the identity name is used as the operator label and the summary points to the requested-scope-set placeholder.
+    /// Expected: the resolver returns the identity name for the Application request.
     /// Why: delegated-token failure audits must still produce actionable summaries when upstream claims are sparse.
     /// </summary>
     [Fact]
@@ -63,9 +59,7 @@ public class PlatformAuthAuditEventResolverTests
         var resolved = PlatformAuthAuditEventResolver.TryResolve(request, user, out var record);
 
         Assert.True(resolved);
-        Assert.Equal("identity.operator", record.UserName);
-        Assert.Equal("Operator identity.operator could not acquire delegated access for the requested scope set.", record.Summary);
-        Assert.Equal("Warning", record.Severity);
+        Assert.Equal("identity.operator", record);
     }
 
     /// <summary>

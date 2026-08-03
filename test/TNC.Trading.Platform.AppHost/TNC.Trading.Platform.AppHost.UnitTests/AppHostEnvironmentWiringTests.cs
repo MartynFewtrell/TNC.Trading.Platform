@@ -241,7 +241,7 @@ public sealed class AppHostEnvironmentWiringTests
         var builder = CreateBuilder();
         var infrastructure = AppHostInfrastructureRegistration.Create(builder);
         var apiProject = AppHostProjectRegistration.AddApiProject(builder, infrastructure);
-        var webProject = AppHostProjectRegistration.AddWebProject(builder, apiProject);
+        var webProject = AppHostProjectRegistration.AddWebProject(builder, apiProject, infrastructure);
 
         AppHostEnvironmentWiring.ConfigureWebProject(webProject);
 
@@ -257,6 +257,7 @@ public sealed class AppHostEnvironmentWiringTests
         Assert.Equal("tnc-trading-platform-web", environmentValues["Authentication__Keycloak__ClientId"]);
         Assert.Equal(AppHostCompositionConstants.ApiAudience, environmentValues["Authentication__Keycloak__ApiClientId"]);
         Assert.Equal("LocalAuth!123", environmentValues["Authentication__Keycloak__SeededUserPassword"]);
+        Assert.Contains("ConnectionStrings__platformdb", environmentValues.Keys);
     }
 
     /// <summary>
@@ -273,7 +274,7 @@ public sealed class AppHostEnvironmentWiringTests
         var builder = CreateBuilder();
         var infrastructure = AppHostInfrastructureRegistration.Create(builder);
         var defaultApiProject = AppHostProjectRegistration.AddApiProject(builder, infrastructure);
-        var defaultWebProject = AppHostProjectRegistration.AddWebProject(builder, defaultApiProject);
+        var defaultWebProject = AppHostProjectRegistration.AddWebProject(builder, defaultApiProject, infrastructure);
 
         AppHostEnvironmentWiring.ConfigureAuthenticationProvider(
             defaultApiProject,

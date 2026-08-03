@@ -46,7 +46,7 @@ public sealed class AppHostProjectRegistrationTests
         var infrastructure = AppHostInfrastructureRegistration.Create(builder);
         var apiProject = AppHostProjectRegistration.AddApiProject(builder, infrastructure);
 
-        var webProject = AppHostProjectRegistration.AddWebProject(builder, apiProject);
+        var webProject = AppHostProjectRegistration.AddWebProject(builder, apiProject, infrastructure);
         var waitAnnotations = webProject.Resource.Annotations.OfType<WaitAnnotation>().ToArray();
         var endpointNames = webProject.Resource.Annotations
             .OfType<EndpointAnnotation>()
