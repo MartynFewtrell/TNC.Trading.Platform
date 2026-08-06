@@ -1,4 +1,5 @@
-﻿@page "/status"
+﻿@namespace TNC.Trading.Platform.Web.Components.Pages
+@page "/status"
 @attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Viewer)]
 @inject StatusPagePresenter Presenter
 @inject PlatformNavigationAccessCoordinator NavigationAccessCoordinator
