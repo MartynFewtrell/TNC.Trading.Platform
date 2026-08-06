@@ -34,7 +34,8 @@ internal sealed class IgBrokerAuthenticationGateway(
                 .ConfigureAwait(false);
             using var sessionRequest = new HttpRequestMessage(HttpMethod.Post, "session");
             sessionRequest.Headers.Add("X-IG-API-KEY", credentials.ApiKey);
-            sessionRequest.Headers.Add("Version", "3");
+            sessionRequest.Headers.Accept.ParseAdd("application/json; charset=UTF-8");
+            sessionRequest.Headers.Add("Version", "2");
             sessionRequest.Content = JsonContent.Create(new
             {
                 identifier = credentials.Identifier,
@@ -45,7 +46,10 @@ internal sealed class IgBrokerAuthenticationGateway(
             using var sessionResponse = await httpClient.SendAsync(sessionRequest, cancellationToken).ConfigureAwait(false);
             if (!sessionResponse.IsSuccessStatusCode)
             {
-                return BrokerAuthenticationOutcome.Failed(MapFailure(sessionResponse.StatusCode));
+                var diagnostic = sessionResponse.StatusCode == HttpStatusCode.Forbidden
+                    ? await ReadDiagnosticAsync(sessionResponse, cancellationToken).ConfigureAwait(false)
+                    : null;
+                return BrokerAuthenticationOutcome.Failed(MapFailure(sessionResponse.StatusCode, diagnostic));
             }
 
             var session = await sessionResponse.Content
@@ -171,12 +175,38 @@ internal sealed class IgBrokerAuthenticationGateway(
         return request;
     }
 
-    private static BrokerAuthenticationFailure MapFailure(HttpStatusCode statusCode)
+    private static async Task<BrokerAuthenticationDiagnostic?> ReadDiagnosticAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        string? errorCode = null;
+        try
+        {
+            using var document = await response.Content.ReadFromJsonAsync<JsonDocument>(JsonOptions, cancellationToken).ConfigureAwait(false);
+            if (document?.RootElement.TryGetProperty("errorCode", out var errorCodeElement) == true
+                && errorCodeElement.ValueKind == JsonValueKind.String)
+            {
+                errorCode = LimitDiagnosticValue(errorCodeElement.GetString());
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        var requestId = response.Headers.TryGetValues("X-REQUEST-ID", out var values)
+            ? LimitDiagnosticValue(values.FirstOrDefault())
+            : null;
+        return new BrokerAuthenticationDiagnostic(errorCode, requestId);
+    }
+
+    private static string? LimitDiagnosticValue(string? value) =>
+        value is not null && value.Length <= 256 ? value : null;
+
+    private static BrokerAuthenticationFailure MapFailure(HttpStatusCode statusCode, BrokerAuthenticationDiagnostic? diagnostic = null)
     {
         return statusCode switch
         {
             HttpStatusCode.Unauthorized => new(BrokerAuthenticationFailureKind.RejectedCredentials, "IG authentication failed: invalid or rejected credentials."),
-            HttpStatusCode.Forbidden => new(BrokerAuthenticationFailureKind.Forbidden, "IG authentication failed: access forbidden."),
+            HttpStatusCode.Forbidden => new(BrokerAuthenticationFailureKind.Forbidden, "IG authentication failed: access forbidden.", diagnostic),
             HttpStatusCode.TooManyRequests => new(BrokerAuthenticationFailureKind.RateLimited, "IG authentication failed: request rate limit exceeded."),
             _ => new(BrokerAuthenticationFailureKind.UnexpectedResponse, "IG authentication failed: unexpected broker response.")
         };

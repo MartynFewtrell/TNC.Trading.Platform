@@ -36,7 +36,7 @@ internal sealed class ConfigurationFormModel
         Provider = "RecordedOnly"
     };
 
-    public CredentialPresenceViewModel Credentials { get; set; } = new(false, false, false);
+    public CredentialPresenceViewModel Credentials { get; set; } = new(false, false, false, false, false, false, false, false);
 
     public UpdateCredentialsViewModel CredentialsUpdate { get; set; } = new();
 

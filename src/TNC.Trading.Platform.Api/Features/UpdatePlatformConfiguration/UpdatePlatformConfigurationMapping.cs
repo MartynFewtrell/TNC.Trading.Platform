@@ -54,7 +54,12 @@ internal static class UpdatePlatformConfigurationMapping
             new UpdatedCredentialPresenceResponse(
                 response.Result.Snapshot.Credentials.HasApiKey,
                 response.Result.Snapshot.Credentials.HasIdentifier,
-                response.Result.Snapshot.Credentials.HasPassword),
+                response.Result.Snapshot.Credentials.HasPassword,
+                response.Result.Snapshot.Credentials.IsApiKeyUsable,
+                response.Result.Snapshot.Credentials.IsIdentifierUsable,
+                response.Result.Snapshot.Credentials.IsPasswordUsable,
+                response.Result.Snapshot.Credentials.IsAuthenticationReady,
+                response.Result.Snapshot.Credentials.RequiresCredentialReentry),
             response.Result.RestartRequired,
             response.Result.Snapshot.UpdatedAtUtc);
 }

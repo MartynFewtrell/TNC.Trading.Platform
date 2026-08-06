@@ -22,6 +22,7 @@ internal sealed class PlatformAuthenticationReconciler(
     IPlatformReconciliationLease reconciliationLease) : IPlatformAuthenticationReconciler
 {
     private const string MissingCredentialsBlockedReason = "IG demo credentials are incomplete.";
+    private const string UnusableCredentialsBlockedReason = "IG Demo credentials must be re-entered.";
     private static readonly ConcurrentDictionary<Guid, byte> DegradedFailureNotificationsObservedThisProcess = new();
     private readonly PlatformStateTransitionEngine transitionEngine = new();
     private readonly PlatformAuthenticationReconcilerSideEffects sideEffects = new(retryCycleStore, eventStore, notificationDispatcher, timeProvider, logger);
@@ -221,7 +222,7 @@ internal sealed class PlatformAuthenticationReconciler(
         var now = timeProvider.GetUtcNow();
         var retryCycleId = currentState.CurrentRetryCycleId;
 
-        if (currentConfiguration.Credentials.IsComplete)
+        if (currentConfiguration.Credentials.IsAuthenticationReady)
         {
             currentState.LastLoginAttemptAtUtc = now;
             var authAttemptCorrelationId = CreateCorrelationId();
@@ -230,7 +231,7 @@ internal sealed class PlatformAuthenticationReconciler(
             var authentication = await AuthenticateAsync(currentConfiguration, cancellationToken).ConfigureAwait(false);
             if (!authentication.IsAuthenticated)
             {
-                await TransitionToDegradedAsync(currentConfiguration, currentState, authentication.Failure!.Summary, cancellationToken).ConfigureAwait(false);
+                await TransitionToDegradedAsync(currentConfiguration, currentState, authentication.Failure!, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -275,14 +276,17 @@ internal sealed class PlatformAuthenticationReconciler(
             return;
         }
 
-        currentState.LatestFailureSummary = MissingCredentialsBlockedReason;
+        var blockedReason = currentConfiguration.Credentials.RequiresCredentialReentry
+            ? UnusableCredentialsBlockedReason
+            : MissingCredentialsBlockedReason;
+        currentState.LatestFailureSummary = blockedReason;
         currentState.RetryPhase = AuthRetryPhase.InitialAutomatic;
         currentState.AutomaticAttemptNumber = 0;
         var nextDelay = RetryTimingPolicy.CalculateDelayBeforeAttempt(currentConfiguration.RetryPolicy, 1);
         currentState.NextRetryAtUtc = now.AddSeconds(nextDelay);
         ApplyAuthenticationTransitionOrThrow(
             currentState,
-            new AuthenticationStateTransition(PlatformSessionStatus.Degraded, MissingCredentialsBlockedReason, now));
+            new AuthenticationStateTransition(PlatformSessionStatus.Degraded, blockedReason, now));
 
         await sideEffects.UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, cycleType, failureNotificationSent: true, nextDelay, cancellationToken).ConfigureAwait(false);
 
@@ -388,10 +392,16 @@ internal sealed class PlatformAuthenticationReconciler(
         currentState.LastLoginAttemptAtUtc = now;
         var authAttemptCorrelationId = CreateCorrelationId();
         await RecordAuthAttemptAsync(currentConfiguration, retryCycleId, authAttemptCorrelationId, cancellationToken).ConfigureAwait(false);
+        if (!currentConfiguration.Credentials.IsAuthenticationReady)
+        {
+            await TransitionToDegradedAsync(currentConfiguration, currentState, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         var authentication = await AuthenticateAsync(currentConfiguration, cancellationToken).ConfigureAwait(false);
         if (!authentication.IsAuthenticated)
         {
-            await TransitionToDegradedAsync(currentConfiguration, currentState, authentication.Failure!.Summary, cancellationToken).ConfigureAwait(false);
+            await TransitionToDegradedAsync(currentConfiguration, currentState, authentication.Failure!, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -474,8 +484,12 @@ internal sealed class PlatformAuthenticationReconciler(
 
     private async Task TransitionToDegradedAsync(PlatformConfigurationSnapshot currentConfiguration, PlatformRuntimeState currentState, CancellationToken cancellationToken)
     {
+        var blockedReason = currentConfiguration.Credentials.RequiresCredentialReentry
+            ? UnusableCredentialsBlockedReason
+            : MissingCredentialsBlockedReason;
+
         if (currentState.SessionStatus == PlatformSessionStatus.Degraded
-            && string.Equals(currentState.BlockedReason, MissingCredentialsBlockedReason, StringComparison.Ordinal)
+            && string.Equals(currentState.BlockedReason, blockedReason, StringComparison.Ordinal)
             && currentState.RetryPhase == AuthRetryPhase.None
             && currentState.AutomaticAttemptNumber == 0
             && currentState.NextRetryAtUtc is null
@@ -507,7 +521,7 @@ internal sealed class PlatformAuthenticationReconciler(
         var now = timeProvider.GetUtcNow();
         var retryCycleId = currentState.CurrentRetryCycleId ?? Guid.NewGuid();
         _ = DegradedFailureNotificationsObservedThisProcess.TryAdd(retryCycleId, 0);
-        currentState.LatestFailureSummary = MissingCredentialsBlockedReason;
+        currentState.LatestFailureSummary = blockedReason;
         currentState.RetryPhase = AuthRetryPhase.None;
         currentState.AutomaticAttemptNumber = 0;
         currentState.NextRetryAtUtc = null;
@@ -515,7 +529,7 @@ internal sealed class PlatformAuthenticationReconciler(
         currentState.CurrentRetryCycleId = retryCycleId;
         ApplyAuthenticationTransitionOrThrow(
             currentState,
-            new AuthenticationStateTransition(PlatformSessionStatus.Degraded, MissingCredentialsBlockedReason, now));
+            new AuthenticationStateTransition(PlatformSessionStatus.Degraded, blockedReason, now));
 
         await sideEffects.UpsertRetryCycleAsync(currentState.CurrentRetryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, lastDelaySeconds: null, cancellationToken).ConfigureAwait(false);
 
@@ -536,9 +550,10 @@ internal sealed class PlatformAuthenticationReconciler(
     private async Task TransitionToDegradedAsync(
         PlatformConfigurationSnapshot currentConfiguration,
         PlatformRuntimeState currentState,
-        string failureSummary,
+        BrokerAuthenticationFailure failure,
         CancellationToken cancellationToken)
     {
+        var failureSummary = failure.Summary;
         var now = timeProvider.GetUtcNow();
         var retryCycleId = currentState.CurrentRetryCycleId ?? Guid.NewGuid();
         var nextDelay = RetryTimingPolicy.CalculateDelayBeforeAttempt(currentConfiguration.RetryPolicy, 1);
@@ -562,7 +577,9 @@ internal sealed class PlatformAuthenticationReconciler(
             "auth",
             "FailureDetected",
             failureSummary,
-            new { RetryCycleId = retryCycleId },
+            failure.Diagnostic is null
+                ? new { RetryCycleId = retryCycleId }
+                : new { RetryCycleId = retryCycleId, Diagnostic = failure.Diagnostic },
             "Warning",
             correlationId,
             retryCycleId,

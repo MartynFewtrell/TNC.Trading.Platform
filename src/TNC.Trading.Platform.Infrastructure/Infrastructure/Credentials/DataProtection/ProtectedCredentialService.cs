@@ -16,16 +16,40 @@ internal sealed class ProtectedCredentialService(
 
     public async Task<CredentialPresence> GetPresenceAsync(BrokerEnvironmentKind brokerEnvironment, CancellationToken cancellationToken)
     {
-        var credentialTypes = await dbContext.ProtectedCredentials
+        var entities = await dbContext.ProtectedCredentials
             .Where(item => item.BrokerEnvironment == brokerEnvironment.ToString())
-            .Select(item => item.CredentialType)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        bool IsUsable(string type)
+        {
+            var entity = entities.FirstOrDefault(item => string.Equals(item.CredentialType, type, StringComparison.Ordinal));
+            if (entity is null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return !string.IsNullOrWhiteSpace(protector.Unprotect(entity.ProtectedValue));
+            }
+            catch (CryptographicException)
+            {
+                return false;
+            }
+        }
+
+        var credentialTypes = entities
+            .Select(item => item.CredentialType)
+            .ToArray();
 
         return new CredentialPresence(
             credentialTypes.Contains("ApiKey", StringComparer.Ordinal),
             credentialTypes.Contains("Identifier", StringComparer.Ordinal),
-            credentialTypes.Contains("Password", StringComparer.Ordinal));
+            credentialTypes.Contains("Password", StringComparer.Ordinal),
+            IsUsable("ApiKey"),
+            IsUsable("Identifier"),
+            IsUsable("Password"));
     }
 
     public async Task UpdateAsync(BrokerEnvironmentKind brokerEnvironment, string? apiKey, string? identifier, string? password, string changedBy, CancellationToken cancellationToken)
