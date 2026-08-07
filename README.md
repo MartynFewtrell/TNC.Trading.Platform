@@ -1,6 +1,6 @@
 ﻿# TNC.Trading.Platform
 
-TNC.Trading.Platform is a .NET 10 trading platform under active development for safe, iterative delivery of algorithmic day-trading capabilities against IG APIs.
+TNC.Trading.Platform is a .NET 10 trading platform under active development for safe, iterative delivery of algorithmic day trading capabilities against IG APIs.
 
 ## Current status
 
