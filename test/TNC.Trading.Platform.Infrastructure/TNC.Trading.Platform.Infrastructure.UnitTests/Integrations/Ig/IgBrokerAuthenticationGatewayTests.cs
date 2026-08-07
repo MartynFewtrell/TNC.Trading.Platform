@@ -31,6 +31,57 @@ public sealed class IgBrokerAuthenticationGatewayTests
     }
 
     /// <summary>
+    /// Traces to IG Login 403 Degraded Health Phase 4.3 and the IG Labs v2 contract.
+    /// Verifies the session wire request uses JSON v2 with the required media type while retaining the Demo API key and credential field names.
+    /// Expected: the first request is POST /session with Version 2, the explicit JSON Accept value, and the expected JSON body.
+    /// Why: this prevents the v3 OAuth contract from being mixed with the CST/header-token session flow.
+    /// </summary>
+    [Fact]
+    public async Task AuthenticateAndCollectProofAsync_ShouldUseVersionTwoJsonSessionContract_WhenAuthenticatingToDemo()
+    {
+        var handler = CreateSuccessfulHandler();
+        var gateway = CreateGateway(handler);
+
+        await gateway.AuthenticateAndCollectProofAsync(CreateRequest(), CancellationToken.None);
+
+        var sessionRequest = handler.Requests[0];
+        Assert.Equal(HttpMethod.Post, sessionRequest.Method);
+        Assert.Equal("/gateway/deal/session", sessionRequest.RequestUri!.AbsolutePath);
+        Assert.Equal("2", sessionRequest.Headers.GetValues("Version").Single());
+        Assert.Equal("application/json; charset=UTF-8", sessionRequest.Headers.Accept.Single().ToString());
+        Assert.Equal("api-secret", sessionRequest.Headers.GetValues("X-IG-API-KEY").Single());
+        Assert.Equal(
+            "{\"identifier\":\"demo-user\",\"password\":\"password-secret\",\"encryptedPassword\":false}",
+            handler.RequestBodies[0]);
+    }
+
+    /// <summary>
+    /// Traces to IG Login 403 Degraded Health Phase 4.3.
+    /// Verifies dependent proof calls retain their existing CST/header-token versions and paths after the session correction.
+    /// Expected: accounts remains v1 and positions remains v2, both carrying CST and X-SECURITY-TOKEN.
+    /// Why: proof collection must continue using the established header-token session contract without introducing OAuth or changing read-only endpoints.
+    /// </summary>
+    [Fact]
+    public async Task AuthenticateAndCollectProofAsync_ShouldRetainHeaderTokenProofCalls_WhenSessionUsesVersionTwo()
+    {
+        var handler = CreateSuccessfulHandler();
+        var gateway = CreateGateway(handler);
+
+        await gateway.AuthenticateAndCollectProofAsync(CreateRequest(), CancellationToken.None);
+
+        var accountsRequest = handler.Requests[1];
+        var positionsRequest = handler.Requests[2];
+        Assert.Equal("accounts", accountsRequest.RequestUri!.AbsolutePath.Split('/').Last());
+        Assert.Equal("positions", positionsRequest.RequestUri!.AbsolutePath.Split('/').Last());
+        Assert.Equal("1", accountsRequest.Headers.GetValues("Version").Single());
+        Assert.Equal("2", positionsRequest.Headers.GetValues("Version").Single());
+        Assert.Equal("cst-secret", accountsRequest.Headers.GetValues("CST").Single());
+        Assert.Equal("security-secret", accountsRequest.Headers.GetValues("X-SECURITY-TOKEN").Single());
+        Assert.Equal("cst-secret", positionsRequest.Headers.GetValues("CST").Single());
+        Assert.Equal("security-secret", positionsRequest.Headers.GetValues("X-SECURITY-TOKEN").Single());
+    }
+
+    /// <summary>
     /// Traces to Phase 0 Demo-only decision and FR9.
     /// Verifies Live is rejected before the HTTP pipeline is invoked.
     /// Expected: the outcome reports UnsupportedEnvironment and the fake handler observes no request.
@@ -95,6 +146,98 @@ public sealed class IgBrokerAuthenticationGatewayTests
         Assert.False(outcome.IsAuthenticated);
         Assert.Equal((BrokerAuthenticationFailureKind)expectedKind, outcome.Failure!.Kind);
         Assert.DoesNotContain("api-secret", outcome.Failure.Summary, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Traces to IG Login 403 Degraded Health Phase 2.5.
+    /// Verifies a session 403 carries only the allowlisted error code and request identifier into the application outcome.
+    /// Expected: sentinel body and unrelated header values are absent from the typed diagnostic.
+    /// Why: provider-controlled response data must not cross the Infrastructure boundary as arbitrary metadata.
+    /// </summary>
+    [Fact]
+    public async Task AuthenticateAndCollectProofAsync_ShouldCarryOnlyAllowlistedDiagnostics_WhenSessionIsForbidden()
+    {
+        var handler = new SequencedHandler(Response(
+            HttpStatusCode.Forbidden,
+            "{\"errorCode\":\"error.public-api.failure\",\"secret\":\"body-sentinel\"}",
+            new Dictionary<string, string>
+            {
+                ["X-REQUEST-ID"] = "request-123",
+                ["X-SECRET"] = "header-sentinel"
+            }));
+        var gateway = CreateGateway(handler);
+
+        var outcome = await gateway.AuthenticateAndCollectProofAsync(CreateRequest(), CancellationToken.None);
+
+        Assert.Equal("error.public-api.failure", outcome.Failure!.Diagnostic!.ErrorCode);
+        Assert.Equal("request-123", outcome.Failure.Diagnostic.RequestId);
+        Assert.DoesNotContain("body-sentinel", outcome.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("header-sentinel", outcome.ToString(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Traces to IG Login 403 Degraded Health Phase 2.5.
+    /// Verifies each diagnostic field is bounded independently at the provider boundary.
+    /// Expected: values of exactly 256 characters are retained and values of 257 characters are discarded independently.
+    /// Why: provider-controlled diagnostics must remain useful without permitting unbounded data across the adapter boundary.
+    /// </summary>
+    [Theory]
+    [InlineData(256, 256)]
+    [InlineData(256, 257)]
+    [InlineData(257, 256)]
+    [InlineData(257, 257)]
+    public async Task AuthenticateAndCollectProofAsync_ShouldBoundDiagnosticsIndependently_WhenSessionDiagnosticValuesReachLimit(int errorCodeLength, int requestIdLength)
+    {
+        var handler = new SequencedHandler(Response(
+            HttpStatusCode.Forbidden,
+            $"{{\"errorCode\":\"{new string('e', errorCodeLength)}\"}}",
+            new Dictionary<string, string> { ["X-REQUEST-ID"] = new string('r', requestIdLength) }));
+        var gateway = CreateGateway(handler);
+
+        var outcome = await gateway.AuthenticateAndCollectProofAsync(CreateRequest(), CancellationToken.None);
+
+        Assert.Equal(errorCodeLength == 256 ? new string('e', 256) : null, outcome.Failure!.Diagnostic?.ErrorCode);
+        Assert.Equal(requestIdLength == 256 ? new string('r', 256) : null, outcome.Failure.Diagnostic?.RequestId);
+    }
+
+    /// <summary>
+    /// Traces to IG Login 403 Degraded Health Phase 2.5.
+    /// Verifies malformed, invalidly typed, and non-403 responses do not create diagnostics.
+    /// Expected: the typed diagnostic is null for each rejected diagnostic source.
+    /// Why: only a valid session 403 may carry the fixed allowlist across the adapter boundary.
+    /// </summary>
+    [Theory]
+    [InlineData(HttpStatusCode.Forbidden, "not-json", "request-123")]
+    [InlineData(HttpStatusCode.Unauthorized, "{\"errorCode\":\"error.public-api.failure\"}", "request-123")]
+    public async Task AuthenticateAndCollectProofAsync_ShouldDiscardDiagnostics_WhenResponseIsInvalidOrNotForbidden(HttpStatusCode statusCode, string body, string requestId)
+    {
+        var handler = new SequencedHandler(Response(statusCode, body, new Dictionary<string, string> { ["X-REQUEST-ID"] = requestId }));
+        var gateway = CreateGateway(handler);
+
+        var outcome = await gateway.AuthenticateAndCollectProofAsync(CreateRequest(), CancellationToken.None);
+
+        Assert.Null(outcome.Failure!.Diagnostic);
+    }
+
+    /// <summary>
+    /// Traces to IG Login 403 Degraded Health Phase 2.5.
+    /// Verifies an invalidly typed allowlisted field is discarded without discarding an independently valid request identifier.
+    /// Expected: ErrorCode is null and X-REQUEST-ID remains available in the typed diagnostic.
+    /// Why: each provider-controlled field must be validated independently at the boundary.
+    /// </summary>
+    [Fact]
+    public async Task AuthenticateAndCollectProofAsync_ShouldDiscardInvalidErrorCode_WithoutDiscardingValidRequestId()
+    {
+        var handler = new SequencedHandler(Response(
+            HttpStatusCode.Forbidden,
+            "{\"errorCode\":123}",
+            new Dictionary<string, string> { ["X-REQUEST-ID"] = "request-123" }));
+        var gateway = CreateGateway(handler);
+
+        var outcome = await gateway.AuthenticateAndCollectProofAsync(CreateRequest(), CancellationToken.None);
+
+        Assert.Null(outcome.Failure!.Diagnostic!.ErrorCode);
+        Assert.Equal("request-123", outcome.Failure.Diagnostic.RequestId);
     }
 
     /// <summary>
@@ -221,14 +364,19 @@ public sealed class IgBrokerAuthenticationGatewayTests
 
         public List<HttpRequestMessage> Requests { get; } = [];
 
-        protected override Task<HttpResponseMessage> SendAsync(
+        public List<string> RequestBodies { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             Requests.Add(request);
+            RequestBodies.Add(request.Content is null
+                ? string.Empty
+                : await request.Content.ReadAsStringAsync(cancellationToken));
             return responseFactory is null
-                ? Task.FromResult(responses.Dequeue())
-                : responseFactory(request, cancellationToken);
+                ? responses.Dequeue()
+                : await responseFactory(request, cancellationToken);
         }
     }
 

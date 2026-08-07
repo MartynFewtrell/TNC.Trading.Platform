@@ -49,7 +49,7 @@ internal sealed class PlatformStateTransitionEngine
             return PlatformTickDecision.WaitForScheduledRetry();
         }
 
-        return configuration.Credentials.IsComplete
+        return configuration.Credentials.IsAuthenticationReady
             ? PlatformTickDecision.TransitionToActive()
             : PlatformTickDecision.TransitionToDegraded();
     }

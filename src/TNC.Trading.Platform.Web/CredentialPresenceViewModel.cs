@@ -3,4 +3,9 @@
 internal sealed record CredentialPresenceViewModel(
     bool HasApiKey,
     bool HasIdentifier,
-    bool HasPassword);
+    bool HasPassword,
+    bool IsApiKeyUsable,
+    bool IsIdentifierUsable,
+    bool IsPasswordUsable,
+    bool IsAuthenticationReady,
+    bool RequiresCredentialReentry);

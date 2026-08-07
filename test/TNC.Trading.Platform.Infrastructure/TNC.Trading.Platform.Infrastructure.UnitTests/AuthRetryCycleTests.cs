@@ -77,6 +77,36 @@ public class AuthRetryCycleTests
     }
 
     /// <summary>
+    /// Trace: IG Login 403 Degraded Health Phase 2.3 and 2.5.
+    /// Verifies automatic reconciliation blocks one unreadable credential before the broker gateway and persists only fixed remediation.
+    /// Expected: the gateway is not called, runtime status is degraded, and no AuthAttempted event or ciphertext sentinel is persisted.
+    /// Why: unreadable protected values must never be treated as usable credentials or leak through automatic persistence boundaries.
+    /// </summary>
+    [Fact]
+    public async Task TickAsync_ShouldPersistFixedDegradedRemediationWithoutBrokerCall_WhenCredentialIsUnreadable()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
+        var configuration = CreateConfiguration();
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(BrokerEnvironmentKind.Demo, "api-key", "identifier", "password", "unit-test", CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ProtectedCredentials.Single(item => item.CredentialType == "Identifier").ProtectedValue = "ciphertext-sentinel";
+        await dbContext.SaveChangesAsync();
+
+        var gateway = new CountingBrokerAuthenticationGateway();
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider, gateway);
+        await coordinator.TickAsync(CancellationToken.None);
+
+        var status = await coordinator.GetStatusAsync(CancellationToken.None);
+        Assert.Equal(0, gateway.CallCount);
+        Assert.Equal(PlatformSessionStatus.Degraded, status.SessionStatus);
+        Assert.Equal("IG Demo credentials must be re-entered.", status.BlockedReason);
+        Assert.DoesNotContain(GetOperationalEvents(dbContext), record => string.Equals(record.EventType, "AuthAttempted", StringComparison.Ordinal));
+        Assert.DoesNotContain(GetOperationalEvents(dbContext).Select(record => record.Summary), summary => summary.Contains("ciphertext-sentinel", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// Trace: FR12, FR19, TR2.
     /// Verifies: incomplete credentials raise a single degraded-auth notification without recording retry scheduling activity.
     /// Expected: one AuthFailure notification is stored and no retry-limit or retry-scheduled auth events are emitted across repeated ticks.
@@ -990,6 +1020,19 @@ public class AuthRetryCycleTests
             CancellationToken cancellationToken)
         {
             return authenticateAsync(request, cancellationToken);
+        }
+    }
+
+    private sealed class CountingBrokerAuthenticationGateway : IBrokerAuthenticationGateway
+    {
+        public int CallCount { get; private set; }
+
+        public Task<BrokerAuthenticationOutcome> AuthenticateAndCollectProofAsync(
+            BrokerAuthenticationRequest request,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(CreateSuccessfulAuthenticationOutcome());
         }
     }
 }

@@ -62,6 +62,23 @@ internal sealed class TriggerManualAuthRetryHandler(
             "Information",
             nextDelay), cancellationToken).ConfigureAwait(false);
 
+        if (!configuration.Credentials.IsAuthenticationReady)
+        {
+            var blockedReason = configuration.Credentials.RequiresCredentialReentry
+                ? "IG Demo credentials must be re-entered."
+                : "IG demo credentials are incomplete.";
+            currentState.LatestFailureSummary = blockedReason;
+            await committer.CommitAsync(CreateIntent(
+                configuration,
+                currentState,
+                retryCycleId,
+                "FailureDetected",
+                blockedReason,
+                "Warning",
+                nextDelay), cancellationToken).ConfigureAwait(false);
+            return new TriggerManualAuthRetryResponse(TriggerManualAuthRetryOutcome.Accepted(retryCycleId));
+        }
+
         var authentication = await brokerAuthenticationGateway.AuthenticateAndCollectProofAsync(
             new BrokerAuthenticationRequest(configuration.BrokerEnvironment),
             cancellationToken).ConfigureAwait(false);
@@ -76,7 +93,8 @@ internal sealed class TriggerManualAuthRetryHandler(
                 "FailureDetected",
                 currentState.LatestFailureSummary,
                 "Warning",
-                nextDelay), cancellationToken).ConfigureAwait(false);
+                nextDelay,
+                diagnostic: authentication.Failure?.Diagnostic), cancellationToken).ConfigureAwait(false);
             return new TriggerManualAuthRetryResponse(TriggerManualAuthRetryOutcome.Accepted(retryCycleId));
         }
 
@@ -124,7 +142,8 @@ internal sealed class TriggerManualAuthRetryHandler(
         string severity,
         int? lastDelaySeconds,
         IgLoginSnapshot? snapshot = null,
-        IgProofDataSnapshot? proof = null)
+        IgProofDataSnapshot? proof = null,
+        BrokerAuthenticationDiagnostic? diagnostic = null)
     {
         var now = timeProvider.GetUtcNow();
         return new(
@@ -154,7 +173,9 @@ internal sealed class TriggerManualAuthRetryHandler(
                 configuration.BrokerEnvironment,
                 severity,
                 summary,
-                new { RetryCycleId = retryCycleId },
+                diagnostic is null
+                    ? new { RetryCycleId = retryCycleId }
+                    : new { RetryCycleId = retryCycleId, Diagnostic = diagnostic },
                 Guid.NewGuid().ToString("N"),
                 retryCycleId,
                 now),

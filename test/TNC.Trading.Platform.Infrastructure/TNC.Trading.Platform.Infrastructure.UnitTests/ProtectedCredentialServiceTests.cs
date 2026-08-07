@@ -38,6 +38,95 @@ public class ProtectedCredentialServiceTests
     }
 
     /// <summary>
+    /// Trace: IG Login 403 Degraded Health, Phase 1.3.
+    /// Verifies: stored-row presence is separate from active-provider decryptability.
+    /// Expected: all three rows remain present, only the unreadable field is unusable, and authentication is not ready.
+    /// Why: an unreadable ciphertext row must not be mistaken for valid credentials and sent to IG.
+    /// </summary>
+    [Fact]
+    public async Task GetPresenceAsync_ShouldReportUnreadableFieldAsUnusable_WhenAllRowsArePresent()
+    {
+        using var dbContext = InfrastructureReflection.CreateDbContext();
+        var provider = InfrastructureReflection.CreateDataProtectionProvider();
+        var service = new ProtectedCredentialService(dbContext, provider, TimeProvider.System);
+
+        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ProtectedCredentials.Single(item => item.CredentialType == "Identifier").ProtectedValue = "unreadable-ciphertext";
+        await dbContext.SaveChangesAsync();
+
+        var presence = await service.GetPresenceAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
+
+        Assert.True(presence.HasApiKey);
+        Assert.True(presence.HasIdentifier);
+        Assert.True(presence.HasPassword);
+        Assert.True(presence.IsApiKeyUsable);
+        Assert.False(presence.IsIdentifierUsable);
+        Assert.True(presence.IsPasswordUsable);
+        Assert.False(presence.IsAuthenticationReady);
+        Assert.True(presence.RequiresCredentialReentry);
+    }
+
+    /// <summary>
+    /// Trace: IG Login 403 Degraded Health, Phase 1.3.
+    /// Verifies: an omitted secret update retains its existing ciphertext and usability state.
+    /// Expected: updating another field does not make an unreadable omitted field usable.
+    /// Why: partial write-only saves must not claim to repair credentials that were not re-entered.
+    /// </summary>
+    [Fact]
+    public async Task UpdateAsync_ShouldRetainUnreadableField_WhenPartialSaveOmitsIt()
+    {
+        using var dbContext = InfrastructureReflection.CreateDbContext();
+        var provider = InfrastructureReflection.CreateDataProtectionProvider();
+        var service = new ProtectedCredentialService(dbContext, provider, TimeProvider.System);
+
+        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ProtectedCredentials.Single(item => item.CredentialType == "Password").ProtectedValue = "unreadable-ciphertext";
+        await dbContext.SaveChangesAsync();
+
+        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "rotated-api-key", null, null, "unit-test", CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var presence = await service.GetPresenceAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
+
+        Assert.True(presence.HasPassword);
+        Assert.False(presence.IsPasswordUsable);
+        Assert.False(presence.IsAuthenticationReady);
+    }
+
+    /// <summary>
+    /// Trace: IG Login 403 Degraded Health, Phase 1.3.
+    /// Verifies: a complete three-secret save reprotects every field for a fresh service instance.
+    /// Expected: all fields are usable and authentication is ready without returning secret material from the projection.
+    /// Why: operator re-entry of all three secrets is the supported recovery from unavailable key-ring ciphertext.
+    /// </summary>
+    [Fact]
+    public async Task UpdateAsync_ShouldRestoreReadiness_WhenAllSecretsAreResaved()
+    {
+        using var dbContext = InfrastructureReflection.CreateDbContext();
+        var provider = InfrastructureReflection.CreateDataProtectionProvider();
+        var service = new ProtectedCredentialService(dbContext, provider, TimeProvider.System);
+
+        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ProtectedCredentials.Single(item => item.CredentialType == "ApiKey").ProtectedValue = "unreadable-ciphertext";
+        await dbContext.SaveChangesAsync();
+
+        var freshService = new ProtectedCredentialService(dbContext, provider, TimeProvider.System);
+        await freshService.UpdateAsync(BrokerEnvironmentKind.Demo, "replacement-api-key", "replacement-identifier", "replacement-password", "unit-test", CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var presence = await freshService.GetPresenceAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
+
+        Assert.True(presence.IsApiKeyUsable);
+        Assert.True(presence.IsIdentifierUsable);
+        Assert.True(presence.IsPasswordUsable);
+        Assert.True(presence.IsAuthenticationReady);
+        Assert.False(presence.RequiresCredentialReentry);
+    }
+
+    /// <summary>
     /// Trace: SR2, SR3, TR3, TR12.
     /// Verifies: saved credentials are protected at rest and scoped to the selected broker environment.
     /// Expected: Demo credential presence is populated, Live remains empty, and stored protected values do not match raw secrets.

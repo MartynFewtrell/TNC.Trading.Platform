@@ -45,7 +45,7 @@ internal static class PlatformWebTestData
                 latestSnapshot,
                 null));
 
-    public static PlatformConfigurationViewModel CreateConfiguration(bool restartRequired = false) =>
+    public static PlatformConfigurationViewModel CreateConfiguration(bool restartRequired = false, bool requiresCredentialReentry = false) =>
         new(
             "Test",
             "Demo",
@@ -58,7 +58,7 @@ internal static class PlatformWebTestData
                 "UTC"),
             new RetryPolicyViewModel(1, 5, 2, 60, 5),
             new NotificationSettingsViewModel("RecordedOnly", "owner@example.com"),
-            new CredentialPresenceViewModel(true, true, true),
+            new CredentialPresenceViewModel(true, true, true, true, true, true, !requiresCredentialReentry, requiresCredentialReentry),
             restartRequired,
             DateTimeOffset.UtcNow);
 

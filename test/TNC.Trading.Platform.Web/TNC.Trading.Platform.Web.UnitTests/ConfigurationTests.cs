@@ -123,4 +123,48 @@ public sealed class ConfigurationTests
         cut.WaitForAssertion(() =>
             Assert.Contains("Startup-fixed changes apply on the next platform start.", cut.Find("[data-testid='configuration-save-message']").TextContent, StringComparison.Ordinal));
     }
+
+    /// <summary>
+    /// Traces to DR-02 and DR-03. Verifies an unreadable credential projection gives one complete
+    /// re-entry instruction while retaining write-only blank secret inputs and rendering no secret value.
+    /// Expected: the stable remediation message is present and all new credential inputs are blank.
+    /// Why: operators must repair the whole protected credential set without receiving stored secret material.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldRequireAllDemoCredentials_WhenCredentialReentryIsRequired()
+    {
+        using var context = new PlatformComponentTestContext(
+            "local-operator",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration(requiresCredentialReentry: true)));
+
+        var cut = context.RenderComponent<Configuration>();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Contains("API key, identifier, and password together", cut.Find("[data-testid='configuration-credential-reentry-message']").TextContent, StringComparison.Ordinal);
+            Assert.All(
+                ["configuration-new-api-key", "configuration-new-identifier", "configuration-new-password"],
+                testId => Assert.True(string.IsNullOrEmpty(cut.Find($"[data-testid='{testId}']").GetAttribute("value"))));
+            Assert.DoesNotContain("secret-value", cut.Markup, StringComparison.Ordinal);
+        });
+    }
+
+    /// <summary>
+    /// Traces to DR-02 and DR-03. Verifies the remediation instruction is conditional on the safe aggregate flag.
+    /// Expected: a fully usable credential projection does not render the re-entry message.
+    /// Why: healthy operators should not be prompted to rotate valid credentials.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldHideCredentialReentryMessage_WhenCredentialsAreUsable()
+    {
+        using var context = new PlatformComponentTestContext(
+            "local-operator",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()));
+
+        var cut = context.RenderComponent<Configuration>();
+
+        cut.WaitForAssertion(() => Assert.Empty(cut.FindAll("[data-testid='configuration-credential-reentry-message']")));
+    }
 }

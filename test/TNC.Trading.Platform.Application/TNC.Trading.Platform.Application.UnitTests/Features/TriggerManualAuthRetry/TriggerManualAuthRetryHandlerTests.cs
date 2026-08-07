@@ -83,6 +83,27 @@ public sealed class TriggerManualAuthRetryHandlerTests
     }
 
     /// <summary>
+    /// Trace: IG Login 403 Degraded Health Phase 2.3.
+    /// Verifies an eligible manual retry with present but unusable credentials commits its intent and remediation without calling IG.
+    /// Expected: the retry is accepted, the gateway call count is zero, and the failure event uses the fixed redacted reason.
+    /// Why: manual retry must use the same decryptability gate as automatic reconciliation.
+    /// </summary>
+    [Fact]
+    public async Task HandleAsync_ShouldPersistRedactedRemediationWithoutBrokerCall_WhenCredentialsAreUnusable()
+    {
+        var fixture = CreateFixture(configuration: CreateConfigurationWithCredentials(new CredentialPresence(true, true, true, true, false, true)));
+        fixture.State.RetryLimitReached = true;
+        fixture.State.SessionStatus = PlatformSessionStatus.Degraded;
+
+        var result = await fixture.Handler.HandleAsync(new TriggerManualAuthRetryRequest(), CancellationToken.None);
+
+        Assert.True(result.Outcome.IsAccepted);
+        Assert.Equal(0, fixture.Gateway.CallCount);
+        Assert.Equal(2, fixture.Committer.Intents.Count);
+        Assert.Equal("IG Demo credentials must be re-entered.", fixture.Committer.Intents[1].Event.Summary);
+    }
+
+    /// <summary>
     /// Trace: Phase 5.1 cancellation contract.
     /// Verifies: cancellation from the broker gateway is not converted into an expected conflict outcome.
     /// Expected: OperationCanceledException propagates after the initial local intent.
@@ -127,6 +148,9 @@ public sealed class TriggerManualAuthRetryHandlerTests
 
         return new Fixture(handler, state, committer, gateway);
     }
+
+    private static PlatformConfigurationSnapshot CreateConfigurationWithCredentials(CredentialPresence credentials) =>
+        CreateConfiguration(PlatformEnvironmentKind.Live, BrokerEnvironmentKind.Demo) with { Credentials = credentials };
 
     private static PlatformConfigurationSnapshot CreateConfiguration(PlatformEnvironmentKind platformEnvironment, BrokerEnvironmentKind brokerEnvironment)
     {

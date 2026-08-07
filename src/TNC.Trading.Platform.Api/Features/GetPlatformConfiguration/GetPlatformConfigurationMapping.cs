@@ -30,7 +30,12 @@ internal static class GetPlatformConfigurationMapping
             new CredentialPresenceResponse(
                 configuration.Credentials.HasApiKey,
                 configuration.Credentials.HasIdentifier,
-                configuration.Credentials.HasPassword),
+                configuration.Credentials.HasPassword,
+                configuration.Credentials.IsApiKeyUsable,
+                configuration.Credentials.IsIdentifierUsable,
+                configuration.Credentials.IsPasswordUsable,
+                configuration.Credentials.IsAuthenticationReady,
+                configuration.Credentials.RequiresCredentialReentry),
             configuration.RestartRequired,
             configuration.UpdatedAtUtc);
     }

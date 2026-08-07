@@ -145,6 +145,10 @@ else
         <PlatformAccordionSection Title="IG credentials" IsOpen="false">
             <section class="panel">
                 <p class="hint" data-testid="configuration-secret-handling-hint">Stored values are never shown. Enter a field only when you want to replace it.</p>
+                @if (form.Credentials.RequiresCredentialReentry)
+                {
+                    <p class="warning" role="status" data-testid="configuration-credential-reentry-message">Enter the IG Demo API key, identifier, and password together in one save to restore authentication.</p>
+                }
                 <div class="platform-credential-state">
                     <p data-testid="configuration-stored-api-key">Stored API key: @(form.Credentials.HasApiKey ? "Present" : "Missing")</p>
                     <p data-testid="configuration-stored-identifier">Stored identifier: @(form.Credentials.HasIdentifier ? "Present" : "Missing")</p>
@@ -154,15 +158,15 @@ else
                 <div class="platform-form-grid">
                     <label>
                         New API key
-                        <InputText @bind-Value="form.CredentialsUpdate.ApiKey" />
+                        <InputText @bind-Value="form.CredentialsUpdate.ApiKey" data-testid="configuration-new-api-key" />
                     </label>
                     <label>
                         New identifier
-                        <InputText @bind-Value="form.CredentialsUpdate.Identifier" />
+                        <InputText @bind-Value="form.CredentialsUpdate.Identifier" data-testid="configuration-new-identifier" />
                     </label>
                     <label>
                         New password
-                        <InputText @bind-Value="form.CredentialsUpdate.Password" type="password" />
+                        <InputText @bind-Value="form.CredentialsUpdate.Password" type="password" data-testid="configuration-new-password" />
                     </label>
                     <label>
                         Changed by
