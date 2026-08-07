@@ -2,6 +2,7 @@
 using System.Text.Json;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.PlatformAuthentication.Ports;
+using TNC.Trading.Platform.Application.Features.AccountDetails;
 using TNC.Trading.Platform.Application.Services;
 
 namespace TNC.Trading.Platform.Application.Features.ReconcilePlatformAuthentication;
@@ -19,7 +20,8 @@ internal sealed class PlatformAuthenticationReconciler(
     IPlatformIgProofDataStore igProofDataStore,
     TimeProvider timeProvider,
     IPlatformApplicationLogger logger,
-    IPlatformReconciliationLease reconciliationLease) : IPlatformAuthenticationReconciler
+    IPlatformReconciliationLease reconciliationLease,
+    IAccountDetailsDailyCapture? accountDetailsDailyCapture = null) : IPlatformAuthenticationReconciler
 {
     private const string MissingCredentialsBlockedReason = "IG demo credentials are incomplete.";
     private const string UnusableCredentialsBlockedReason = "IG Demo credentials must be re-entered.";
@@ -271,6 +273,19 @@ internal sealed class PlatformAuthenticationReconciler(
                 recoveryCorrelationId,
                 retryCycleId,
                 cancellationToken).ConfigureAwait(false);
+
+            if (accountDetailsDailyCapture is not null)
+            {
+                try
+                {
+                    await accountDetailsDailyCapture.HandleAsync(new CaptureDailyAccountDetailsRequest(), cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // Account Details is best-effort and must not invalidate durable login success.
+                }
+            }
+
             currentState.CurrentRetryCycleId = null;
             await sideEffects.DispatchRecoveryAsync(currentConfiguration, "IG demo auth recovered after manual retry.", recoveryCorrelationId, retryCycleId, cancellationToken).ConfigureAwait(false);
             return;
@@ -450,6 +465,18 @@ internal sealed class PlatformAuthenticationReconciler(
             correlationId,
             retryCycleId,
             cancellationToken).ConfigureAwait(false);
+
+        if (accountDetailsDailyCapture is not null)
+        {
+            try
+            {
+                await accountDetailsDailyCapture.HandleAsync(new CaptureDailyAccountDetailsRequest(), cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Account Details is best-effort and must not invalidate durable login success.
+            }
+        }
 
         ForgetDegradedFailureNotification(retryCycleId);
         currentState.CurrentRetryCycleId = null;

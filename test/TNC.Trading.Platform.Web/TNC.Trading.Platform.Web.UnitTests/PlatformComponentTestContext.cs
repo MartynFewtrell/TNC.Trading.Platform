@@ -120,6 +120,7 @@ internal sealed class PlatformComponentTestContext : Bunit.TestContext
         Services.AddScoped<ConfigurationPagePresenter>();
         Services.AddScoped<HomePagePresenter>();
         Services.AddScoped<StatusPagePresenter>();
+        Services.AddScoped<AccountDetailsPagePresenter>();
 
         var shellContextProvider = new PlatformShellContextProvider(
             operatorContextAccessor,

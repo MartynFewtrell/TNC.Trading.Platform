@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using TNC.Trading.Platform.Application.Authentication;
 using TNC.Trading.Platform.Web.Authentication;
+using TNC.Trading.Platform.Web.Components.Pages;
 
 namespace TNC.Trading.Platform.Web;
 
@@ -112,6 +113,27 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
 
         var content = await response.Content.ReadFromJsonAsync<IgLoginHistoryResponse>(JsonOptions, cancellationToken);
         return content?.RetainedSnapshots ?? throw new InvalidOperationException("IG login history response was empty.");
+    }
+
+    public async Task<AccountDetailsResponseViewModel> GetAccountDetailsAsync(string? cursor, CancellationToken cancellationToken)
+    {
+        var url = string.IsNullOrWhiteSpace(cursor)
+            ? "/api/platform/account-details"
+            : $"/api/platform/account-details?cursor={Uri.EscapeDataString(cursor)}";
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Get, url, [PlatformAuthenticationDefaults.Scopes.Viewer], cancellationToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<AccountDetailsResponseViewModel>(JsonOptions, cancellationToken)
+            ?? throw new InvalidOperationException("Account details response was empty.");
+    }
+
+    public async Task<AccountDetailsRetrievalViewModel> RefreshAccountDetailsAsync(CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Post, "/api/platform/account-details/refresh", [PlatformAuthenticationDefaults.Scopes.Operator], cancellationToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<AccountDetailsRetrievalViewModel>(JsonOptions, cancellationToken)
+            ?? throw new InvalidOperationException("Account details refresh response was empty.");
     }
 
     private async Task<HttpRequestMessage> CreateAuthorizedRequestAsync(

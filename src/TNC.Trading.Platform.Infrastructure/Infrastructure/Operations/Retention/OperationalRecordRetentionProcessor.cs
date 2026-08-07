@@ -41,8 +41,15 @@ internal sealed class OperationalRecordRetentionProcessor(
                     && item.CapturedAtUtc < plan.Cutoff)
                 .ExecuteDeleteAsync(cancellationToken)
                 .ConfigureAwait(false);
+            var deletedAccountDetails = await dbContext.AccountDetailsRetrievals
+                .Where(item => item.RetrievedAtUtc < plan.Cutoff
+                    && !dbContext.AccountDetailsRetrievals.Any(newer => newer.BrokerEnvironment == item.BrokerEnvironment
+                        && (newer.RetrievedAtUtc > item.RetrievedAtUtc
+                            || newer.RetrievedAtUtc == item.RetrievedAtUtc && newer.AccountDetailsRetrievalId.CompareTo(item.AccountDetailsRetrievalId) > 0)))
+                .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false);
 
-            deletedCount = deletedEvents + deletedAudits + deletedNotifications + deletedRetainedIgLoginSnapshots;
+            deletedCount = deletedEvents + deletedAudits + deletedNotifications + deletedRetainedIgLoginSnapshots + deletedAccountDetails;
         }
         else
         {
@@ -64,14 +71,22 @@ internal sealed class OperationalRecordRetentionProcessor(
                 .Where(item => item.SnapshotKind == retainedSnapshotKind && item.CapturedAtUtc < plan.Cutoff)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
+            var expiredAccountDetails = await dbContext.AccountDetailsRetrievals
+                .Where(item => item.RetrievedAtUtc < plan.Cutoff
+                    && !dbContext.AccountDetailsRetrievals.Any(newer => newer.BrokerEnvironment == item.BrokerEnvironment
+                        && (newer.RetrievedAtUtc > item.RetrievedAtUtc
+                            || newer.RetrievedAtUtc == item.RetrievedAtUtc && newer.AccountDetailsRetrievalId.CompareTo(item.AccountDetailsRetrievalId) > 0)))
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
 
-            deletedCount = expiredOperationalEvents.Count + expiredConfigurationAudits.Count + expiredNotificationRecords.Count + expiredRetainedIgLoginSnapshots.Count;
+            deletedCount = expiredOperationalEvents.Count + expiredConfigurationAudits.Count + expiredNotificationRecords.Count + expiredRetainedIgLoginSnapshots.Count + expiredAccountDetails.Count;
             if (deletedCount > 0)
             {
                 dbContext.OperationalEvents.RemoveRange(expiredOperationalEvents);
                 dbContext.ConfigurationAudits.RemoveRange(expiredConfigurationAudits);
                 dbContext.NotificationRecords.RemoveRange(expiredNotificationRecords);
                 dbContext.IgLoginSnapshots.RemoveRange(expiredRetainedIgLoginSnapshots);
+                dbContext.AccountDetailsRetrievals.RemoveRange(expiredAccountDetails);
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
         }

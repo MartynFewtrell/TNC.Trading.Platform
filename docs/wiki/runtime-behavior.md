@@ -8,6 +8,28 @@ ms.topic: concept
 
 This document explains how the current application behaves at startup and while it is running. It focuses on schedule evaluation, auth state, retry handling, notifications, and record retention.
 
+## Account Details capture
+
+After a durable successful IG Demo login, Application requests a best-effort
+automatic Account Details capture. The first successful capture for the
+configured trading day is stored using the existing trading-schedule time
+zone, rather than UTC midnight. A failed automatic capture does not invalidate
+login success and is eligible for another attempt after a later successful
+login. Once the daily snapshot exists, subsequent successful logins do not
+issue another automatic accounts request for that environment and trading day.
+
+An Operator can request a deliberate refresh through the API. Same-process
+requests coalesce, while the SQL Server application lock coordinates replicas
+per broker environment. Automatic contention yields so login remains
+successful; manual contention returns `409 Conflict` with the newest known
+timestamp. Each successful response is validated before one SQL transaction
+inserts an immutable retrieval header and all account children. The 90-day
+operational retention process removes expired retrievals and cascades their
+children while preserving the newest successful retrieval in each environment.
+The additive EF migration is applied before bootstrap configuration and
+retention; incompatible migration history remains fail-closed for operator
+correction.
+
 ## Runtime model summary
 
 The current runtime model is a supervised control loop.

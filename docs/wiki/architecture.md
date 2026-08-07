@@ -433,6 +433,9 @@ The `TNC.Trading.Platform.Infrastructure` project contains:
 - runtime-state storage
 - retry-cycle storage
 - IG login snapshot storage for the latest successful payload and retained daily first-successful history
+- Account Details retrieval and account-child storage for immutable IG test-account snapshots
+    snapshots, composite-keyset history, automatic daily capture, and
+    environment-scoped refresh leases
 - the outbound `IgBrokerAuthenticationGateway` adapter for the IG Demo REST API
 - in-memory proof-data storage for the latest read-only IG Demo account snapshot
 - operational-event storage, including persisted operator auth audit history

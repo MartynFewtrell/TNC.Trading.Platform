@@ -1,4 +1,5 @@
 ﻿using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.AccountDetails;
 using TNC.Trading.Platform.Application.Features.PlatformAuthentication.Ports;
 using TNC.Trading.Platform.Application.Features.ReconcilePlatformAuthentication;
 using TNC.Trading.Platform.Application.Services;
@@ -454,6 +455,39 @@ public class AuthRetryCycleTests
         Assert.Equal("configured-demo-session", retainedSnapshot.CurrentAccountId);
         Assert.DoesNotContain("cst-token", latestSnapshot.RawNonSecretPayloadJson, StringComparison.Ordinal);
         Assert.DoesNotContain("security-token", latestSnapshot.RawNonSecretPayloadJson, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: Account Details Phase 1, automatic capture timing and failure isolation.
+    /// Verifies: reconciler capture starts only after the successful login snapshot and recovery event are durably persisted.
+    /// Expected: capture observes both durable records, its failure does not fail reconciliation, and the runtime is Active.
+    /// Why: automatic account capture is best-effort and must never become part of the authentication success transaction.
+    /// </summary>
+    [Fact]
+    public async Task GetStatusAsync_ShouldCaptureAfterDurableNewSuccess_WhenStartupAuthenticationSucceeds()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
+        var configuration = CreateConfiguration();
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(
+            BrokerEnvironmentKind.Demo,
+            "demo-api-key",
+            "demo-identifier",
+            "demo-password",
+            "unit-test",
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var capture = new ObservingFailingAccountDetailsCapture(dbContext);
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider, accountDetailsDailyCapture: capture);
+
+        var status = await coordinator.GetStatusAsync(CancellationToken.None);
+
+        Assert.True(capture.WasCalled);
+        Assert.True(capture.ObservedDurableLoginSuccess);
+        Assert.Equal(PlatformSessionStatus.Active, status.SessionStatus);
+        Assert.NotNull(status.IgLoginStatus.LatestSnapshotId);
     }
 
     /// <summary>
@@ -919,7 +953,8 @@ public class AuthRetryCycleTests
         IConfiguration configuration,
         ProtectedCredentialService protectedCredentialService,
         TimeProvider timeProvider,
-        IBrokerAuthenticationGateway? igSessionClient = null)
+        IBrokerAuthenticationGateway? igSessionClient = null,
+        IAccountDetailsDailyCapture? accountDetailsDailyCapture = null)
     {
         var configurationStore = CreateConfigurationStore(dbContext, configuration, protectedCredentialService, timeProvider);
         var configurationService = new PlatformConfigurationService(configurationStore);
@@ -937,7 +972,8 @@ public class AuthRetryCycleTests
             new InMemoryPlatformIgProofDataStore(),
             timeProvider,
             ApplicationReflection.CreateNullApplicationLogger(),
-            new NoopPlatformReconciliationLease());
+            new NoopPlatformReconciliationLease(),
+            accountDetailsDailyCapture);
     }
 
     private static NotificationRecordEntity[] GetNotificationRecords(PlatformDbContext dbContext)
@@ -1033,6 +1069,23 @@ public class AuthRetryCycleTests
         {
             CallCount++;
             return Task.FromResult(CreateSuccessfulAuthenticationOutcome());
+        }
+    }
+
+    private sealed class ObservingFailingAccountDetailsCapture(PlatformDbContext dbContext) : IAccountDetailsDailyCapture
+    {
+        public bool WasCalled { get; private set; }
+        public bool ObservedDurableLoginSuccess { get; private set; }
+
+        public Task<CaptureDailyAccountDetailsResponse> HandleAsync(
+            CaptureDailyAccountDetailsRequest request,
+            CancellationToken cancellationToken)
+        {
+            WasCalled = true;
+            ObservedDurableLoginSuccess =
+                dbContext.IgLoginSnapshots.Any(item => item.SnapshotKind == IgLoginSnapshotKind.Latest.ToString())
+                && dbContext.OperationalEvents.Any(item => item.EventType == "Authenticated");
+            throw new InvalidOperationException("capture failed");
         }
     }
 }

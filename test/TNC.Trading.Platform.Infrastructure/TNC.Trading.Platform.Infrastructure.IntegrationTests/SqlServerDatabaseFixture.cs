@@ -69,6 +69,8 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
             DROP TABLE IF EXISTS [__EFMigrationsHistory];
             DROP TABLE IF EXISTS [AuthRetryCycles];
             DROP TABLE IF EXISTS [AuthRuntimeStates];
+            DROP TABLE IF EXISTS [AccountDetailsAccounts];
+            DROP TABLE IF EXISTS [AccountDetailsRetrievals];
             DROP TABLE IF EXISTS [ConfigurationAudits];
             DROP TABLE IF EXISTS [DataProtectionKeys];
             DROP TABLE IF EXISTS [IgLoginSnapshots];

@@ -12,6 +12,7 @@ using TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration;
 using TNC.Trading.Platform.Api.Infrastructure.Platform;
 using TNC.Trading.Platform.Application.Authentication;
 using TNC.Trading.Platform.Application.Services;
+using AppAccountDetails = TNC.Trading.Platform.Application.Features.AccountDetails;
 using AppGetIgLoginHistory = TNC.Trading.Platform.Application.Features.GetIgLoginHistory;
 using AppGetPlatformConfiguration = TNC.Trading.Platform.Application.Features.GetPlatformConfiguration;
 using AppGetPlatformEvents = TNC.Trading.Platform.Application.Features.GetPlatformEvents;
@@ -45,6 +46,10 @@ internal static class PlatformEndpoints
             .RequireAuthorization();
         platform.MapGet("/events", GetPlatformEventsAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Viewer);
+        platform.MapGet("/account-details", GetAccountDetailsAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Viewer);
+        platform.MapPost("/account-details/refresh", RefreshAccountDetailsAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
         platform.MapGet("/auth/administration", GetAuthAdministration)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Administrator);
 
@@ -96,6 +101,23 @@ internal static class PlatformEndpoints
     {
         var result = await handler.HandleAsync(new AppGetPlatformEvents.GetPlatformEventsRequest(category, environment), cancellationToken);
         return TypedResults.Ok(result.ToResponse());
+    }
+
+    private static async Task<IResult> GetAccountDetailsAsync(
+        string? cursor,
+        AppAccountDetails.GetAccountDetailsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(new AppAccountDetails.GetAccountDetailsRequest(cursor), cancellationToken);
+        return TypedResults.Ok(result.ToResponse());
+    }
+
+    private static async Task<IResult> RefreshAccountDetailsAsync(
+        AppAccountDetails.RefreshAccountDetailsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(new AppAccountDetails.RefreshAccountDetailsRequest(), cancellationToken);
+        return result.ToHttpResult();
     }
 
     private static IResult GetMetadata(IHostEnvironment environment)

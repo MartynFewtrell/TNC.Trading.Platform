@@ -49,6 +49,7 @@ public sealed class MainLayoutTests
             Assert.Contains("Operator workspace", cut.Markup, StringComparison.Ordinal);
             Assert.Contains("Test / Demo", cut.Markup, StringComparison.Ordinal);
             Assert.Contains("Status", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Account details", cut.Markup, StringComparison.Ordinal);
         });
     }
 

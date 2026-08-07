@@ -161,6 +161,14 @@ database between tests, and drops it during cleanup. It does not launch the API
    or exercise a destructive startup reset branch; no such branch is used by the
    startup initializer.
 
+Account Details SQL coverage verifies additive migration creation, atomic
+parent/child rollback, durable context-restart readback, composite-keyset
+history navigation, and cross-context environment-scoped lease contention.
+Hosted authorization and browser journeys require Docker-backed AppHost, SQL
+Server, Keycloak, and a deterministic fake IG HTTP endpoint. A real IG
+test-account smoke is opt-in only with operator-provided credentials and is
+never part of the default suite.
+
 The Infrastructure unit suite also covers `PlatformStartupInitializer` directly:
 
 * `InitializeAsync_ShouldApplyStepsInRequiredOrder_WhenApiStarts`

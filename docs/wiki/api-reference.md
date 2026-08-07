@@ -18,6 +18,8 @@ The Blazor UI talks to the API over service discovery using the internal `https+
 | `GET` | `/health/ready` | Readiness endpoint. |
 | `GET` | `/api/platform/status` | Current runtime status, IG login state, and latest stored non-secret login payload for viewer-capable operators. |
 | `GET` | `/api/platform/ig-login/history` | Retained daily first-successful non-secret login payloads within the 90-day retention window for viewer-capable operators. |
+| `GET` | `/api/platform/account-details?cursor={opaque}` | Read the newest or adjacent historical saved account retrieval for Viewer-capable operators. |
+| `POST` | `/api/platform/account-details/refresh` | Request a fresh retrieval from the configured IG test account for Operator-capable users. |
 | `GET` | `/api/platform/configuration` | Current redacted configuration snapshot for operator-capable users. |
 | `PUT` | `/api/platform/configuration` | Update operator-managed configuration for operator-capable users. |
 | `POST` | `/api/platform/auth/manual-retry` | Trigger a manual retry cycle when allowed for operator-capable users. |
@@ -33,6 +35,30 @@ The Blazor UI talks to the API over service discovery using the internal `https+
 - Secret values are never returned by configuration or status endpoints.
 - Validation failures on configuration updates return a validation-problem payload with the existing field keys and `400` status.
 - Manual retry conflicts return `409 Conflict` when the current runtime state does not allow the action.
+
+## Account Details
+
+Account Details retrieves real account and balance data from the configured IG
+test account through the IG Demo endpoint (`demo-api.ig.com`). The hostname
+identifies the real IG test environment; the response is not synthetic test
+data. Live is deliberately unsupported. A future Live boundary must use an
+explicit environment selection, separate credentials and endpoint
+configuration, isolated snapshots, and independent operator guardrails.
+
+`GET /api/platform/account-details` returns the newest successful immutable
+retrieval. Passing the opaque `cursor` returned by a prior response reads the
+adjacent snapshot using `(RetrievedAtUtc, RetrievalId)` keyset ordering. The
+response contains only persisted account fields, retrieval time, trading day,
+and older/newer cursors. It never contains IG credentials, CST, or
+`X-SECURITY-TOKEN` values.
+
+`POST /api/platform/account-details/refresh` is Operator-only and starts a
+fresh session inside Infrastructure. It returns `200` with the saved
+retrieval, `409` for unsupported environment or cross-replica refresh
+contention, `429` for a recognized IG allowance response, `502` for malformed
+provider data, `503` for an unavailable upstream, and `504` for timeout.
+Existing saved data remains readable when a refresh fails. Viewer users can
+read history but cannot invoke the refresh route.
 
 ## GET /
 

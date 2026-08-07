@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.AccountDetails;
 using TNC.Trading.Platform.Application.Features.GetIgLoginHistory;
 using TNC.Trading.Platform.Application.Features.GetPlatformConfiguration;
 using TNC.Trading.Platform.Application.Features.GetPlatformEvents;
@@ -38,6 +39,8 @@ internal static class PlatformApplicationServiceCollectionExtensions
         services.AddScoped<TriggerManualAuthRetryHandler>();
         services.AddScoped<GetPlatformEventsHandler>();
         services.AddScoped<GetIgLoginHistoryHandler>();
+        services.AddScoped<GetAccountDetailsHandler>();
+        services.AddScoped<RefreshAccountDetailsHandler>();
 
         return services;
     }

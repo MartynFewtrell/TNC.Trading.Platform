@@ -1,0 +1,57 @@
+@page "/account-details"
+@namespace TNC.Trading.Platform.Web.Components.Pages
+@attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Viewer)]
+@using TNC.Trading.Platform.Web.Authentication
+@inject AccountDetailsPagePresenter Presenter
+@inject PlatformNavigationAccessCoordinator NavigationAccessCoordinator
+
+<PageTitle>Account details</PageTitle>
+
+<section class="panel platform-page-header">
+    <div><h1>Account details</h1><p class="hint">Saved account snapshots from the configured IG environment.</p></div>
+    @if (canRefresh)
+    {
+        <button class="platform-button" type="button" @onclick="Presenter.RefreshAsync" disabled="@Presenter.IsRefreshing">@(Presenter.IsRefreshing ? "Refreshing..." : "Refresh")</button>
+    }
+</section>
+
+@if (!hasRequiredScope) { <p data-testid="account-details-access">Redirecting...</p> }
+else if (Presenter.IsLoading && Presenter.State is null) { <p data-testid="account-details-loading">Loading account details...</p> }
+else if (Presenter.State?.Retrieval is null)
+{
+    <section class="panel" data-testid="account-details-empty"><p>No saved account details are available yet.</p></section>
+}
+else
+{
+    var retrieval = Presenter.State.Retrieval;
+    <section class="panel" data-testid="account-details-panel">
+        <dl class="platform-key-value-grid"><dt>Retrieved at</dt><dd>@retrieval.RetrievedAtUtc.ToLocalTime().ToString("g")</dd><dt>Trading day</dt><dd>@retrieval.TradingDay</dd><dt>Trigger</dt><dd>@retrieval.TriggerSource</dd></dl>
+        @foreach (var account in retrieval.Accounts)
+        {
+            <article data-testid="account-details-account"><h2>@(account.AccountName ?? account.AccountId)</h2>
+                <dl class="platform-key-value-grid">
+                    <dt>Account ID</dt><dd>@account.AccountId</dd><dt>Alias</dt><dd>@(account.AccountAlias ?? "None")</dd><dt>Status</dt><dd>@account.Status</dd><dt>Account type</dt><dd>@account.AccountType</dd><dt>Preferred</dt><dd>@account.IsPreferred</dd><dt>Transfer from</dt><dd>@account.CanTransferFrom</dd><dt>Transfer to</dt><dd>@account.CanTransferTo</dd><dt>Currency</dt><dd>@account.Currency</dd><dt>Balance</dt><dd>@account.Balance</dd><dt>Deposit</dt><dd>@account.Deposit</dd><dt>Profit/loss</dt><dd>@account.ProfitLoss</dd><dt>Available</dt><dd>@account.Available</dd>
+                </dl>
+            </article>
+        }
+    </section>
+    @if (!string.IsNullOrWhiteSpace(Presenter.Error)) { <p class="error" data-testid="account-details-error">@Presenter.Error</p> }
+    <nav class="platform-pagination" aria-label="Account details history">
+        <button type="button" aria-label="View older account details" @onclick="Presenter.LoadOlderAsync" disabled="@(Presenter.IsLoading || Presenter.State.OlderCursor is null)">Older</button>
+        <button type="button" aria-label="View newer account details" @onclick="Presenter.LoadNewerAsync" disabled="@(Presenter.IsLoading || Presenter.State.NewerCursor is null)">Newer</button>
+    </nav>
+}
+
+@if (Presenter.State is not null && Presenter.Error is not null && Presenter.State.Retrieval is not null) { <p class="error">@Presenter.Error</p> }
+
+@code {
+    private bool hasRequiredScope;
+    private bool canRefresh;
+
+    protected override async Task OnInitializedAsync()
+    {
+        hasRequiredScope = await NavigationAccessCoordinator.EnsureRequiredScopesAsync("/account-details", PlatformAuthenticationDefaults.Scopes.Viewer);
+        canRefresh = hasRequiredScope && await NavigationAccessCoordinator.EnsureRequiredScopesAsync("/account-details", PlatformAuthenticationDefaults.Scopes.Operator);
+        if (hasRequiredScope) await Presenter.LoadAsync();
+    }
+}

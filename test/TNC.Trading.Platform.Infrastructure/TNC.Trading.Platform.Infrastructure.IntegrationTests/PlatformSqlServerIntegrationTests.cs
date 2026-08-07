@@ -18,6 +18,7 @@ using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 using TNC.Trading.Platform.Infrastructure.Operations.Retention;
 using TNC.Trading.Platform.Infrastructure.Startup;
+using TNC.Trading.Platform.Application.Features.AccountDetails;
 
 namespace TNC.Trading.Platform.Infrastructure.IntegrationTests;
 
@@ -80,12 +81,160 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
         Assert.All(
             new[]
             {
-                "AuthRetryCycles", "AuthRuntimeStates", "ConfigurationAudits", "DataProtectionKeys", "IgLoginSnapshots", "IgProofData",
+                "AccountDetailsAccounts", "AccountDetailsRetrievals", "AuthRetryCycles", "AuthRuntimeStates", "ConfigurationAudits", "DataProtectionKeys", "IgLoginSnapshots", "IgProofData",
                 "NotificationRecords", "OperationalEvents", "PlatformConfigurations", "ProtectedCredentials"
             },
             table => Assert.Contains(table, tables));
-        Assert.NotEmpty(await dbContext.Database.GetAppliedMigrationsAsync());
+        Assert.Contains("20260807103334_AddAccountDetailsSnapshots", await dbContext.Database.GetAppliedMigrationsAsync());
+
+        var indexes = await dbContext.Database.SqlQueryRaw<string>("""
+            SELECT name AS [Value]
+            FROM sys.indexes
+            WHERE object_id IN (OBJECT_ID(N'AccountDetailsRetrievals'), OBJECT_ID(N'AccountDetailsAccounts'))
+            """).ToListAsync();
+        Assert.Contains("IX_AccountDetailsRetrievals_BrokerEnvironment_RetrievedAtUtc_AccountDetailsRetrievalId", indexes);
+        Assert.Contains("IX_AccountDetailsRetrievals_BrokerEnvironment_TradingDay", indexes);
+        Assert.Contains("IX_AccountDetailsAccounts_AccountDetailsRetrievalId_AccountId", indexes);
     }
+
+    /// <summary>
+    /// Verifies Account Details refresh ownership is an environment-scoped SQL application lock.
+    /// Expected: the same environment contends, a different environment proceeds, and release permits reacquisition.
+    /// Why: replicas must coordinate refreshes per broker environment without blocking unrelated environments.
+    /// </summary>
+    [Fact]
+    public async Task AcquireAsync_ShouldScopeContentionByEnvironmentAndReleaseOwnership_WhenSqlSessionsCompete()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var firstContext = fixture.CreateDbContext();
+        await using var secondContext = fixture.CreateDbContext();
+        await firstContext.Database.MigrateAsync();
+        var firstLeaseProvider = new SqlAccountDetailsRefreshLease(firstContext);
+        var secondLeaseProvider = new SqlAccountDetailsRefreshLease(secondContext);
+
+        var firstLease = await firstLeaseProvider.AcquireAsync(BrokerEnvironmentKind.Demo, AccountDetailsTriggerSource.Manual, CancellationToken.None);
+        var sameEnvironment = await secondLeaseProvider.AcquireAsync(BrokerEnvironmentKind.Demo, AccountDetailsTriggerSource.Manual, CancellationToken.None);
+        var otherEnvironment = await secondLeaseProvider.AcquireAsync(BrokerEnvironmentKind.Live, AccountDetailsTriggerSource.Manual, CancellationToken.None);
+
+        Assert.False(sameEnvironment.Acquired);
+        Assert.True(otherEnvironment.Acquired);
+        await otherEnvironment.DisposeAsync();
+        await firstLease.DisposeAsync();
+
+        var recovered = await secondLeaseProvider.AcquireAsync(BrokerEnvironmentKind.Demo, AccountDetailsTriggerSource.Manual, CancellationToken.None);
+        Assert.True(recovered.Acquired);
+        await recovered.DisposeAsync();
+    }
+
+    /// <summary>
+    /// Verifies manual contention reports the latest saved retrieval, while automatic daily capture yields without a timestamp.
+    /// Expected: both requests are denied by the same SQL lease, with only the manual result carrying the latest timestamp.
+    /// Why: operators need conflict context, while automatic capture remains best-effort and non-blocking.
+    /// </summary>
+    [Fact]
+    public async Task AcquireAsync_ShouldReturnManualLatestButYieldAutomatic_WhenEnvironmentLeaseIsHeld()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var seedContext = fixture.CreateDbContext();
+        await seedContext.Database.MigrateAsync();
+        var retrievedAt = DateTimeOffset.UtcNow.AddMinutes(-2);
+        seedContext.AccountDetailsRetrievals.Add(new AccountDetailsRetrievalEntity
+        {
+            AccountDetailsRetrievalId = Guid.NewGuid(), BrokerEnvironment = BrokerEnvironmentKind.Demo.ToString(), RetrievedAtUtc = retrievedAt,
+            TradingDay = DateOnly.FromDateTime(DateTime.UtcNow), AccountCount = 0, TriggerSource = AccountDetailsTriggerSource.Manual.ToString()
+        });
+        await seedContext.SaveChangesAsync();
+
+        await using var ownerContext = fixture.CreateDbContext();
+        await using var contenderContext = fixture.CreateDbContext();
+        var owner = new SqlAccountDetailsRefreshLease(ownerContext);
+        var contender = new SqlAccountDetailsRefreshLease(contenderContext);
+        await using var held = await owner.AcquireAsync(BrokerEnvironmentKind.Demo, AccountDetailsTriggerSource.Manual, CancellationToken.None);
+
+        var manual = await contender.AcquireAsync(BrokerEnvironmentKind.Demo, AccountDetailsTriggerSource.Manual, CancellationToken.None);
+        var automatic = await contender.AcquireAsync(BrokerEnvironmentKind.Demo, AccountDetailsTriggerSource.Automatic, CancellationToken.None);
+
+        Assert.False(manual.Acquired);
+        Assert.Equal(retrievedAt, manual.LatestRetrievedAtUtc);
+        Assert.False(automatic.Acquired);
+        Assert.Null(automatic.LatestRetrievedAtUtc);
+    }
+
+    /// <summary>
+    /// Verifies snapshot persistence is atomic across the retrieval parent and account children.
+    /// Expected: a duplicate child account key causes SaveAsync to fail and leaves neither parent nor child rows committed.
+    /// Why: partial account snapshots would make immutable history internally inconsistent.
+    /// </summary>
+    [Fact]
+    public async Task SaveAsync_ShouldRollbackRetrievalAndChildren_WhenChildPersistenceFails()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var dbContext = fixture.CreateDbContext();
+        await dbContext.Database.MigrateAsync();
+        var store = new EfAccountDetailsSnapshotStore(dbContext);
+        var snapshot = new AccountDetailsSnapshot(
+            Guid.NewGuid(), BrokerEnvironmentKind.Demo, DateTimeOffset.UtcNow, DateOnly.FromDateTime(DateTime.UtcNow), AccountDetailsTriggerSource.Manual,
+            [CreateAccount("DUPLICATE"), CreateAccount("DUPLICATE")]);
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => store.SaveAsync(snapshot, CancellationToken.None));
+
+        Assert.Empty(await dbContext.AccountDetailsRetrievals.AsNoTracking().ToListAsync());
+        Assert.Empty(await dbContext.AccountDetailsAccounts.AsNoTracking().ToListAsync());
+    }
+
+    /// <summary>
+    /// Verifies immutable account retrievals survive a SQL context restart and support deterministic adjacent history reads.
+    /// Expected: the latest retrieval contains every child account, and the composite cursor resolves the older snapshot.
+    /// Why: Viewer history must remain environment-scoped and must not depend on in-memory state or offset pagination.
+    /// </summary>
+    [Fact]
+    public async Task GetLatestAndAdjacentAsync_ShouldReadImmutableAccountHistoryAfterContextRestart_WhenSnapshotsWereSavedToSqlServer()
+    {
+        await fixture.ResetDatabaseAsync();
+        var firstRetrievedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2);
+        var secondRetrievedAtUtc = DateTimeOffset.UtcNow;
+
+        await using (var writingContext = fixture.CreateDbContext())
+        {
+            await writingContext.Database.MigrateAsync();
+            var writingStore = new EfAccountDetailsSnapshotStore(writingContext);
+            await writingStore.SaveAsync(
+                new AccountDetailsSnapshot(
+                    Guid.NewGuid(), BrokerEnvironmentKind.Demo, firstRetrievedAtUtc, DateOnly.FromDateTime(firstRetrievedAtUtc.UtcDateTime),
+                    AccountDetailsTriggerSource.Automatic, [CreateAccount("ACC-1")]),
+                CancellationToken.None);
+            await writingStore.SaveAsync(
+                new AccountDetailsSnapshot(
+                    Guid.NewGuid(), BrokerEnvironmentKind.Demo, secondRetrievedAtUtc, DateOnly.FromDateTime(secondRetrievedAtUtc.UtcDateTime),
+                    AccountDetailsTriggerSource.Manual, [CreateAccount("ACC-1"), CreateAccount("ACC-2")]),
+                CancellationToken.None);
+        }
+
+        await using var restartedContext = fixture.CreateDbContext();
+        var restartedStore = new EfAccountDetailsSnapshotStore(restartedContext);
+        var latest = await restartedStore.GetLatestAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
+
+        Assert.NotNull(latest);
+        Assert.Equal(2, latest.Accounts.Count);
+        Assert.Equal(secondRetrievedAtUtc, latest.RetrievedAtUtc);
+
+        var older = await restartedStore.GetBeforeAsync(
+            BrokerEnvironmentKind.Demo,
+            new AccountDetailsCursor(latest.RetrievedAtUtc, latest.RetrievalId),
+            CancellationToken.None);
+
+        Assert.NotNull(older);
+        Assert.Equal(firstRetrievedAtUtc, older.RetrievedAtUtc);
+        Assert.Single(older.Accounts);
+        Assert.Equal("ACC-1", older.Accounts[0].AccountId);
+        Assert.Null(await restartedStore.GetBeforeAsync(
+            BrokerEnvironmentKind.Demo,
+            new AccountDetailsCursor(older.RetrievedAtUtc, older.RetrievalId),
+            CancellationToken.None));
+    }
+
+    private static AccountDetailsAccount CreateAccount(string accountId) => new(
+        accountId, "Integration account", null, "ACTIVE", "CFD", true, 100m, 0m, 0m, 100m, "GBP", true, true);
 
     /// <summary>
     /// Verifies: latest proof data remains readable through a newly constructed SQL context after the writing context is disposed.
@@ -158,6 +307,10 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
             await command.ExecuteNonQueryAsync();
             command.CommandText = "DROP TABLE IF EXISTS [IgProofData];";
             await command.ExecuteNonQueryAsync();
+            command.CommandText = "DROP TABLE IF EXISTS [AccountDetailsAccounts];";
+            await command.ExecuteNonQueryAsync();
+            command.CommandText = "DROP TABLE IF EXISTS [AccountDetailsRetrievals];";
+            await command.ExecuteNonQueryAsync();
             command.CommandText = "IF OBJECT_ID('__EFMigrationsHistory', 'U') IS NOT NULL DROP TABLE __EFMigrationsHistory; CREATE TABLE __EFMigrationsHistory (MigrationId nvarchar(150) NOT NULL, ProductVersion nvarchar(32) NOT NULL, CONSTRAINT PK___EFMigrationsHistory PRIMARY KEY (MigrationId))";
             await command.ExecuteNonQueryAsync();
             command.CommandText = "INSERT INTO __EFMigrationsHistory (MigrationId, ProductVersion) VALUES ('20260727202238_InitialPlatformSchema', '10.0.5')";
@@ -216,7 +369,7 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
 
         await recoveredInitializer.InitializeAsync(CancellationToken.None);
 
-        Assert.Equal(3, (await recoveredContext.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(4, (await recoveredContext.Database.GetAppliedMigrationsAsync()).Count());
         Assert.Single(await recoveredContext.PlatformConfigurations.ToListAsync());
     }
 
