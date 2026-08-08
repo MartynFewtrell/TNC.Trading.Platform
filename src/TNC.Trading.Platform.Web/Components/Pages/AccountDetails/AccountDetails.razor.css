@@ -1,0 +1,59 @@
+.account-details-retrieval {
+    margin-bottom: 1.5rem;
+}
+
+.account-details-account-header {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem 1rem;
+    margin: 0 0 1.5rem;
+}
+
+.account-details-account-header > div {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+    column-gap: 0.5rem;
+}
+
+.account-details-tabs ::deep .rz-tabview {
+    --rz-tabs-background-color: transparent;
+    --rz-tabs-border: 0;
+    --rz-tabs-shadow: none;
+    --rz-tabs-padding: 1.25rem 0 0;
+    --rz-tabs-tab-background-color: transparent;
+    --rz-tabs-tab-selected-background-color: transparent;
+    --rz-tabs-tab-hover-background-color: transparent;
+    --rz-tabs-tab-color: var(--platform-muted-text-color);
+    --rz-tabs-tab-selected-color: var(--platform-text-color);
+    --rz-tabs-tab-hover-color: var(--platform-text-color);
+}
+
+.account-details-tabs ::deep .rz-tabview-top > .rz-tabview-nav {
+    border-bottom: 1px solid var(--platform-border-color);
+}
+
+.account-details-tabs ::deep .rz-tabview-top > .rz-tabview-nav li {
+    background-color: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+}
+
+.account-details-tabs ::deep .rz-tabview-top > .rz-tabview-nav .rz-tabview-selected {
+    border-bottom: 2px solid var(--platform-accent-color);
+    margin-bottom: -1px;
+}
+
+.account-details-tabs ::deep .rz-tabview-panels {
+    background-color: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+@media (max-width: 960px) {
+    .account-details-account-header {
+        grid-template-columns: 1fr;
+    }
+}

@@ -307,6 +307,17 @@ form {
     margin: 0;
 }
 
+.account-details-account-header {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem 1rem;
+    margin: 0;
+}
+
+.account-details-account-header dd {
+    margin: 0;
+}
+
 .platform-alert-list,
 .platform-activity-list {
     list-style: none;
@@ -486,6 +497,10 @@ td {
         flex-direction: column;
         align-items: flex-start;
         gap: 0.75rem;
+    }
+
+    .account-details-account-header {
+        grid-template-columns: 1fr;
     }
 
     .platform-header__center {

@@ -11,7 +11,7 @@
     <div><h1>Account details</h1><p class="hint">Saved account snapshots from the configured IG environment.</p></div>
     @if (canRefresh)
     {
-        <button class="platform-button" type="button" @onclick="Presenter.RefreshAsync" disabled="@Presenter.IsRefreshing">@(Presenter.IsRefreshing ? "Refreshing..." : "Refresh")</button>
+        <button class="platform-button" type="button" @onclick="RefreshAsync" disabled="@Presenter.IsRefreshing">@(Presenter.IsRefreshing ? "Refreshing..." : "Refresh")</button>
     }
 </section>
 
@@ -25,33 +25,99 @@ else
 {
     var retrieval = Presenter.State.Retrieval;
     <section class="panel" data-testid="account-details-panel">
-        <dl class="platform-key-value-grid"><dt>Retrieved at</dt><dd>@retrieval.RetrievedAtUtc.ToLocalTime().ToString("g")</dd><dt>Trading day</dt><dd>@retrieval.TradingDay</dd><dt>Trigger</dt><dd>@retrieval.TriggerSource</dd></dl>
-        @foreach (var account in retrieval.Accounts)
-        {
-            <article data-testid="account-details-account"><h2>@(account.AccountName ?? account.AccountId)</h2>
-                <dl class="platform-key-value-grid">
-                    <dt>Account ID</dt><dd>@account.AccountId</dd><dt>Alias</dt><dd>@(account.AccountAlias ?? "None")</dd><dt>Status</dt><dd>@account.Status</dd><dt>Account type</dt><dd>@account.AccountType</dd><dt>Preferred</dt><dd>@account.IsPreferred</dd><dt>Transfer from</dt><dd>@account.CanTransferFrom</dd><dt>Transfer to</dt><dd>@account.CanTransferTo</dd><dt>Currency</dt><dd>@account.Currency</dd><dt>Balance</dt><dd>@account.Balance</dd><dt>Deposit</dt><dd>@account.Deposit</dd><dt>Profit/loss</dt><dd>@account.ProfitLoss</dd><dt>Available</dt><dd>@account.Available</dd>
-                </dl>
-            </article>
-        }
+        <dl class="platform-key-value-grid account-details-retrieval"><dt>Retrieved at</dt><dd>@retrieval.RetrievedAtUtc.ToLocalTime().ToString("g")</dd><dt>Trading day</dt><dd>@retrieval.TradingDay</dd><dt>Trigger</dt><dd>@retrieval.TriggerSource</dd></dl>
+        <div class="account-details-tabs">
+        <RadzenTabs @bind-SelectedIndex="selectedIndex" Change="OnTabChanged" AriaLabel="Account types">
+            <Tabs>
+                @foreach (var group in accountTypeGroups)
+                {
+                    <RadzenTabsItem @key="group.Key" Text="@group.DisplayName">
+                        @foreach (var account in group.Accounts)
+                        {
+                            <article class="panel" data-testid="account-details-account" @key="account.AccountId">
+                                <h2>@(account.AccountName ?? account.AccountId)</h2>
+                                <dl class="account-details-account-header">
+                                    <div><dt>Account ID</dt><dd>@account.AccountId</dd></div>
+                                    <div><dt>Alias</dt><dd>@(account.AccountAlias ?? "None")</dd></div>
+                                    <div><dt>Status</dt><dd><RadzenBadge Text="@account.Status" BadgeStyle="BadgeStyle.Info" /></dd></div>
+                                </dl>
+                                <RadzenRow>
+                                    <RadzenColumn Size="12" SizeMD="6">
+                                        <dl class="platform-key-value-grid">
+                                            <dt>Account type</dt><dd>@account.AccountType</dd><dt>Preferred</dt><dd>@account.IsPreferred</dd><dt>Transfer from</dt><dd>@account.CanTransferFrom</dd><dt>Transfer to</dt><dd>@account.CanTransferTo</dd>
+                                        </dl>
+                                    </RadzenColumn>
+                                    <RadzenColumn Size="12" SizeMD="6">
+                                        <dl class="platform-key-value-grid">
+                                            <dt>Currency</dt><dd>@account.Currency</dd><dt>Balance</dt><dd>@account.Balance</dd><dt>Deposit</dt><dd>@account.Deposit</dd><dt>Profit/loss</dt><dd>@account.ProfitLoss</dd><dt>Available</dt><dd>@account.Available</dd>
+                                        </dl>
+                                    </RadzenColumn>
+                                </RadzenRow>
+                            </article>
+                        }
+                    </RadzenTabsItem>
+                }
+            </Tabs>
+        </RadzenTabs>
+        </div>
     </section>
     @if (!string.IsNullOrWhiteSpace(Presenter.Error)) { <p class="error" data-testid="account-details-error">@Presenter.Error</p> }
     <nav class="platform-pagination" aria-label="Account details history">
-        <button type="button" aria-label="View older account details" @onclick="Presenter.LoadOlderAsync" disabled="@(Presenter.IsLoading || Presenter.State.OlderCursor is null)">Older</button>
-        <button type="button" aria-label="View newer account details" @onclick="Presenter.LoadNewerAsync" disabled="@(Presenter.IsLoading || Presenter.State.NewerCursor is null)">Newer</button>
+        <button type="button" aria-label="View older account details" @onclick="LoadOlderAsync" disabled="@(Presenter.IsLoading || Presenter.State.OlderCursor is null)">Older</button>
+        <button type="button" aria-label="View newer account details" @onclick="LoadNewerAsync" disabled="@(Presenter.IsLoading || Presenter.State.NewerCursor is null)">Newer</button>
     </nav>
 }
-
-@if (Presenter.State is not null && Presenter.Error is not null && Presenter.State.Retrieval is not null) { <p class="error">@Presenter.Error</p> }
 
 @code {
     private bool hasRequiredScope;
     private bool canRefresh;
+    private string? selectedAccountTypeKey;
+    private int selectedIndex;
+
+    private IReadOnlyList<AccountTypeGroup> accountTypeGroups => (Presenter.State?.Retrieval?.Accounts ?? [])
+        .GroupBy(account => account.AccountType.Trim(), StringComparer.OrdinalIgnoreCase)
+        .Select(group => new AccountTypeGroup(group.Key, group.First().AccountType.Trim(), group.ToList()))
+        .ToList() ?? [];
 
     protected override async Task OnInitializedAsync()
     {
         hasRequiredScope = await NavigationAccessCoordinator.EnsureRequiredScopesAsync("/account-details", PlatformAuthenticationDefaults.Scopes.Viewer);
         canRefresh = hasRequiredScope && await NavigationAccessCoordinator.EnsureRequiredScopesAsync("/account-details", PlatformAuthenticationDefaults.Scopes.Operator);
-        if (hasRequiredScope) await Presenter.LoadAsync();
+        if (hasRequiredScope)
+        {
+            await Presenter.LoadAsync();
+            ReconcileSelectedAccountType();
+        }
     }
+
+    private async Task RefreshAsync() { await Presenter.RefreshAsync(); ReconcileSelectedAccountType(); }
+
+    private async Task LoadOlderAsync() { await Presenter.LoadOlderAsync(); ReconcileSelectedAccountType(); }
+
+    private async Task LoadNewerAsync() { await Presenter.LoadNewerAsync(); ReconcileSelectedAccountType(); }
+
+    private void OnTabChanged(int index)
+    {
+        selectedIndex = index;
+        selectedAccountTypeKey = index >= 0 && index < accountTypeGroups.Count ? accountTypeGroups[index].Key : null;
+    }
+
+    private void ReconcileSelectedAccountType()
+    {
+        var groups = accountTypeGroups;
+        var selectedGroup = groups.FirstOrDefault(group => string.Equals(group.Key, selectedAccountTypeKey, StringComparison.OrdinalIgnoreCase));
+        selectedGroup ??= groups.FirstOrDefault();
+        selectedAccountTypeKey = selectedGroup?.Key;
+        selectedIndex = 0;
+        for (var index = 0; selectedGroup is not null && index < groups.Count; index++)
+        {
+            if (ReferenceEquals(groups[index], selectedGroup))
+            {
+                selectedIndex = index;
+                break;
+            }
+        }
+    }
+
+    private sealed record AccountTypeGroup(string Key, string DisplayName, IReadOnlyList<AccountDetailsAccountViewModel> Accounts);
 }
