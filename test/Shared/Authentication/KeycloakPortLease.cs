@@ -4,7 +4,7 @@ namespace TNC.Trading.Platform.TestShared.Authentication;
 
 internal sealed class KeycloakPortLease : IAsyncDisposable
 {
-    public static readonly TimeSpan DefaultAcquisitionTimeout = TimeSpan.FromMinutes(5);
+    public static readonly TimeSpan DefaultAcquisitionTimeout = TimeSpan.FromSeconds(45);
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(100);
     private static readonly string LeaseDirectory = Path.Combine(Path.GetTempPath(), "TNC.Trading.Platform", "leases");
 

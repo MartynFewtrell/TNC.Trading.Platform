@@ -537,3 +537,23 @@ When extending the application, keep these areas protected:
 - [Application overview](application-overview.md)
 - [Local development guide](local-development.md)
 - [Runtime behavior](runtime-behavior.md)
+
+## Account Preferences coverage
+
+Application tests cover Test-only policy, legacy Demo presentation, validation,
+typed failures, confirmed updates, indeterminate-write reconciliation,
+repeated equal observations, partitioned strict cursors, retention defaults,
+and secret-safe failure events. Infrastructure tests cover the typed
+`trailingStopsEnabled` request contract, Version 2 session headers, strict
+Boolean/SUCCESS parsing, allowance classification, redaction, restricted 401
+replay, append-only persistence, equal-timestamp ordering, migration/index
+creation, restart readback, and configured operational-record cleanup.
+
+API tests cover Operator authorization, nullable-Boolean validation, stable
+`400`/`409`/`429`/`502`/`503`/`504` mappings, Problem Details extension fields,
+diagnostic non-leakage, and history cursor validation. Web bUnit tests cover
+initial load, disabled loading/save state, confirmed-value replacement,
+failure feedback, authorization, history paging, and cancellation on disposal.
+Distributed checks are bounded and retain diagnostics. No automated test calls
+the real IG service; real-IG verification remains operator-controlled manual
+evidence only.

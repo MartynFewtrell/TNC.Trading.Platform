@@ -48,8 +48,12 @@ internal sealed class OperationalRecordRetentionProcessor(
                             || newer.RetrievedAtUtc == item.RetrievedAtUtc && newer.AccountDetailsRetrievalId.CompareTo(item.AccountDetailsRetrievalId) > 0)))
                 .ExecuteDeleteAsync(cancellationToken)
                 .ConfigureAwait(false);
+            var deletedTrailingStopsObservations = await dbContext.TrailingStopsPreferenceObservations
+                .Where(item => item.ObservedAtUtc < plan.Cutoff)
+                .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false);
 
-            deletedCount = deletedEvents + deletedAudits + deletedNotifications + deletedRetainedIgLoginSnapshots + deletedAccountDetails;
+            deletedCount = deletedEvents + deletedAudits + deletedNotifications + deletedRetainedIgLoginSnapshots + deletedAccountDetails + deletedTrailingStopsObservations;
         }
         else
         {
@@ -78,8 +82,12 @@ internal sealed class OperationalRecordRetentionProcessor(
                             || newer.RetrievedAtUtc == item.RetrievedAtUtc && newer.AccountDetailsRetrievalId.CompareTo(item.AccountDetailsRetrievalId) > 0)))
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
+            var expiredTrailingStopsObservations = await dbContext.TrailingStopsPreferenceObservations
+                .Where(item => item.ObservedAtUtc < plan.Cutoff)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
 
-            deletedCount = expiredOperationalEvents.Count + expiredConfigurationAudits.Count + expiredNotificationRecords.Count + expiredRetainedIgLoginSnapshots.Count + expiredAccountDetails.Count;
+            deletedCount = expiredOperationalEvents.Count + expiredConfigurationAudits.Count + expiredNotificationRecords.Count + expiredRetainedIgLoginSnapshots.Count + expiredAccountDetails.Count + expiredTrailingStopsObservations.Count;
             if (deletedCount > 0)
             {
                 dbContext.OperationalEvents.RemoveRange(expiredOperationalEvents);
@@ -87,6 +95,7 @@ internal sealed class OperationalRecordRetentionProcessor(
                 dbContext.NotificationRecords.RemoveRange(expiredNotificationRecords);
                 dbContext.IgLoginSnapshots.RemoveRange(expiredRetainedIgLoginSnapshots);
                 dbContext.AccountDetailsRetrievals.RemoveRange(expiredAccountDetails);
+                dbContext.TrailingStopsPreferenceObservations.RemoveRange(expiredTrailingStopsObservations);
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
         }

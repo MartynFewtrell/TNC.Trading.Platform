@@ -1,0 +1,45 @@
+@namespace TNC.Trading.Platform.Web.Components.Pages
+@page "/account-preferences"
+@implements IDisposable
+@attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Operator)]
+@using TNC.Trading.Platform.Web.Authentication
+@inject AccountPreferencesPagePresenter Presenter
+@inject PlatformNavigationAccessCoordinator NavigationAccessCoordinator
+
+<PageTitle>Account preferences</PageTitle>
+
+@if (!hasRequiredScope) { <p data-testid="account-preferences-access">Redirecting...</p> }
+else if (Presenter.IsLoading && Presenter.State.History.Count == 0) { <p data-testid="account-preferences-loading">Loading account preferences...</p> }
+else
+{
+    <section class="panel platform-page-header"><div><h1>Account preferences</h1><p class="hint">Live trailing stops control for the configured Test account.</p></div></section>
+    @if (!string.IsNullOrWhiteSpace(Presenter.Error)) { <p class="error" role="alert" data-testid="account-preferences-error">@Presenter.Error</p> }
+    <section class="panel">
+        <label for="trailing-stops">Trailing stops enabled</label>
+        <InputCheckbox id="trailing-stops" @bind-Value="Presenter.State.TrailingStopsEnabled" disabled="@Presenter.IsSaving" />
+        <button class="platform-primary-action" type="button" data-testid="account-preferences-save" @onclick="SaveAsync" disabled="@(Presenter.IsSaving || Presenter.IsLoading)">@(Presenter.IsSaving ? "Saving..." : "Save preference")</button>
+        <p role="status" data-testid="account-preferences-status">@(Presenter.Message ?? $"Application status: {Presenter.State.ApplicationStatus}")</p>
+    </section>
+    <section class="panel"><h2>Observed history</h2><table><thead><tr><th>Recorded</th><th>Enabled</th><th>Kind</th><th>Environment</th></tr></thead><tbody>
+        @foreach (var observation in Presenter.State.History) { <tr @key="observation.Id"><td>@observation.RecordedAtUtc.ToLocalTime().ToString("g")</td><td>@observation.TrailingStopsEnabled</td><td>@observation.ObservationKind</td><td>@observation.PlatformEnvironment / @observation.BrokerEnvironment</td></tr> }
+    </tbody></table><button type="button" data-testid="account-preferences-next" @onclick="LoadNextAsync" disabled="@(Presenter.IsLoading || Presenter.State.NextCursor is null)">Next page</button></section>
+}
+
+@code {
+    private bool hasRequiredScope;
+    private readonly CancellationTokenSource requestLifetime = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        hasRequiredScope = await NavigationAccessCoordinator.EnsureRequiredScopesAsync("/account-preferences", PlatformAuthenticationDefaults.Scopes.Operator);
+        if (hasRequiredScope) await Presenter.LoadAsync(requestLifetime.Token);
+    }
+    private async Task SaveAsync() => await Presenter.SaveAsync(requestLifetime.Token);
+    private async Task LoadNextAsync() => await Presenter.LoadNextHistoryPageAsync(requestLifetime.Token);
+
+    public void Dispose()
+    {
+        requestLifetime.Cancel();
+        requestLifetime.Dispose();
+    }
+}

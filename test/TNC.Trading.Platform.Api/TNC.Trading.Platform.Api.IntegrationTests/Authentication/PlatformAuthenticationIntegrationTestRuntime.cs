@@ -9,7 +9,7 @@ internal static class PlatformAuthenticationIntegrationTestRuntime
         ArgumentNullException.ThrowIfNull(httpClient);
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromMinutes(5));
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(45));
 
         while (!timeoutCts.IsCancellationRequested)
         {

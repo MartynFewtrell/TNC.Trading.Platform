@@ -7,21 +7,23 @@ namespace TNC.Trading.Platform.Infrastructure.IntegrationTests;
 
 public sealed class SqlServerDatabaseFixture : IAsyncLifetime
 {
+    private static readonly TimeSpan OperationTimeout = TimeSpan.FromSeconds(45);
+    private readonly CancellationTokenSource fixtureCancellationTokenSource = new(OperationTimeout);
     private string databaseName = string.Empty;
     private string masterConnectionString = string.Empty;
     private string databaseConnectionString = string.Empty;
 
     public async Task InitializeAsync()
     {
-        var containerId = (await RunDockerAsync("ps --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest --format {{.ID}}"))
+        var containerId = (await RunDockerAsync("ps --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest --format {{.ID}}", fixtureCancellationTokenSource.Token))
             .Split([Environment.NewLine, "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .FirstOrDefault()
             ?? throw new InvalidOperationException("A running Aspire SQL Server container was not found.");
-        var environment = await RunDockerAsync($"inspect {containerId} --format \"{{{{range .Config.Env}}}}{{{{println .}}}}{{{{end}}}}\"");
+        var environment = await RunDockerAsync($"inspect {containerId} --format \"{{{{range .Config.Env}}}}{{{{println .}}}}{{{{end}}}}\"", fixtureCancellationTokenSource.Token);
         var password = environment
             .Split([Environment.NewLine, "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Single(value => value.StartsWith("MSSQL_SA_PASSWORD=", StringComparison.Ordinal))["MSSQL_SA_PASSWORD=".Length..];
-        var endpoint = (await RunDockerAsync($"port {containerId} 1433/tcp"))
+        var endpoint = (await RunDockerAsync($"port {containerId} 1433/tcp", fixtureCancellationTokenSource.Token))
             .Trim()
             .Split(':', StringSplitOptions.RemoveEmptyEntries)
             .Last();
@@ -43,27 +45,29 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
         masterConnectionString = connectionBuilder.ConnectionString;
 
         await using var connection = new SqlConnection(masterConnectionString);
-        await connection.OpenAsync().ConfigureAwait(false);
+        await connection.OpenAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = $"CREATE DATABASE [{databaseName}]";
-        await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+        command.CommandTimeout = (int)OperationTimeout.TotalSeconds;
+        await command.ExecuteNonQueryAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
     }
 
     internal PlatformDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<PlatformDbContext>()
-            .UseSqlServer(databaseConnectionString)
+            .UseSqlServer(databaseConnectionString, sqlOptions => sqlOptions.CommandTimeout((int)OperationTimeout.TotalSeconds))
             .Options;
 
         return new PlatformDbContext(options);
     }
 
     internal string ConnectionString => databaseConnectionString;
+    internal CancellationToken CancellationToken => fixtureCancellationTokenSource.Token;
 
     internal async Task ResetDatabaseAsync()
     {
         await using var connection = new SqlConnection(databaseConnectionString);
-        await connection.OpenAsync().ConfigureAwait(false);
+        await connection.OpenAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             DROP TABLE IF EXISTS [__EFMigrationsHistory];
@@ -76,11 +80,13 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
             DROP TABLE IF EXISTS [IgLoginSnapshots];
             DROP TABLE IF EXISTS [IgProofData];
             DROP TABLE IF EXISTS [NotificationRecords];
+            DROP TABLE IF EXISTS [TrailingStopsPreferenceObservations];
             DROP TABLE IF EXISTS [OperationalEvents];
             DROP TABLE IF EXISTS [PlatformConfigurations];
             DROP TABLE IF EXISTS [ProtectedCredentials];
             """;
-        await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+        command.CommandTimeout = (int)OperationTimeout.TotalSeconds;
+        await command.ExecuteNonQueryAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
     }
 
     public async Task DisposeAsync()
@@ -88,15 +94,16 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
         if (!string.IsNullOrWhiteSpace(masterConnectionString))
         {
             await using var connection = new SqlConnection(masterConnectionString);
-            await connection.OpenAsync().ConfigureAwait(false);
+            await connection.OpenAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
             await using var command = connection.CreateCommand();
             command.CommandText = $"ALTER DATABASE [{databaseName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [{databaseName}]";
-            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+            command.CommandTimeout = (int)OperationTimeout.TotalSeconds;
+            await command.ExecuteNonQueryAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
         }
 
     }
 
-    private static async Task<string> RunDockerAsync(string arguments)
+    private static async Task<string> RunDockerAsync(string arguments, CancellationToken cancellationToken)
     {
         using var process = Process.Start(new ProcessStartInfo
         {
@@ -108,9 +115,11 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
             CreateNoWindow = true
         }) ?? throw new InvalidOperationException("Docker could not be started for the SQL Server integration fixture.");
 
-        var output = await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
-        var error = await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
-        await process.WaitForExitAsync().ConfigureAwait(false);
+        var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        var output = await outputTask.ConfigureAwait(false);
+        var error = await errorTask.ConfigureAwait(false);
         if (process.ExitCode != 0)
         {
             throw new InvalidOperationException($"Docker command failed with exit code {process.ExitCode}: {error}");

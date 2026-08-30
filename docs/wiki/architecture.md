@@ -439,6 +439,10 @@ The `TNC.Trading.Platform.Infrastructure` project contains:
 - the outbound `IgBrokerAuthenticationGateway` adapter for the IG Demo REST API
 - in-memory proof-data storage for the latest read-only IG Demo account snapshot
 - operational-event storage, including persisted operator auth audit history
+- typed trailing-stops provider request and response records using the
+    `trailingStopsEnabled` contract
+- partitioned trailing-stops observation persistence with strict cursor
+    membership checks
 - notification adapters are organized under `Infrastructure/Notifications/`: the shared dispatcher, dispatch policy, context, message, result, and inward provider contract remain at the boundary root; the deterministic adapter is under `Notifications/Recorded/`, SMTP delivery under `Notifications/Smtp/`, and Azure Communication Services email delivery under `Notifications/AzureCommunicationServices/`
 - EF and SQL retention queries and deletion execution for operational records under `Infrastructure/Operations/Retention/`
 - operational data masking, removal, JSON serialization, and text redaction mechanisms
@@ -464,6 +468,10 @@ The adapter rejects `Live` before entering the HTTP pipeline. No Live request is
 routed to the Demo host. HTTP status codes, JSON wire records, malformed
 responses, request timeouts, and transport exceptions are translated at this
 boundary; caller-requested cancellation continues to propagate normally.
+
+The account-preferences adapter treats a malformed successful PUT
+acknowledgement as indeterminate. Application reconciliation performs one
+authoritative GET and requires exact Boolean equality before reporting success.
 
 The `IgProofDataSnapshot` that is persisted to the in-memory store contains only safe read fields: account name, account ID, balance, open-position count, and the retrieval timestamp.
 
@@ -583,3 +591,18 @@ This keeps audit persistence on the server side and avoids exposing secrets or d
 - [Operator guide](operator-guide.md)
 - [Runtime behavior](runtime-behavior.md)
 - [API reference](api-reference.md)
+
+## Account Preferences boundary
+
+Application owns the Account Preferences operation contracts, Test-only guard,
+confirmation and reconciliation rules, typed provider outcomes, and
+observation model. API and Web are inbound adapters; Infrastructure implements
+the IG gateway and SQL observation store.
+
+The update path is `PUT -> authoritative GET -> observation`. An indeterminate
+PUT is followed by GET reconciliation and never a blind PUT retry. A failed
+read or unknown value cannot become a false observation or local cache
+fallback. Operational failure events are allow-listed, bounded, and redacted,
+and remain separate from preference observations. The append-only persistence
+entity has deterministic keyset paging support, while retention deletes rows
+older than 90 days. Archive and export are outside this delivery.

@@ -28,6 +28,8 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
 
     internal DbSet<AccountDetailsAccountEntity> AccountDetailsAccounts => Set<AccountDetailsAccountEntity>();
 
+    internal DbSet<TrailingStopsPreferenceObservationEntity> TrailingStopsPreferenceObservations => Set<TrailingStopsPreferenceObservationEntity>();
+
     internal DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -145,6 +147,19 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
+        modelBuilder.Entity<TrailingStopsPreferenceObservationEntity>(entity =>
+        {
+            entity.HasKey(item => item.TrailingStopsPreferenceObservationId);
+            entity.Property(item => item.BrokerEnvironment).HasMaxLength(32).IsRequired();
+            entity.Property(item => item.PlatformEnvironment).HasMaxLength(32).IsRequired();
+            entity.Property(item => item.AccountId).HasMaxLength(64);
+            entity.Property(item => item.ObservationKind).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.Source).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.Actor).HasMaxLength(128);
+            entity.Property(item => item.CorrelationId).HasMaxLength(64).IsRequired();
+            entity.HasIndex(item => new { item.BrokerEnvironment, item.PlatformEnvironment, item.ObservedAtUtc, item.TrailingStopsPreferenceObservationId });
+        });
+
         modelBuilder.Entity<AccountDetailsAccountEntity>(entity =>
         {
             entity.HasKey(item => item.AccountDetailsAccountId);
@@ -160,5 +175,6 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.Property(item => item.Available).HasPrecision(19, 5);
             entity.HasIndex(item => new { item.AccountDetailsRetrievalId, item.AccountId }).IsUnique();
         });
+
     }
 }

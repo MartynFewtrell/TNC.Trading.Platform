@@ -136,6 +136,35 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
             ?? throw new InvalidOperationException("Account details refresh response was empty.");
     }
 
+    public async Task<AccountPreferencesViewModel> GetAccountPreferencesAsync(CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Get, "/api/platform/account-preferences", [PlatformAuthenticationDefaults.Scopes.Operator], cancellationToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<AccountPreferencesViewModel>(JsonOptions, cancellationToken)
+            ?? throw new InvalidOperationException("Account preferences response was empty.");
+    }
+
+    public async Task<AccountPreferencesViewModel> UpdateAccountPreferencesAsync(bool trailingStopsEnabled, CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Put, "/api/platform/account-preferences", [PlatformAuthenticationDefaults.Scopes.Operator], cancellationToken);
+        request.Content = JsonContent.Create(new { TrailingStopsEnabled = trailingStopsEnabled }, options: JsonOptions);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<AccountPreferencesViewModel>(JsonOptions, cancellationToken)
+            ?? throw new InvalidOperationException("Updated account preferences response was empty.");
+    }
+
+    public async Task<AccountPreferencesHistoryViewModel> GetAccountPreferencesHistoryAsync(int pageSize, string? cursor, CancellationToken cancellationToken)
+    {
+        var url = $"/api/platform/account-preferences/observations?pageSize={pageSize}" + (string.IsNullOrWhiteSpace(cursor) ? string.Empty : $"&cursor={Uri.EscapeDataString(cursor)}");
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Get, url, [PlatformAuthenticationDefaults.Scopes.Operator], cancellationToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<AccountPreferencesHistoryViewModel>(JsonOptions, cancellationToken)
+            ?? throw new InvalidOperationException("Account preferences history response was empty.");
+    }
+
     private async Task<HttpRequestMessage> CreateAuthorizedRequestAsync(
         HttpMethod method,
         string url,
@@ -150,3 +179,7 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
 
     private sealed record IgLoginHistoryResponse(IReadOnlyList<IgLoginHistorySnapshotViewModel> RetainedSnapshots);
 }
+
+internal sealed record AccountPreferencesViewModel(bool TrailingStopsEnabled, string ApplicationStatus, DateTimeOffset ObservedAtUtc);
+internal sealed record AccountPreferencesObservationViewModel(Guid Id, bool TrailingStopsEnabled, DateTimeOffset ObservedAtUtc, DateTimeOffset RecordedAtUtc, string PlatformEnvironment, string BrokerEnvironment, string ObservationKind, string Source, string? Actor, string CorrelationId);
+internal sealed record AccountPreferencesHistoryViewModel(IReadOnlyList<AccountPreferencesObservationViewModel> Observations, string? NextCursor);

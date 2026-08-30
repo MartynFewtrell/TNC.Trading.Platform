@@ -670,6 +670,61 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                     b.ToTable("ProtectedCredentials");
                 });
 
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.TrailingStopsPreferenceObservationEntity", b =>
+                {
+                    b.Property<Guid>("TrailingStopsPreferenceObservationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AccountId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Actor")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("BrokerEnvironment")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ObservationKind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("ObservedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PlatformEnvironment")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<bool>("TrailingStopsEnabled")
+                        .HasColumnType("bit");
+
+                    b.HasKey("TrailingStopsPreferenceObservationId");
+
+                    b.HasIndex("BrokerEnvironment", "PlatformEnvironment", "ObservedAtUtc", "TrailingStopsPreferenceObservationId");
+
+                    b.ToTable("TrailingStopsPreferenceObservations");
+                });
+
             modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.AccountDetailsAccountEntity", b =>
                 {
                     b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.AccountDetailsRetrievalEntity", "Retrieval")

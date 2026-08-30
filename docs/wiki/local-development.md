@@ -139,7 +139,22 @@ The status page reads the latest persisted snapshot on every projection read.
 After an API restart, the last successful proof values remain visible until a
 new successful query replaces them or the database state is reset.
 
-If the **IG login** accordion shows a failed state, check that the credentials are correct and that the IG Demo API (`https://demo-api.ig.com`) is reachable from the local machine.
+If the **IG login** accordion shows a failed state, check that the credentials are correct and that the IG Demo API (`https://demo-api.ig.com`) is reachable from the local machine. Automated tests use controlled provider doubles and do not call real IG.
+
+## Trailing-stops validation boundaries
+
+The Account Preferences page presents the configured broker `Test` environment.
+The stored provider key may remain the legacy `Demo` value so historical
+partitions retain their lineage. This presentation mapping does not migrate or
+rewrite existing observations.
+
+Trailing-stops reads and writes use the typed `trailingStopsEnabled` provider
+property. A malformed successful update acknowledgement is indeterminate and
+is reconciled by one authoritative GET. A valid readback mismatch returns HTTP
+409 Problem Details. Observation history is partitioned by platform and broker
+environment, and cursors cannot cross partitions. Retention is controlled by
+`Retention:OperationalRecordsDays`, with the 90-day default when the setting is
+missing or non-positive.
 
 ## Reset previously persisted local state
 

@@ -4,6 +4,8 @@ using Microsoft.Data.SqlClient;
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -283,7 +285,7 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
     {
         await fixture.ResetDatabaseAsync();
         await using var legacyContext = fixture.CreateDbContext();
-        await legacyContext.Database.EnsureCreatedAsync();
+        await legacyContext.GetService<IMigrator>().MigrateAsync("20260727202238_InitialPlatformSchema", fixture.CancellationToken);
         legacyContext.PlatformConfigurations.Add(new PlatformConfigurationEntity
         {
             PlatformEnvironment = "Test",
@@ -291,7 +293,7 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
             TradingHoursStart = new TimeOnly(9),
             TradingHoursEnd = new TimeOnly(17),
             TradingDaysCsv = "Monday",
-            WeekendBehavior = "Inactive",
+            WeekendBehavior = "ExcludeWeekends",
             BankHolidayExclusionsJson = "[]",
             TimeZone = "UTC",
             NotificationProvider = "Recorded",
@@ -303,24 +305,21 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
         await transitionConnection.OpenAsync();
         await using (var command = transitionConnection.CreateCommand())
         {
-            command.CommandText = "DROP TABLE IF EXISTS [DataProtectionKeys];";
-            await command.ExecuteNonQueryAsync();
-            command.CommandText = "DROP TABLE IF EXISTS [IgProofData];";
-            await command.ExecuteNonQueryAsync();
-            command.CommandText = "DROP TABLE IF EXISTS [AccountDetailsAccounts];";
-            await command.ExecuteNonQueryAsync();
-            command.CommandText = "DROP TABLE IF EXISTS [AccountDetailsRetrievals];";
-            await command.ExecuteNonQueryAsync();
-            command.CommandText = "IF OBJECT_ID('__EFMigrationsHistory', 'U') IS NOT NULL DROP TABLE __EFMigrationsHistory; CREATE TABLE __EFMigrationsHistory (MigrationId nvarchar(150) NOT NULL, ProductVersion nvarchar(32) NOT NULL, CONSTRAINT PK___EFMigrationsHistory PRIMARY KEY (MigrationId))";
-            await command.ExecuteNonQueryAsync();
-            command.CommandText = "INSERT INTO __EFMigrationsHistory (MigrationId, ProductVersion) VALUES ('20260727202238_InitialPlatformSchema', '10.0.5')";
-            await command.ExecuteNonQueryAsync();
+            command.CommandText = "DROP TABLE [__EFMigrationsHistory];";
+            await command.ExecuteNonQueryAsync(fixture.CancellationToken);
         }
 
         await using var migratedContext = fixture.CreateDbContext();
-        await migratedContext.Database.MigrateAsync();
+        var configurationStore = CreateConfigurationStore(migratedContext, CreateConfiguration());
+        var initializer = CreateStartupInitializer(migratedContext, configurationStore);
+
+        await initializer.InitializeAsync(fixture.CancellationToken);
 
         Assert.Equal("integration-test", await migratedContext.PlatformConfigurations.Select(item => item.UpdatedBy).SingleAsync());
+        Assert.Equal(
+            migratedContext.Database.GetMigrations(),
+            await migratedContext.Database.GetAppliedMigrationsAsync(fixture.CancellationToken));
+        Assert.Empty(await migratedContext.Database.GetPendingMigrationsAsync(fixture.CancellationToken));
     }
 
     /// <summary>
@@ -369,7 +368,10 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
 
         await recoveredInitializer.InitializeAsync(CancellationToken.None);
 
-        Assert.Equal(4, (await recoveredContext.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(
+            recoveredContext.Database.GetMigrations(),
+            await recoveredContext.Database.GetAppliedMigrationsAsync(fixture.CancellationToken));
+        Assert.Empty(await recoveredContext.Database.GetPendingMigrationsAsync(fixture.CancellationToken));
         Assert.Single(await recoveredContext.PlatformConfigurations.ToListAsync());
     }
 

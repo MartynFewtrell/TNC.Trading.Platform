@@ -131,7 +131,7 @@ public sealed class AccountDetailsHandlerTests
     {
         var fixture = new Fixture();
         fixture.Gateway.Result = new AccountDetailsGatewayResult.Failed(AccountDetailsFailureCategory.Unavailable, "secret payload");
-        var daily = new CaptureDailyAccountDetailsHandler(fixture.Refresh, fixture.Configuration, fixture.Events, TimeProvider.System);
+        var daily = new CaptureDailyAccountDetailsHandler(fixture.Refresh, fixture.Configuration, fixture.Events, new Fixture.FixedTimeProvider(fixture.UtcNow));
 
         var result = await daily.HandleAsync(new CaptureDailyAccountDetailsRequest(), CancellationToken.None);
 
@@ -168,7 +168,7 @@ public sealed class AccountDetailsHandlerTests
         public AccountDetailsSnapshot Snapshot(DateTimeOffset retrievedAt, DateOnly day, AccountDetailsTriggerSource triggerSource = AccountDetailsTriggerSource.Manual) =>
             new(Guid.NewGuid(), BrokerEnvironmentKind.Demo, retrievedAt, day, triggerSource, [Account]);
 
-        private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+        internal sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
         {
             public override DateTimeOffset GetUtcNow() => utcNow;
         }

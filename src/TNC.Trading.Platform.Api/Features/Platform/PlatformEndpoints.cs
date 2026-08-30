@@ -20,6 +20,7 @@ using AppGetPlatformStatus = TNC.Trading.Platform.Application.Features.GetPlatfo
 using AppRecordAuthAuditEvent = TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent;
 using AppTriggerManualAuthRetry = TNC.Trading.Platform.Application.Features.TriggerManualAuthRetry;
 using AppUpdatePlatformConfiguration = TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration;
+using AppAccountPreferences = TNC.Trading.Platform.Application.Features.AccountPreferences;
 
 namespace TNC.Trading.Platform.Api.Features.Platform;
 
@@ -49,6 +50,12 @@ internal static class PlatformEndpoints
         platform.MapGet("/account-details", GetAccountDetailsAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Viewer);
         platform.MapPost("/account-details/refresh", RefreshAccountDetailsAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
+        platform.MapGet("/account-preferences", GetAccountPreferencesAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
+        platform.MapPut("/account-preferences", UpdateAccountPreferencesAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
+        platform.MapGet("/account-preferences/observations", GetAccountPreferencesObservationsAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
         platform.MapGet("/auth/administration", GetAuthAdministration)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Administrator);
@@ -119,6 +126,25 @@ internal static class PlatformEndpoints
         var result = await handler.HandleAsync(new AppAccountDetails.RefreshAccountDetailsRequest(), cancellationToken);
         return result.ToHttpResult();
     }
+
+    private static async Task<IResult> GetAccountPreferencesAsync(
+        AppAccountPreferences.GetAccountPreferencesHandler handler,
+        CancellationToken cancellationToken)
+        => await GetAccountPreferencesEndpointHandler.HandleAsync(handler, cancellationToken);
+
+    private static async Task<IResult> UpdateAccountPreferencesAsync(
+        UpdateAccountPreferencesHttpRequest request,
+        AppAccountPreferences.UpdateAccountPreferencesValidator validator,
+        AppAccountPreferences.UpdateAccountPreferencesHandler handler,
+        CancellationToken cancellationToken)
+        => await UpdateAccountPreferencesEndpointHandler.HandleAsync(request, validator, handler, cancellationToken);
+
+    private static async Task<IResult> GetAccountPreferencesObservationsAsync(
+        int? pageSize,
+        string? cursor,
+        AppAccountPreferences.GetTrailingStopsPreferenceObservationsHandler handler,
+        CancellationToken cancellationToken)
+        => await GetTrailingStopsPreferenceObservationsEndpointHandler.HandleAsync(pageSize, cursor, handler, cancellationToken);
 
     private static IResult GetMetadata(IHostEnvironment environment)
         => TypedResults.Ok(new

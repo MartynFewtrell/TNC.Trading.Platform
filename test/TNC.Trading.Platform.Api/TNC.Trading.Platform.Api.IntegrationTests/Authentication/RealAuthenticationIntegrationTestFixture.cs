@@ -5,6 +5,7 @@ namespace TNC.Trading.Platform.Api.IntegrationTests.Authentication;
 
 public sealed class RealAuthenticationIntegrationTestFixture : IAsyncLifetime
 {
+    private static readonly TimeSpan InitializationTimeout = TimeSpan.FromSeconds(55);
     private SharedAppHostProcessHandle? appHostProcess;
     private KeycloakPortLease? keycloakPortLease;
     private TestEnvironmentVariableScope? apiProviderScope;
@@ -14,17 +15,19 @@ public sealed class RealAuthenticationIntegrationTestFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        keycloakPortLease = await KeycloakPortLease.AcquireAsync();
+        using var initializationCancellationTokenSource = new CancellationTokenSource(InitializationTimeout);
+        var initializationToken = initializationCancellationTokenSource.Token;
+        keycloakPortLease = await KeycloakPortLease.AcquireAsync(initializationToken);
         try
         {
             apiProviderScope = new TestEnvironmentVariableScope("Authentication__ApiProvider", "Keycloak");
             interactiveSignInScope = new TestEnvironmentVariableScope("Authentication__Test__EnableInteractiveSignIn", bool.FalseString);
 
             appHostProcess = RealAppHostProcessFactory.StartAppHostProcess();
-            ApiBaseUri = await appHostProcess.WaitForApiBaseUriAsync(TimeSpan.FromSeconds(120));
+            ApiBaseUri = await appHostProcess.WaitForApiBaseUriAsync(TimeSpan.FromSeconds(45), initializationToken);
 
             using var apiReadinessClient = CreateApiClient();
-            await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(apiReadinessClient);
+            await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(apiReadinessClient, initializationToken);
 
             await RealKeycloakAccessTokenFactory.WaitForTokenEndpointReadinessAsync("local-viewer", "platform.viewer");
         }

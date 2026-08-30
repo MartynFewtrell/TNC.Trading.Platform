@@ -547,3 +547,38 @@ In development, the API also exposes:
 - [Operator guide](operator-guide.md)
 - [Runtime behavior](runtime-behavior.md)
 - [Architecture](architecture.md)
+
+## Account Preferences
+
+Account Preferences is an Operator-only control for the live IG Test account.
+IG remains the live authority: observation history is never a cache or fallback
+when a live read fails, and the feature does not authorize real orders or
+monetary exposure. Live execution is blocked pending a separate Live safety
+delivery.
+
+`GET /api/platform/account-preferences` performs a live provider read and
+returns the confirmed trailing-stops Boolean, application-facing `Test` status,
+and observation time. Successful reads append verified observations, including
+repeated equal values.
+
+`PUT /api/platform/account-preferences` accepts required Boolean
+`trailingStopsEnabled`, sends one provider update, then performs a fresh
+authoritative GET. Success requires that GET to confirm the requested value.
+Indeterminate writes are reconciled with a GET and never blindly retried.
+Failed, indeterminate, or unknown outcomes do not create false or nullable
+observations. A valid Boolean readback that differs from the requested value
+returns `409 Conflict` as RFC 7807 Problem Details with the requested and
+observed values in the approved non-secret extension fields.
+
+The live routes map invalid input to `400`, recognized IG allowance exhaustion
+to `429`, malformed provider data to `502`, provider rejection/unavailability
+to `503`, and timeout to `504`. History returns `400` for invalid page size or
+cursor. Provider diagnostics, credentials, session tokens, and raw responses
+are never returned.
+
+`GET /api/platform/account-preferences/observations?pageSize={size}&cursor={opaque}`
+reads SQL observations only, using deterministic keyset ordering and an
+adjacent cursor. The cursor is valid only for the same platform and broker
+environment partition and is rejected when its membership or shape is invalid.
+Observations use `Retention:OperationalRecordsDays`; archive/export is
+deferred.

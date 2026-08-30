@@ -10,6 +10,7 @@ using TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration;
 using TNC.Trading.Platform.Application.Features.GetPlatformEvents.Ports;
 using TNC.Trading.Platform.Application.Features.GetPlatformStatus.Ports;
 using TNC.Trading.Platform.Application.Features.AccountDetails;
+using TNC.Trading.Platform.Application.Features.AccountPreferences;
 using TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent.Ports;
 using TNC.Trading.Platform.Application.Services;
 using TNC.Trading.Platform.Infrastructure.Configuration.SqlServer;
@@ -90,8 +91,14 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         services.AddScoped<IPlatformIgProofDataStore, EfPlatformIgProofDataStore>();
         services.AddScoped<EfAccountDetailsSnapshotStore>();
         services.AddScoped<IAccountDetailsSnapshotStore>(provider => provider.GetRequiredService<EfAccountDetailsSnapshotStore>());
+        services.AddScoped<EfTrailingStopsPreferenceObservationStore>();
+        services.AddScoped<ITrailingStopsPreferenceObservationStore>(provider => provider.GetRequiredService<EfTrailingStopsPreferenceObservationStore>());
         services.AddScoped<IAccountDetailsRefreshLease, SqlAccountDetailsRefreshLease>();
         services.AddHttpClient<IAccountDetailsGateway, IgAccountDetailsGateway>(client =>
+        {
+            client.BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/");
+        });
+        services.AddHttpClient<IAccountPreferencesGateway, IgAccountPreferencesGateway>(client =>
         {
             client.BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/");
         });

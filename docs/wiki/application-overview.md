@@ -191,3 +191,19 @@ The following capabilities are planned at the product level but are not implemen
 - [Architecture](architecture.md)
 - [Operator guide](operator-guide.md)
 - [Runtime behavior](runtime-behavior.md)
+
+## Account Preferences feature
+
+The Account Preferences vertical slice owns the live trailing-stops read/update
+contract, Test-only environment policy, typed provider outcomes, and verified
+observation history. Application handlers depend on inward-owned gateway and
+observation-store ports. Infrastructure supplies the IG HTTP adapter and SQL
+append-only store; API translates outcomes to protected HTTP responses; Web
+renders the Operator control and paged history.
+
+The live value is never reconstructed from local history. Updates are confirmed
+by a fresh provider GET, and indeterminate writes are reconciled without a
+blind PUT retry. Unknown provider state is not stored as `false`. Observations
+are retained online according to `Retention:OperationalRecordsDays`, using the
+90-day default when the setting is missing or non-positive. Archive/export
+remains follow-on work.

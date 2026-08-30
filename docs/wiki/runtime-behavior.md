@@ -8,6 +8,21 @@ ms.topic: concept
 
 This document explains how the current application behaves at startup and while it is running. It focuses on schedule evaluation, auth state, retry handling, notifications, and record retention.
 
+## Trailing-stops observation retention and environment guard
+
+Trailing-stops preference observations are retained online according to
+`Retention:OperationalRecordsDays`. The startup retention processor deletes
+observations strictly older than the configured cutoff from SQL Server and its
+in-memory test provider; observations at the cutoff are preserved. A missing,
+invalid, negative, or zero value uses the 90-day default. Archive/export is
+deferred from the initial delivery.
+
+The feature presents the legacy broker environment key `Demo` as `Test` without
+rewriting historical records. It supports the Test account only. This control
+does not authorize real orders or monetary exposure, and Live execution remains
+blocked until a separate Live safety delivery provides explicit authorization
+and risk controls.
+
 ## Account Details capture
 
 After a durable successful IG Demo login, Application requests a best-effort
@@ -697,3 +712,22 @@ flowchart TD
 - [Operator guide](operator-guide.md)
 - [API reference](api-reference.md)
 - [Architecture](architecture.md)
+
+## Account Preferences authority and failure behavior
+
+Account Preferences is separate from Account Details. The IG Test account is
+authoritative for the current trailing-stops value. A successful GET records a
+verified observation, but observations are never used as a cache or fallback
+for a failed live read.
+
+An update performs one PUT followed by a fresh GET. The confirmed GET, rather
+than the PUT response or requested local value, determines success. An
+indeterminate PUT is followed by one reconciliation GET and never a blind PUT
+retry. Only a successful known Boolean read is recorded; unknown state is not
+stored as `false`.
+
+Provider failures use typed outcomes and bounded operational events without a
+preference-history row or raw diagnostics. API and UI authorization are
+Operator-only. The history endpoint is a projection-only SQL read and never
+initiates an IG call. Legacy `Demo` keys are presented as `Test` without
+rewriting historical partitions. Live is rejected before provider I/O.

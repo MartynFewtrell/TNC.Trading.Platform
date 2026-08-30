@@ -1,4 +1,8 @@
 <Solution>
+  <Folder Name="/.copilot-tracking/" />
+  <Folder Name="/.copilot-tracking/research/" />
+  <Folder Name="/.copilot-tracking/research/subagents/" />
+  <Folder Name="/.copilot-tracking/research/subagents/2026-08-30/" />
   <Folder Name="/src/">
     <Project Path="src/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.csproj" />
     <Project Path="src/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.csproj" />

@@ -32,6 +32,7 @@ The left navigation still changes based on the signed-in operator role.
 | `/ig-login/history` | Retained daily first-successful non-secret IG login payloads within the 90-day retention window. Distinct from the current-state latest payload on `/status`. |
 | `/configuration` | Operator-managed configuration, notification settings, trading-schedule values, and write-only IG credential updates. |
 | `/administration/authentication` | Administrator-only summary of the configured auth provider, role claim type, and protected API audience. |
+| `/account-preferences` | Operator-only live Test-account trailing-stops control and read-only verified observations. The feature does not authorize real orders or monetary exposure. |
 | `/authentication/sign-in` | Starts sign-in. In automated local tests this also lists the seeded local test users. |
 | `/authentication/sign-out` | Requires an authenticated browser session, accepts an antiforgery-protected POST from the shared header, and ends the platform session before returning to the UI entry route, which prompts for sign-in again. |
 | `/authentication/access-denied` | Dedicated denied-access page for signed-in users who lack the required platform role. |
@@ -545,11 +546,33 @@ This is expected when:
 - the environment has been freshly provisioned and no first-successful snapshot has been captured
 - all retained entries have aged outside the 90-day retention window
 
-To populate history, a successful IG login must occur during an active trading-schedule period. The retention processor removes entries older than 90 days automatically. Entries exactly 90 days old at the cleanup cutoff remain until a later run, and the current `Latest` snapshot is never removed by age-based cleanup. A missing, invalid, negative, or zero `Retention:OperationalRecordsDays` value uses the 90-day default rather than disabling retention.
+To populate history, a successful IG login must occur during an active trading-schedule period. The retention processor removes entries older than the configured `Retention:OperationalRecordsDays` automatically. Entries exactly at the cleanup cutoff remain until a later run, and the current `Latest` snapshot is never removed by age-based cleanup. A missing, invalid, negative, or zero value uses the 90-day default rather than disabling retention.
 
 ## Related documents
 
 - [Application overview](application-overview.md)
 - [API reference](api-reference.md)
 - [Runtime behavior](runtime-behavior.md)
+
+## Account Preferences page
+
+`/account-preferences` is available only to Operators and Administrators. It
+controls trailing stops on the configured IG Test account and states that the
+control does not authorize real orders or monetary exposure.
+
+Initial load reads the live provider value. The separate history section is
+read-only evidence of verified reads and confirmed updates, never a cached
+live value. Saving sends one update and waits for a fresh provider GET; the
+toggle is replaced with the confirmed value only after that read succeeds.
+Loading and saving disable the control. An indeterminate update is reconciled
+with a GET and the PUT is not repeated.
+
+History is bounded and keyset-paged with an opaque cursor. Equal values remain
+separate observations, while failed or unknown provider outcomes are not shown
+as preference observations. Cursors are partition-bound and invalid membership
+is rejected rather than silently restarting from the first page. The feature is
+Test-only; Live requires a
+separate safety delivery for credentials, authorization, allowance handling,
+and monetary-risk controls. Online history retention uses
+`Retention:OperationalRecordsDays`; archive/export is deferred.
 

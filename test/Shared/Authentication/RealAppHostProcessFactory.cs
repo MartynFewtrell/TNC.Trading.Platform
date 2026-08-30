@@ -44,7 +44,7 @@ internal static class RealAppHostProcessFactory
 
     public static async Task<AppHostProcessHandle> StartManagedAppHostProcessAsync(bool enableInteractiveSignIn = false)
     {
-        var startupDeadline = TimeSpan.FromSeconds(90);
+        var startupDeadline = TimeSpan.FromSeconds(55);
         var startupStopwatch = Stopwatch.StartNew();
         using var startupCancellationTokenSource = new CancellationTokenSource(startupDeadline);
         var startupToken = startupCancellationTokenSource.Token;
@@ -72,7 +72,7 @@ internal static class RealAppHostProcessFactory
                     "DcpPublisher:RandomizePorts=false"
                 ], startupToken)
                 .ConfigureAwait(false);
-            application = await applicationBuilder.BuildAsync().ConfigureAwait(false);
+            application = await applicationBuilder.BuildAsync(startupToken).ConfigureAwait(false);
             await application.StartAsync(startupToken).ConfigureAwait(false);
             await application.ResourceNotifications.WaitForResourceHealthyAsync("keycloak", startupToken).ConfigureAwait(false);
             var webBaseUri = application.GetEndpoint("web", "https");
