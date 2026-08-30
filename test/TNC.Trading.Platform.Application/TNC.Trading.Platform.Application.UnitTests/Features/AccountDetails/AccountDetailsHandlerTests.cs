@@ -37,9 +37,9 @@ public sealed class AccountDetailsHandlerTests
     public async Task GetAsync_ShouldTraverseCompositeCursorWithoutCallingGateway()
     {
         var fixture = new Fixture();
-        var older = fixture.Snapshot(DateTimeOffset.UtcNow.AddMinutes(-2), fixture.TradingDay);
-        var current = fixture.Snapshot(DateTimeOffset.UtcNow.AddMinutes(-1), fixture.TradingDay);
-        var newer = fixture.Snapshot(DateTimeOffset.UtcNow, fixture.TradingDay);
+        var older = fixture.Snapshot(fixture.UtcNow.AddMinutes(-2), fixture.TradingDay);
+        var current = fixture.Snapshot(fixture.UtcNow.AddMinutes(-1), fixture.TradingDay);
+        var newer = fixture.Snapshot(fixture.UtcNow, fixture.TradingDay);
         fixture.Store.Snapshots.AddRange([older, current, newer]);
 
         var result = await fixture.Get.HandleAsync(new GetAccountDetailsRequest(new AccountDetailsCursor(current.RetrievedAtUtc, current.RetrievalId).Encode()), CancellationToken.None);
@@ -83,7 +83,7 @@ public sealed class AccountDetailsHandlerTests
     public async Task CaptureAutomaticAsync_ShouldYieldLeaseWhileManualRefreshReportsProgress()
     {
         var fixture = new Fixture();
-        fixture.Lease.Result = new AccountDetailsRefreshLeaseResult(false, DateTimeOffset.UtcNow);
+        fixture.Lease.Result = new AccountDetailsRefreshLeaseResult(false, fixture.UtcNow);
 
         var automatic = await fixture.Refresh.CaptureAutomaticAsync(CancellationToken.None);
         var manual = await fixture.Refresh.HandleAsync(new RefreshAccountDetailsRequest(), CancellationToken.None);
@@ -103,7 +103,7 @@ public sealed class AccountDetailsHandlerTests
     public async Task CaptureAutomaticAsync_ShouldDeduplicateSuccessAndRetryAfterFailure()
     {
         var fixture = new Fixture();
-        fixture.Store.Snapshots.Add(fixture.Snapshot(DateTimeOffset.UtcNow, fixture.TradingDay));
+        fixture.Store.Snapshots.Add(fixture.Snapshot(fixture.UtcNow, fixture.TradingDay, AccountDetailsTriggerSource.Automatic));
 
         var duplicate = await fixture.Refresh.CaptureAutomaticAsync(CancellationToken.None);
         Assert.IsType<AccountDetailsRefreshOutcome.Deferred>(duplicate);
@@ -151,7 +151,8 @@ public sealed class AccountDetailsHandlerTests
         public readonly PlatformConfigurationService Configuration;
         public readonly GetAccountDetailsHandler Get;
         public readonly RefreshAccountDetailsHandler Refresh;
-        public readonly DateOnly TradingDay = new(2026, 8, 7);
+        public readonly DateTimeOffset UtcNow = new(2026, 8, 7, 12, 0, 0, TimeSpan.Zero);
+        public readonly DateOnly TradingDay = DateOnly.FromDateTime(new DateTime(2026, 8, 7, 12, 0, 0, DateTimeKind.Utc));
         public readonly AccountDetailsAccount Account = new("ACC", "Account", null, "ENABLED", "CFD", true, 100, 0, 0, 100, "GBP", true, true);
 
         public Fixture()
@@ -159,11 +160,18 @@ public sealed class AccountDetailsHandlerTests
             Gateway.Result = new AccountDetailsGatewayResult.Succeeded([Account]);
             Configuration = new PlatformConfigurationService(new FakeConfigurationStore());
             var gate = new TradingScheduleGate();
-            Refresh = new RefreshAccountDetailsHandler(Configuration, Gateway, Store, Lease, gate, TimeProvider.System);
+            var timeProvider = new FixedTimeProvider(UtcNow);
+            Refresh = new RefreshAccountDetailsHandler(Configuration, Gateway, Store, Lease, gate, timeProvider);
             Get = new GetAccountDetailsHandler(Configuration, Store);
         }
 
-        public AccountDetailsSnapshot Snapshot(DateTimeOffset retrievedAt, DateOnly day) => new(Guid.NewGuid(), BrokerEnvironmentKind.Demo, retrievedAt, day, AccountDetailsTriggerSource.Manual, [Account]);
+        public AccountDetailsSnapshot Snapshot(DateTimeOffset retrievedAt, DateOnly day, AccountDetailsTriggerSource triggerSource = AccountDetailsTriggerSource.Manual) =>
+            new(Guid.NewGuid(), BrokerEnvironmentKind.Demo, retrievedAt, day, triggerSource, [Account]);
+
+        private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+        {
+            public override DateTimeOffset GetUtcNow() => utcNow;
+        }
     }
 
     private sealed class FakeGateway : IAccountDetailsGateway
@@ -198,7 +206,8 @@ public sealed class AccountDetailsHandlerTests
         public Task<AccountDetailsSnapshot?> GetAfterAsync(BrokerEnvironmentKind environment, AccountDetailsCursor cursor, CancellationToken cancellationToken) { ReadCount++; return Task.FromResult(Snapshots.Where(x => x.BrokerEnvironment == environment && IsAfter(x, cursor)).OrderBy(x => x.RetrievedAtUtc).FirstOrDefault()); }
         private static bool IsBefore(AccountDetailsSnapshot snapshot, AccountDetailsCursor cursor) => snapshot.RetrievedAtUtc < cursor.RetrievedAtUtc || snapshot.RetrievedAtUtc == cursor.RetrievedAtUtc && snapshot.RetrievalId.CompareTo(cursor.RetrievalId) < 0;
         private static bool IsAfter(AccountDetailsSnapshot snapshot, AccountDetailsCursor cursor) => snapshot.RetrievedAtUtc > cursor.RetrievedAtUtc || snapshot.RetrievedAtUtc == cursor.RetrievedAtUtc && snapshot.RetrievalId.CompareTo(cursor.RetrievalId) > 0;
-        public Task<bool> ExistsForTradingDayAsync(BrokerEnvironmentKind environment, DateOnly tradingDay, CancellationToken cancellationToken) => Task.FromResult(Snapshots.Any(x => x.BrokerEnvironment == environment && x.TradingDay == tradingDay));
+        public Task<bool> ExistsForTradingDayAsync(BrokerEnvironmentKind environment, DateOnly tradingDay, CancellationToken cancellationToken) =>
+            Task.FromResult(Snapshots.Any(x => x.BrokerEnvironment == environment && x.TradingDay == tradingDay && x.TriggerSource == AccountDetailsTriggerSource.Automatic));
         public Task<AccountDetailsSnapshot> SaveAsync(AccountDetailsSnapshot snapshot, CancellationToken cancellationToken) { Snapshots.Add(snapshot); return Task.FromResult(snapshot); }
     }
 
