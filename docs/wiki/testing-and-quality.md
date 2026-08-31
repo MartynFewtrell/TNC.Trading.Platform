@@ -151,6 +151,18 @@ The unit tests cover:
 - retry-cycle and IG proof-data workflow scenarios that exercise EF stores,
   protected credentials, notification dispatch, and provider-shaped ports
 
+- two in-memory EF continued-inactivity regression tests covering both a
+   changed inactive reason and an unchanged inactive reason; each verifies the
+   persisted `BlockedReason` and `LastValidatedAtUtc` values, preserves
+   `LastTransitionAtUtc` and retry/session metadata, and confirms that no
+   notification or operational event side effects are created
+
+- direct `PlatformStateTransitionEngine` coverage in
+   `Apply_ShouldRejectSelfTransition_WhenCurrentStateIsOutOfSchedule`, which
+   verifies that the strict `OutOfSchedule -> OutOfSchedule` transition is
+   rejected before mutating status, reason, timestamps, session metadata, or
+   degraded-state values
+
 The infrastructure unit suites now instantiate internal persistence, notification, and configuration components directly through compile-time references. The remaining infrastructure test helper is limited to typed in-memory `PlatformDbContext` and data-protection setup so the tests no longer rely on string-based constructor, method, enum, or property lookup.
 
 The Infrastructure integration project now runs a focused real SQL Server
@@ -540,6 +552,21 @@ When extending the application, keep these areas protected:
 
 ## Account Preferences coverage
 
+Coverage verifies the SQL desired-state and IG observed-state split. Application
+tests cover status classification, revision guards, bounded retry timing,
+account mismatch, observe-only reconciliation, manual retry, and explicit
+remediation. Infrastructure SQL tests cover the current-state and audit
+migration, atomic commits, restart durability, leases, stale completion
+protection, and account-bound observations.
+
+API tests cover the SQL-only GET, `Pending` update response, retry and
+remediation routes, authorization, stale revisions, and secret-safe Problem
+Details. The provider double is configured through
+`Ig:AccountPreferencesBaseUrl`, so closed-box tests prove convergence without
+contacting real IG. bUnit and Playwright coverage verifies desired and observed
+labels, status warnings, retry/remediation affordances, and independent
+display when IG is unavailable.
+
 Application tests cover Test-only policy, legacy Demo presentation, validation,
 typed failures, confirmed updates, indeterminate-write reconciliation,
 repeated equal observations, partitioned strict cursors, retention defaults,
@@ -551,9 +578,16 @@ creation, restart readback, and configured operational-record cleanup.
 
 API tests cover Operator authorization, nullable-Boolean validation, stable
 `400`/`409`/`429`/`502`/`503`/`504` mappings, Problem Details extension fields,
-diagnostic non-leakage, and history cursor validation. Web bUnit tests cover
-initial load, disabled loading/save state, confirmed-value replacement,
-failure feedback, authorization, history paging, and cancellation on disposal.
-Distributed checks are bounded and retain diagnostics. No automated test calls
-the real IG service; real-IG verification remains operator-controlled manual
-evidence only.
+diagnostic non-leakage, and history cursor validation. Web bUnit tests
+deterministically cover the Account Preferences radio semantics, pending and
+provider-confirmed state transitions, `true` and `false` outbound Boolean
+values, save rejection, HTTP `409` mismatch, partial success, confirmation
+dismissal, and safe handling of initial-load failure. They also retain coverage
+for disabled loading/save state, authorization, history paging, and
+cancellation on disposal.
+
+Distributed checks are bounded and retain diagnostics. Default automation does
+not contact the real IG service; real-IG verification remains operator-
+controlled manual evidence only. These bUnit tests do not prove browser
+behavior, responsive reflow, keyboard interaction, or assistive-technology
+behavior, which require separate manual validation.

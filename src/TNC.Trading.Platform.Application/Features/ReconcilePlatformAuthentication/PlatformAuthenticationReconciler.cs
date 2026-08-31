@@ -3,6 +3,7 @@ using System.Text.Json;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.PlatformAuthentication.Ports;
 using TNC.Trading.Platform.Application.Features.AccountDetails;
+using TNC.Trading.Platform.Application.Features.AccountPreferences;
 using TNC.Trading.Platform.Application.Services;
 
 namespace TNC.Trading.Platform.Application.Features.ReconcilePlatformAuthentication;
@@ -21,7 +22,8 @@ internal sealed class PlatformAuthenticationReconciler(
     TimeProvider timeProvider,
     IPlatformApplicationLogger logger,
     IPlatformReconciliationLease reconciliationLease,
-    IAccountDetailsDailyCapture? accountDetailsDailyCapture = null) : IPlatformAuthenticationReconciler
+    IAccountDetailsDailyCapture? accountDetailsDailyCapture = null,
+    IAccountPreferencesVerificationNudge? accountPreferencesVerificationNudge = null) : IPlatformAuthenticationReconciler
 {
     private const string MissingCredentialsBlockedReason = "IG demo credentials are incomplete.";
     private const string UnusableCredentialsBlockedReason = "IG Demo credentials must be re-entered.";
@@ -176,7 +178,7 @@ internal sealed class PlatformAuthenticationReconciler(
         switch (scheduleDecision.Action)
         {
             case TradingScheduleTickAction.BlockedBySchedule:
-                await TransitionToOutOfScheduleAsync(currentConfiguration, currentState, scheduleDecision.Reason!, cancellationToken).ConfigureAwait(false);
+                await TransitionToOutOfScheduleAsync(currentConfiguration, currentState, scheduleDecision.Reason!, now, cancellationToken).ConfigureAwait(false);
                 break;
             case TradingScheduleTickAction.BlockedLive:
                 await HandleBlockedLiveAsync(currentConfiguration, currentState, cancellationToken).ConfigureAwait(false);
@@ -319,11 +321,17 @@ internal sealed class PlatformAuthenticationReconciler(
         await sideEffects.DispatchFailureAsync(currentConfiguration, "Manual retry started a new degraded auth cycle because required IG demo credentials are still missing.", failureCorrelationId, retryCycleId, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task TransitionToOutOfScheduleAsync(PlatformConfigurationSnapshot currentConfiguration, PlatformRuntimeState currentState, string reason, CancellationToken cancellationToken)
+    private async Task TransitionToOutOfScheduleAsync(
+        PlatformConfigurationSnapshot currentConfiguration,
+        PlatformRuntimeState currentState,
+        string reason,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
     {
-        if (currentState.SessionStatus == PlatformSessionStatus.OutOfSchedule
-            && string.Equals(currentState.BlockedReason, reason, StringComparison.Ordinal))
+        if (currentState.SessionStatus == PlatformSessionStatus.OutOfSchedule)
         {
+            currentState.BlockedReason = reason;
+            currentState.LastValidatedAtUtc = now;
             return;
         }
 
@@ -335,7 +343,7 @@ internal sealed class PlatformAuthenticationReconciler(
         currentState.RetryLimitReached = false;
         ApplyAuthenticationTransitionOrThrow(
             currentState,
-            new AuthenticationStateTransition(PlatformSessionStatus.OutOfSchedule, reason, timeProvider.GetUtcNow()));
+            new AuthenticationStateTransition(PlatformSessionStatus.OutOfSchedule, reason, now));
 
         await sideEffects.UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: true, lastDelaySeconds: null, cancellationToken).ConfigureAwait(false);
 
@@ -444,6 +452,23 @@ internal sealed class PlatformAuthenticationReconciler(
                 now.Add(GetSessionLifetime())));
 
         await sideEffects.UpsertRetryCycleAsync(retryCycleId, currentConfiguration, currentState, "Automatic", failureNotificationSent: wasDegraded, lastDelaySeconds: null, cancellationToken).ConfigureAwait(false);
+
+        if (accountPreferencesVerificationNudge is not null)
+        {
+            try
+            {
+                await accountPreferencesVerificationNudge.HandleAsync(
+                    new TNC.Trading.Platform.Application.Features.AccountPreferences.NudgeAccountPreferencesVerificationRequest(
+                        currentConfiguration.PlatformEnvironment,
+                        currentConfiguration.BrokerEnvironment,
+                        authentication.Evidence!.AccountId,
+                        successfulSnapshot.Id.ToString(),
+                        successfulSnapshot.CapturedAtUtc), cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
+            {
+            }
+        }
 
         var eventType = wasDegraded ? "Recovered" : "Authenticated";
         var summary = wasDegraded

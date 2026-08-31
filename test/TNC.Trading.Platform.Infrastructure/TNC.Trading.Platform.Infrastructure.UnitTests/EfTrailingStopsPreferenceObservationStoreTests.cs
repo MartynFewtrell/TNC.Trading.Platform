@@ -38,5 +38,5 @@ public sealed class EfTrailingStopsPreferenceObservationStoreTests
     }
 
     private static TrailingStopsPreferenceObservation CreateObservation(Guid id, DateTimeOffset observedAt, bool enabled) =>
-        new(id, enabled, observedAt, observedAt.AddSeconds(1), PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, "Observed", "AccountPreferences", "actor", id.ToString("N"));
+        new(id, enabled, observedAt, observedAt.AddSeconds(1), PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, "account-1", "Observed", "AccountPreferences", "actor", id.ToString("N"));
 }

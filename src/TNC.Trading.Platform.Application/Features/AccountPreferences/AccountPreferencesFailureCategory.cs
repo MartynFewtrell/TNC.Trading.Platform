@@ -8,5 +8,8 @@ internal enum AccountPreferencesFailureCategory
     MalformedProviderData,
     Rejected,
     Unavailable,
-    Timeout
+    Timeout,
+    Unsupported,
+    AccountMismatch,
+    Transient
 }

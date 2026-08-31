@@ -152,6 +152,155 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                     b.ToTable("AccountDetailsRetrievals");
                 });
 
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.AccountPreferencesCurrentStateEntity", b =>
+                {
+                    b.Property<Guid>("AccountPreferencesCurrentStateId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AccountId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("AttemptId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AuthenticationSnapshotId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("BrokerEnvironment")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<byte[]>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("DesiredActor")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset?>("DesiredChangedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long?>("DesiredRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool?>("DesiredTrailingStopsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("FailureSummary")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("LastVerifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("NextRetryAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ObservedAccountId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("ObservedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool?>("ObservedTrailingStopsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("PlatformEnvironment")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("RetryCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("VerificationStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("AccountPreferencesCurrentStateId");
+
+                    b.HasIndex("PlatformEnvironment", "BrokerEnvironment", "AccountId")
+                        .IsUnique()
+                        .HasFilter("[AccountId] IS NOT NULL");
+
+                    b.ToTable("AccountPreferencesCurrentStates");
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.AccountPreferencesDesiredStateAuditEntity", b =>
+                {
+                    b.Property<Guid>("AccountPreferencesDesiredStateAuditId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AccountId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("AccountPreferencesCurrentStateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("BrokerEnvironment")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ChangeType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long>("NewRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("NewValue")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PlatformEnvironment")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<long>("PreviousRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool?>("PreviousValue")
+                        .HasColumnType("bit");
+
+                    b.HasKey("AccountPreferencesDesiredStateAuditId");
+
+                    b.HasIndex("AccountPreferencesCurrentStateId", "NewRevision")
+                        .IsUnique();
+
+                    b.HasIndex("PlatformEnvironment", "BrokerEnvironment", "AccountId", "NewRevision");
+
+                    b.ToTable("AccountPreferencesDesiredStateAudits");
+                });
+
             modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.AuthRetryCycleEntity", b =>
                 {
                     b.Property<Guid>("RetryCycleId")

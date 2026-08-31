@@ -22,6 +22,7 @@ builder.Services.AddPlatformInfrastructure(builder.Configuration, builder.Enviro
 builder.Services.AddScoped<UpdatePlatformConfigurationValidator>();
 builder.Services.AddSingleton<IPlatformAuthenticationSupervisorDelay, PlatformAuthenticationSupervisorDelay>();
 builder.Services.AddHostedService<PlatformAuthenticationSupervisor>();
+builder.Services.AddHostedService<AccountPreferencesReconciliationSupervisor>();
 
 var app = builder.Build();
 

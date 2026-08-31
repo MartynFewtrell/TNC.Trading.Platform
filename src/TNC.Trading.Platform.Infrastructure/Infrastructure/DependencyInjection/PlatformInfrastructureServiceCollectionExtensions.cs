@@ -93,14 +93,24 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         services.AddScoped<IAccountDetailsSnapshotStore>(provider => provider.GetRequiredService<EfAccountDetailsSnapshotStore>());
         services.AddScoped<EfTrailingStopsPreferenceObservationStore>();
         services.AddScoped<ITrailingStopsPreferenceObservationStore>(provider => provider.GetRequiredService<EfTrailingStopsPreferenceObservationStore>());
+        services.AddScoped<IAccountPreferencesCurrentStateStore, EfAccountPreferencesCurrentStateStore>();
+        services.AddScoped<IAccountPreferencesReconciliationLease, SqlAccountPreferencesReconciliationLease>();
         services.AddScoped<IAccountDetailsRefreshLease, SqlAccountDetailsRefreshLease>();
         services.AddHttpClient<IAccountDetailsGateway, IgAccountDetailsGateway>(client =>
         {
             client.BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/");
         });
+        var accountPreferencesBaseUrl = configuration["Ig:AccountPreferencesBaseUrl"];
+        if (!Uri.TryCreate(accountPreferencesBaseUrl, UriKind.Absolute, out var parsedAccountPreferencesBaseUrl)
+            || parsedAccountPreferencesBaseUrl.Scheme is not ("http" or "https")
+            || !accountPreferencesBaseUrl.EndsWith("/", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("'Ig:AccountPreferencesBaseUrl' must be an absolute HTTP(S) URI with a trailing slash.");
+        }
+
         services.AddHttpClient<IAccountPreferencesGateway, IgAccountPreferencesGateway>(client =>
         {
-            client.BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/");
+            client.BaseAddress = parsedAccountPreferencesBaseUrl;
         });
 
         services.AddHttpClient<IBrokerAuthenticationGateway, IgBrokerAuthenticationGateway>(client =>

@@ -4,9 +4,12 @@ namespace TNC.Trading.Platform.Web.E2ETests.Authentication;
 
 internal static class AppHostProcessFactory
 {
-    public static Task<SharedAppHostProcessHandle> StartAppHostProcessAsync()
+    public static Task<SharedAppHostProcessHandle> StartAppHostProcessAsync(Uri? accountPreferencesBaseUri = null)
     {
-        return TNC.Trading.Platform.TestShared.Authentication.RealAppHostProcessFactory.StartManagedAppHostProcessAsync(enableInteractiveSignIn: false);
+        var overrides = accountPreferencesBaseUri is null
+            ? null
+            : new Dictionary<string, string> { ["Ig__AccountPreferencesBaseUrl"] = accountPreferencesBaseUri.ToString() };
+        return TNC.Trading.Platform.TestShared.Authentication.RealAppHostProcessFactory.StartManagedAppHostProcessAsync(enableInteractiveSignIn: false, overrides);
     }
 
     public static async Task<Uri> GetWebBaseUriAsync(SharedAppHostProcessHandle appHostProcess)

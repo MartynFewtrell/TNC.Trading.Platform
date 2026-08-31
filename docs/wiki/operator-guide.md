@@ -129,6 +129,8 @@ It shows:
 
 The latest failure summary is classified into clear operator-facing messages such as invalid credentials, forbidden access, request timeout, rate limiting, broker unreachability, or an unexpected broker response. These messages remain secret-safe and never include the configured API key, identifier, password, `CST`, or `X-SECURITY-TOKEN` values.
 
+When the state is `OutOfSchedule`, the blocked reason shown in the status and IG login panels is the current governing inactive reason. A normal rollover from one inactive reason to another is non-fatal: the platform refreshes the persisted reason and validation timestamp without creating a retry, notification, or failure summary. Continued inactivity with the same reason follows the same no-side-effect path.
+
 When a successful IG login payload has been captured, the same panel also exposes an expandable **Latest successful IG login payload details** area.
 
 The expandable details show:
@@ -521,6 +523,12 @@ recover after the owning replica is stopped, inspect SQL connectivity and
 connection-pool health before restarting the remaining API replica; the
 session-owned lock is released when its SQL connection ends.
 
+An `OutOfSchedule` reason change during normal reconciliation is not a startup
+failure and does not require a retry or notification investigation. Genuine
+startup migration, configuration, persistence, or policy failures remain
+fail-fast: startup does not become ready until the failing condition is
+corrected and initialization and reconciliation complete successfully.
+
 ### The configuration page says restart is required
 
 This means a startup-fixed setting changed. The new value is persisted, but the currently running runtime state continues using the prior startup-applied environment selection until the next application start.
@@ -557,15 +565,19 @@ To populate history, a successful IG login must occur during an active trading-s
 ## Account Preferences page
 
 `/account-preferences` is available only to Operators and Administrators. It
-controls trailing stops on the configured IG Test account and states that the
-control does not authorize real orders or monetary exposure.
+shows `Live trailing stops control for the configured account.` The page states
+that the control does not authorize real orders or monetary exposure.
 
-Initial load reads the live provider value. The separate history section is
-read-only evidence of verified reads and confirmed updates, never a cached
-live value. Saving sends one update and waits for a fresh provider GET; the
-toggle is replaced with the confirmed value only after that read succeeds.
-Loading and saving disable the control. An indeterminate update is reconciled
-with a GET and the PUT is not repeated.
+Initial load reads SQL state. The page labels the operator value `Desired setting` and the external fact `Last observed at IG`, with verification status and retry information beside them. Saving commits desired state and shows `Pending` while background verification runs; it does not wait for a provider read. `InSync`, `Drifted`, `VerificationFailed`, and `Unsupported` remain distinct states.
+
+If the initial preference load fails, the page does not expose an editable
+default Boolean or a Save action. Save confirmation is a persistent,
+dismissible status message separate from application status. Dismissing the
+confirmation restores focus to the Save action. A confirmed save with a
+history refresh failure reports `Trailing stops preference saved and
+confirmed. Observed history could not be refreshed.` The separate history
+section remains read-only evidence of verified reads and confirmed updates,
+never a cached live value.
 
 History is bounded and keyset-paged with an opaque cursor. Equal values remain
 separate observations, while failed or unknown provider outcomes are not shown

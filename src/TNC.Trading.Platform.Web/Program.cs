@@ -12,10 +12,7 @@ builder.AddPlatformWebAuthentication();
 builder.AddPlatformWebUi();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
-builder.Services.AddHttpClient<PlatformApiClient>(client =>
-{
-    client.BaseAddress = new Uri("https+http://api");
-});
+builder.Services.AddPlatformApiClient();
 builder.Services.AddHttpClient<PlatformAuthAuditClient>(client =>
 {
     client.BaseAddress = new Uri("https+http://api");

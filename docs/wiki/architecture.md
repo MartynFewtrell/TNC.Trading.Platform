@@ -346,8 +346,13 @@ Manual retry is deliberately excluded because its complete write slice now lives
 
 - reads current configuration and runtime state
 - invokes the Application-owned trading schedule policy and applies its typed decision
+- refreshes `BlockedReason` and `LastValidatedAtUtc` through the Application
+    reconciler when an existing `OutOfSchedule` state remains inactive, without
+    changing transition, retry, or session metadata
 - invokes the Application-owned retry timing policy when a retry cycle schedules its next attempt
-- submits authentication transition requests to the Application-owned transition policy and stops if the policy rejects a request
+- submits authentication transition requests to the Application-owned
+    `PlatformStateTransitionEngine`, which validates the strict state graph and
+    rejects invalid requests before mutation
 - reacts to missing credentials
 - captures a secret-safe IG login snapshot when a backend auth transition succeeds
 - invokes one provider-neutral authenticate-and-collect-proof capability and stores the returned secret-safe evidence and optional proof snapshot
@@ -595,14 +600,25 @@ This keeps audit persistence on the server side and avoids exposing secrets or d
 ## Account Preferences boundary
 
 Application owns the Account Preferences operation contracts, Test-only guard,
-confirmation and reconciliation rules, typed provider outcomes, and
-observation model. API and Web are inbound adapters; Infrastructure implements
-the IG gateway and SQL observation store.
+desired-state policy, comparison rules, typed provider outcomes, and
+observation model. SQL owns durable operator intent; IG supplies observed
+external fact. API and Web are inbound adapters; Infrastructure implements the
+current-state, audit, lease, observation, and account-bound IG ports.
 
-The update path is `PUT -> authoritative GET -> observation`. An indeterminate
-PUT is followed by GET reconciliation and never a blind PUT retry. A failed
-read or unknown value cannot become a false observation or local cache
-fallback. Operational failure events are allow-listed, bounded, and redacted,
-and remain separate from preference observations. The append-only persistence
-entity has deterministic keyset paging support, while retention deletes rows
-older than 90 days. Archive and export are outside this delivery.
+The update path commits desired state and audit atomically, advances the desired
+revision, marks verification `Pending`, and returns without provider I/O.
+Observe-only reconciliation binds results to the configured account, desired
+revision, attempt identifier, and observation time. A mismatch becomes
+`Drifted`; unavailable or malformed responses become `VerificationFailed` or
+`Unsupported`. A SQL lease and revision guard protect replicas and late work.
+
+Explicit remediation requires authorization for the same desired revision. It
+performs an initial GET, at most one PUT, and a confirming GET in one
+account-bound session. Account mismatch and stale revision are rejected;
+automatic drift repair and blind PUT retries are prohibited.
+
+When order submission is implemented, its application boundary must fail
+closed unless verification is fresh, `InSync`, and bound to the same desired
+revision, target account, and session generation. Startup verification only
+primes persisted status. Authentication-active is not trade readiness, and this
+delivery adds no order gate or override.

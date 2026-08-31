@@ -8,7 +8,9 @@ internal static class RealAppHostProcessFactory
 {
     private static readonly string AppHostProjectPath = Path.Combine("src", "TNC.Trading.Platform.AppHost", "TNC.Trading.Platform.AppHost.csproj");
 
-    public static AppHostProcessHandle StartAppHostProcess(bool enableInteractiveSignIn = false)
+    public static AppHostProcessHandle StartAppHostProcess(
+        bool enableInteractiveSignIn = false,
+        IReadOnlyDictionary<string, string>? additionalEnvironmentOverrides = null)
     {
         var existingPlatformProcessIds = AppHostProcessHandle.CapturePlatformProcessIds();
         var existingListeningPorts = AppHostProcessHandle.CaptureListeningPorts();
@@ -17,8 +19,16 @@ internal static class RealAppHostProcessFactory
             ["AppHost__EnableInfrastructureContainers"] = bool.TrueString,
             ["AppHost__UseSyntheticRuntime"] = bool.FalseString,
             ["AppHost__UsePersistentKeycloakState"] = bool.FalseString,
+            ["AppHost__UsePersistentSqlState"] = bool.FalseString,
             ["Authentication__Test__EnableInteractiveSignIn"] = enableInteractiveSignIn.ToString()
         };
+        if (additionalEnvironmentOverrides is not null)
+        {
+            foreach (var environmentOverride in additionalEnvironmentOverrides)
+            {
+                environmentOverrides[environmentOverride.Key] = environmentOverride.Value;
+            }
+        }
 
         var startInfo = new ProcessStartInfo
         {
@@ -42,7 +52,9 @@ internal static class RealAppHostProcessFactory
         return new AppHostProcessHandle(process, existingPlatformProcessIds, existingListeningPorts, launchCommand, environmentOverrides);
     }
 
-    public static async Task<AppHostProcessHandle> StartManagedAppHostProcessAsync(bool enableInteractiveSignIn = false)
+    public static async Task<AppHostProcessHandle> StartManagedAppHostProcessAsync(
+        bool enableInteractiveSignIn = false,
+        IReadOnlyDictionary<string, string>? additionalEnvironmentOverrides = null)
     {
         var startupDeadline = TimeSpan.FromSeconds(55);
         var startupStopwatch = Stopwatch.StartNew();
@@ -55,8 +67,16 @@ internal static class RealAppHostProcessFactory
             ["AppHost__EnableInfrastructureContainers"] = bool.TrueString,
             ["AppHost__UseSyntheticRuntime"] = bool.FalseString,
             ["AppHost__UsePersistentKeycloakState"] = bool.FalseString,
+            ["AppHost__UsePersistentSqlState"] = bool.FalseString,
             ["Authentication__Test__EnableInteractiveSignIn"] = enableInteractiveSignIn.ToString()
         };
+        if (additionalEnvironmentOverrides is not null)
+        {
+            foreach (var environmentOverride in additionalEnvironmentOverrides)
+            {
+                environmentOverrides[environmentOverride.Key] = environmentOverride.Value;
+            }
+        }
 
         var environmentScopes = environmentOverrides
             .Select(static environmentOverride => new TestEnvironmentVariableScope(environmentOverride.Key, environmentOverride.Value))

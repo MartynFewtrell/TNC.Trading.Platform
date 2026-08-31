@@ -12,14 +12,45 @@
 else if (Presenter.IsLoading && Presenter.State.History.Count == 0) { <p data-testid="account-preferences-loading">Loading account preferences...</p> }
 else
 {
-    <section class="panel platform-page-header"><div><h1>Account preferences</h1><p class="hint">Live trailing stops control for the configured Test account.</p></div></section>
-    @if (!string.IsNullOrWhiteSpace(Presenter.Error)) { <p class="error" role="alert" data-testid="account-preferences-error">@Presenter.Error</p> }
-    <section class="panel">
-        <label for="trailing-stops">Trailing stops enabled</label>
-        <InputCheckbox id="trailing-stops" @bind-Value="Presenter.State.TrailingStopsEnabled" disabled="@Presenter.IsSaving" />
-        <button class="platform-primary-action" type="button" data-testid="account-preferences-save" @onclick="SaveAsync" disabled="@(Presenter.IsSaving || Presenter.IsLoading)">@(Presenter.IsSaving ? "Saving..." : "Save preference")</button>
-        <p role="status" data-testid="account-preferences-status">@(Presenter.Message ?? $"Application status: {Presenter.State.ApplicationStatus}")</p>
+    <section class="panel platform-page-header"><div><h1>Account preferences</h1><p class="hint">Live trailing stops control for the configured account.</p></div></section>
+    @if (!string.IsNullOrWhiteSpace(Presenter.CurrentError)) { <p class="error" role="alert" data-testid="account-preferences-error">@Presenter.CurrentError</p> }
+    @if (!string.IsNullOrWhiteSpace(Presenter.HistoryError)) { <p class="error" role="alert" data-testid="account-preferences-history-error">@Presenter.HistoryError</p> }
+    <section class="panel" aria-labelledby="account-preferences-state-heading">
+        <h2 id="account-preferences-state-heading">Account preference state</h2>
+        <p><strong>Desired setting:</strong> @(Presenter.State.DesiredTrailingStopsEnabled is bool desired ? (desired ? "Enabled" : "Disabled") : "Unconfigured")</p>
+        <p><strong>Target account:</strong> @(Presenter.State.AccountId ?? "Not configured")</p>
+        <p><strong>Last observed at IG:</strong> @(Presenter.State.ObservedTrailingStopsEnabled is bool observed ? (observed ? "Enabled" : "Disabled") : "No observation")</p>
+        <p><strong>Observed account:</strong> @(Presenter.State.ObservedAccountId ?? "None")</p>
+        <p data-testid="account-preferences-application-status"><strong>Status:</strong> @Presenter.State.VerificationStatus</p>
+        <p>Application status: @Presenter.State.VerificationStatus</p>
+        @if (Presenter.State.VerificationStatus is "PendingVerification") { <p role="status">Verification is pending.</p> }
+        @if (!string.IsNullOrWhiteSpace(Presenter.State.FailureSummary)) { <p role="alert">@Presenter.State.FailureSummary</p> }
+        @if (Presenter.State.AccountId is not null) { <button type="button" @onclick="RetryAsync" disabled="@(Presenter.IsOperating || Presenter.IsSaving)">@(Presenter.IsOperating ? "Working..." : "Retry verification")</button> }
+        @if (Presenter.State.DesiredRevision is not null && Presenter.State.ObservedTrailingStopsEnabled != Presenter.State.DesiredTrailingStopsEnabled) { <button type="button" @onclick="RemediateAsync" disabled="@(Presenter.IsOperating || Presenter.IsSaving)">Apply desired setting</button> }
     </section>
+    @if (Presenter.State.HasConfirmedValue)
+    {
+        <section class="panel">
+            <h2>@(Presenter.State.TrailingStopsEnabled ? "Trailing stops enabled" : "Trailing stops disabled")</h2>
+            <p data-testid="account-preferences-last-confirmed">Last confirmed: @(Presenter.State.ConfirmedTrailingStopsEnabled == true ? "Enabled" : "Disabled")</p>
+            @if (Presenter.State.HasPendingChange) { <p data-testid="account-preferences-pending">Pending change: not yet confirmed</p> }
+            <fieldset disabled="@Presenter.IsSaving">
+                <legend>Trailing stops</legend>
+                <InputRadioGroup TValue="bool" Value="@Presenter.State.TrailingStopsEnabled" ValueChanged="Presenter.Select" ValueExpression="@(() => Presenter.State.TrailingStopsEnabled)">
+                    <label><InputRadio Value="true" /> Enabled</label>
+                    <label><InputRadio Value="false" /> Disabled</label>
+                </InputRadioGroup>
+            </fieldset>
+            <button @ref="saveButton" class="platform-primary-action" type="button" data-testid="account-preferences-save" @onclick="SaveAsync" disabled="@(Presenter.IsSaving || Presenter.IsLoading)">@(Presenter.IsSaving ? "Saving..." : "Save preference")</button>
+            @if (!string.IsNullOrWhiteSpace(Presenter.Message))
+            {
+                <div role="status" aria-atomic="true" data-testid="account-preferences-confirmation">
+                    <span>@Presenter.Message</span>
+                    <button type="button" @onclick="DismissConfirmationAsync">Dismiss save confirmation</button>
+                </div>
+            }
+        </section>
+    }
     <section class="panel"><h2>Observed history</h2><table><thead><tr><th>Recorded</th><th>Enabled</th><th>Kind</th><th>Environment</th></tr></thead><tbody>
         @foreach (var observation in Presenter.State.History) { <tr @key="observation.Id"><td>@observation.RecordedAtUtc.ToLocalTime().ToString("g")</td><td>@observation.TrailingStopsEnabled</td><td>@observation.ObservationKind</td><td>@observation.PlatformEnvironment / @observation.BrokerEnvironment</td></tr> }
     </tbody></table><button type="button" data-testid="account-preferences-next" @onclick="LoadNextAsync" disabled="@(Presenter.IsLoading || Presenter.State.NextCursor is null)">Next page</button></section>
@@ -27,6 +58,7 @@ else
 
 @code {
     private bool hasRequiredScope;
+    private ElementReference saveButton;
     private readonly CancellationTokenSource requestLifetime = new();
 
     protected override async Task OnInitializedAsync()
@@ -35,7 +67,14 @@ else
         if (hasRequiredScope) await Presenter.LoadAsync(requestLifetime.Token);
     }
     private async Task SaveAsync() => await Presenter.SaveAsync(requestLifetime.Token);
+    private async Task DismissConfirmationAsync()
+    {
+        Presenter.DismissConfirmation();
+        await saveButton.FocusAsync();
+    }
     private async Task LoadNextAsync() => await Presenter.LoadNextHistoryPageAsync(requestLifetime.Token);
+    private async Task RetryAsync() => await Presenter.RetryAsync(requestLifetime.Token);
+    private async Task RemediateAsync() => await Presenter.RemediateAsync(requestLifetime.Token);
 
     public void Dispose()
     {

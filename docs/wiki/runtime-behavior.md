@@ -391,6 +391,18 @@ stateDiagram-v2
     Blocked --> Degraded: blocked condition cleared and credentials incomplete
 ```
 
+When reconciliation finds that the trading schedule is still inactive, an
+existing `OutOfSchedule` state is refreshed in place. `BlockedReason` reflects
+the current governing inactive reason and may roll over without changing the
+status from `OutOfSchedule`. `LastValidatedAtUtc` is refreshed with the instant
+captured for that reconciliation. `LastTransitionAtUtc`, retry and session
+state, and other transition metadata remain unchanged.
+
+This same-state refresh does not request an `OutOfSchedule -> OutOfSchedule`
+transition. The strict state graph therefore continues to omit that self-edge.
+`TradingScheduleInactive` events and retry cleanup are entry-transition side
+effects only. Continued inactivity adds no event or notification.
+
 ## Blocked-live rule
 
 The most important safety rule currently implemented is the blocked-live rule.
@@ -715,19 +727,22 @@ flowchart TD
 
 ## Account Preferences authority and failure behavior
 
-Account Preferences is separate from Account Details. The IG Test account is
-authoritative for the current trailing-stops value. A successful GET records a
-verified observation, but observations are never used as a cache or fallback
-for a failed live read.
+Account Preferences is separate from Account Details. SQL owns the desired
+trailing-stops value and IG supplies an account-bound observation. The page and
+`GET /api/platform/account-preferences` read SQL only, so desired state remains
+available during IG failure.
 
-An update performs one PUT followed by a fresh GET. The confirmed GET, rather
-than the PUT response or requested local value, determines success. An
-indeterminate PUT is followed by one reconciliation GET and never a blind PUT
-retry. Only a successful known Boolean read is recorded; unknown state is not
-stored as `false`.
+An update commits desired state and audit, advances its revision, marks the row
+`Pending`, and nudges verification. Durable due work is processed after usable
+authentication and restart. Recoverable failures retry after 5 seconds, 30
+seconds, 2 minutes, and 10 minutes. Verification is observe-only and records
+`InSync`, `Drifted`, `VerificationFailed`, or `Unsupported`.
 
-Provider failures use typed outcomes and bounded operational events without a
-preference-history row or raw diagnostics. API and UI authorization are
-Operator-only. The history endpoint is a projection-only SQL read and never
-initiates an IG call. Legacy `Demo` keys are presented as `Test` without
-rewriting historical partitions. Live is rejected before provider I/O.
+Explicit remediation is separate and revision-bound. It checks the account,
+performs one GET, at most one PUT, and a confirming GET in the same session.
+Account mismatch and stale revisions remain visible as safe failures. The SQL
+lease prevents competing replicas, while the revision guard prevents late work
+overwriting newer intent. A future order boundary must recheck fresh `InSync`
+evidence, desired revision, target account, and session generation after
+reauthentication, account changes, schedule exit, or expiry. The current
+product has no order submission, so startup verification is not trade readiness.

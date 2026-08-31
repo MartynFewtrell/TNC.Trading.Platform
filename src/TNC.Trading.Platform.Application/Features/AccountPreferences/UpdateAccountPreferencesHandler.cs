@@ -8,11 +8,26 @@ internal sealed class UpdateAccountPreferencesHandler(
     IAccountPreferencesGateway gateway,
     ITrailingStopsPreferenceObservationStore observationStore,
     IPlatformEventStore eventStore,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IAccountPreferencesCurrentStateStore? currentStateStore = null)
 {
     public async Task<UpdateAccountPreferencesResponse> HandleAsync(UpdateAccountPreferencesRequest request, CancellationToken cancellationToken)
     {
         var configuration = await configurationService.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (currentStateStore is not null)
+        {
+            if (!AccountPreferencesEnvironmentPolicy.IsSupported(configuration.PlatformEnvironment, configuration.BrokerEnvironment))
+                return new(new AccountPreferencesGatewayOutcome.Failed(AccountPreferencesFailureCategory.UnsupportedEnvironment, AccountPreferencesEnvironmentPolicy.UnsupportedReason));
+
+            var change = new AccountPreferencesDesiredStateChange(configuration.PlatformEnvironment, configuration.BrokerEnvironment, request.TargetAccountId!, request.TrailingStopsEnabled!.Value, request.ExpectedRevision, request.Actor!, timeProvider.GetUtcNow(), request.CorrelationId ?? Guid.NewGuid().ToString("N"));
+            var commit = await currentStateStore.CommitDesiredStateAsync(change, cancellationToken).ConfigureAwait(false);
+            if (!commit.Committed)
+                return new(new AccountPreferencesGatewayOutcome.Failed(AccountPreferencesFailureCategory.Rejected, "The account preferences revision is stale."), commit.State);
+
+            var state = commit.State;
+            var outcome = new AccountPreferencesGatewayOutcome.Succeeded(new AccountPreferences(request.TrailingStopsEnabled.Value, state.VerificationStatus.ToString(), state.DesiredChangedAtUtc ?? timeProvider.GetUtcNow()));
+            return new(outcome, state);
+        }
         if (!AccountPreferencesEnvironmentPolicy.IsSupported(configuration.PlatformEnvironment, configuration.BrokerEnvironment))
         {
             return new(new AccountPreferencesGatewayOutcome.Failed(AccountPreferencesFailureCategory.UnsupportedEnvironment, AccountPreferencesEnvironmentPolicy.UnsupportedReason));

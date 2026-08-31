@@ -5,46 +5,115 @@ internal sealed class AccountPreferencesPagePresenter(PlatformApiClient platform
     public AccountPreferencesPageViewModel State { get; } = new();
     public bool IsLoading { get; private set; }
     public bool IsSaving { get; private set; }
-    public string? Error { get; private set; }
+    public bool IsOperating { get; private set; }
+    public string? CurrentError { get; private set; }
+    public string? HistoryError { get; private set; }
+    public string? Error => CurrentError;
+    public string? SaveError { get; private set; }
     public string? Message { get; private set; }
+
+    public void Select(bool trailingStopsEnabled)
+    {
+        State.Select(trailingStopsEnabled);
+        SaveError = null;
+        Message = null;
+    }
+
+    public void DismissConfirmation() => Message = null;
 
     public async Task LoadAsync(CancellationToken cancellationToken)
     {
         IsLoading = true;
-        Error = null;
+        CurrentError = null;
+        HistoryError = null;
         try
         {
             State.Apply(await platformApiClient.GetAccountPreferencesAsync(cancellationToken));
-            await LoadHistoryAsync(null, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
         {
-            Error = "Unable to load account preferences.";
+            CurrentError = CreateErrorMessage("Unable to load account preferences", exception);
         }
-        finally { IsLoading = false; }
+
+        if (CurrentError is null)
+        {
+            try
+            {
+                await LoadHistoryAsync(null, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+            catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+            {
+                HistoryError = CreateErrorMessage("Unable to load account preferences history", exception);
+            }
+        }
+        IsLoading = false;
     }
 
     public async Task SaveAsync(CancellationToken cancellationToken)
     {
         IsSaving = true;
-        Error = null;
+        SaveError = null;
         Message = null;
         try
         {
             State.Apply(await platformApiClient.UpdateAccountPreferencesAsync(State.TrailingStopsEnabled, cancellationToken));
             Message = "Trailing stops preference saved and confirmed.";
-            await LoadHistoryAsync(null, cancellationToken);
+            try
+            {
+                await LoadHistoryAsync(null, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+            {
+                Message = "Trailing stops preference saved and confirmed. Observed history could not be refreshed.";
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
         {
-            Error = "Unable to save and confirm account preferences.";
+            SaveError = "Unable to save and confirm account preferences.";
         }
         finally { IsSaving = false; }
     }
 
-    public Task LoadNextHistoryPageAsync(CancellationToken cancellationToken) => LoadHistoryAsync(State.NextCursor, cancellationToken);
+    public async Task LoadNextHistoryPageAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await LoadHistoryAsync(State.NextCursor, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
+        {
+            HistoryError = CreateErrorMessage("Unable to load account preferences history", exception);
+        }
+    }
+
+    public async Task RetryAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(State.AccountId)) return;
+        IsOperating = true; CurrentError = null;
+        try { State.Apply(await platformApiClient.RetryAccountPreferencesVerificationAsync(State.AccountId, cancellationToken)); }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException) { CurrentError = CreateErrorMessage("Unable to retry account preferences verification", exception); }
+        finally { IsOperating = false; }
+    }
+
+    public async Task RemediateAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(State.AccountId) || State.DesiredRevision is null) return;
+        IsOperating = true; CurrentError = null;
+        try { State.Apply(await platformApiClient.RemediateAccountPreferencesAsync(State.AccountId, State.DesiredRevision.Value, State.TrailingStopsEnabled, cancellationToken)); Message = "Account preferences remediation completed."; }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException) { CurrentError = CreateErrorMessage("Unable to remediate account preferences", exception); }
+        finally { IsOperating = false; }
+    }
+
+    private static string CreateErrorMessage(string fallback, Exception exception) =>
+        string.IsNullOrWhiteSpace(exception.Message) ? $"{fallback}." : $"{fallback}. {exception.Message}";
 
     private async Task LoadHistoryAsync(string? cursor, CancellationToken cancellationToken)
     {

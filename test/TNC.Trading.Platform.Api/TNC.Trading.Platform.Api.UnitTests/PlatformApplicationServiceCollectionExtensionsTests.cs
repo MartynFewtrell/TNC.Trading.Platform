@@ -53,6 +53,10 @@ public class PlatformApplicationServiceCollectionExtensionsTests
 
     private sealed class TestAccountPreferencesGateway : IAccountPreferencesGateway
     {
+        public Task<AccountPreferencesObservationResult> ObserveAsync(AccountPreferencesObserveRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<AccountPreferencesRemediationResult> RemediateAsync(AccountPreferencesRemediateRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+
         public Task<AccountPreferencesGatewayOutcome> GetAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<AccountPreferencesGatewayOutcome> UpdateAsync(bool trailingStopsEnabled, CancellationToken cancellationToken) => throw new NotSupportedException();

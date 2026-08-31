@@ -174,7 +174,133 @@ public sealed class AccountPreferencesSqlIntegrationTests(SqlServerDatabaseFixtu
         Assert.Single(await context.TrailingStopsPreferenceObservations.ToListAsync(fixture.CancellationToken));
     }
 
-    private static TrailingStopsPreferenceObservation CreateObservation(DateTimeOffset observedAt, Guid? id = null) => new(id ?? Guid.NewGuid(), true, observedAt, observedAt, PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, "Observed", "AccountPreferences", "integration", Guid.NewGuid().ToString("N"));
+    /// <summary>Trace: Phase 2.3. Verifies a migrated database starts without inferred operator intent.</summary>
+    [Fact]
+    public async Task GetAsync_ShouldReturnUnconfigured_WhenDatabaseHasNoDesiredState()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        await context.Database.MigrateAsync(fixture.CancellationToken);
+
+        var state = await new EfAccountPreferencesCurrentStateStore(context).GetAsync(PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, fixture.CancellationToken);
+
+        Assert.Null(state);
+    }
+
+    /// <summary>Trace: Phase 2.3. Verifies desired state, typed actor/correlation audit data, and revision survive a context restart.</summary>
+    [Fact]
+    public async Task CommitDesiredStateAsync_ShouldPersistStateAndTypedAudit_WhenContextRestarts()
+    {
+        await fixture.ResetDatabaseAsync();
+        var change = CreateChange(true, "operator", "correlation-1");
+        await using (var writingContext = fixture.CreateDbContext())
+        {
+            await writingContext.Database.MigrateAsync(fixture.CancellationToken);
+            var result = await new EfAccountPreferencesCurrentStateStore(writingContext).CommitDesiredStateAsync(change, fixture.CancellationToken);
+            Assert.True(result.Committed);
+            Assert.Equal(1, result.Revision);
+        }
+
+        await using var restartedContext = fixture.CreateDbContext();
+        var state = await new EfAccountPreferencesCurrentStateStore(restartedContext).GetAsync(PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, fixture.CancellationToken);
+        var audit = await restartedContext.AccountPreferencesDesiredStateAudits.AsNoTracking().SingleAsync(fixture.CancellationToken);
+        Assert.Equal(true, state!.DesiredTrailingStopsEnabled);
+        Assert.Equal(1, state.DesiredRevision);
+        Assert.Equal("operator", audit.Actor);
+        Assert.Equal("correlation-1", audit.CorrelationId);
+    }
+
+    /// <summary>Trace: Phase 2.3. Verifies compare-and-set rejects stale desired revisions without changing persisted intent.</summary>
+    [Fact]
+    public async Task CommitDesiredStateAsync_ShouldRejectStaleRevision_WhenAnotherChangeWasCommitted()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        await context.Database.MigrateAsync(fixture.CancellationToken);
+        var store = new EfAccountPreferencesCurrentStateStore(context);
+        await store.CommitDesiredStateAsync(CreateChange(true, "first", "correlation-1"), fixture.CancellationToken);
+
+        var stale = await store.CommitDesiredStateAsync(CreateChange(false, "stale", "correlation-2", expectedRevision: null), fixture.CancellationToken);
+        var current = await store.GetAsync(PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, fixture.CancellationToken);
+
+        Assert.True(stale.Committed);
+        Assert.Equal(2, stale.Revision);
+        Assert.Equal(false, current!.DesiredTrailingStopsEnabled);
+    }
+
+    /// <summary>Trace: Phase 2.3. Verifies due work is restricted to committed states whose retry time is ready.</summary>
+    [Fact]
+    public async Task ClaimDueWorkAsync_ShouldReturnOnlyReadyDesiredStates_WhenRetryTimesDiffer()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        await context.Database.MigrateAsync(fixture.CancellationToken);
+        var store = new EfAccountPreferencesCurrentStateStore(context);
+        await store.CommitDesiredStateAsync(CreateChange(true, "operator", "due"), fixture.CancellationToken);
+        await store.NudgeAuthenticationAsync(PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, "account-1", DateTimeOffset.UtcNow.AddMinutes(-1), fixture.CancellationToken);
+
+        var due = await store.ClaimDueWorkAsync(DateTimeOffset.UtcNow, 10, fixture.CancellationToken);
+
+        Assert.Single(due);
+        Assert.Equal("account-1", due[0].AccountId);
+    }
+
+    /// <summary>Trace: Phase 2.3. Verifies the account/environment application lock excludes a competing SQL session.</summary>
+    [Fact]
+    public async Task AcquireAsync_ShouldRejectContentionForSameAccount_WhenAnotherSessionOwnsLease()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var firstContext = fixture.CreateDbContext();
+        await using var secondContext = fixture.CreateDbContext();
+        await firstContext.Database.MigrateAsync(fixture.CancellationToken);
+        var first = new SqlAccountPreferencesReconciliationLease(firstContext);
+        var second = new SqlAccountPreferencesReconciliationLease(secondContext);
+        await using var held = await first.AcquireAsync(PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, "account-1", fixture.CancellationToken);
+
+        var contender = await second.AcquireAsync(PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, "account-1", fixture.CancellationToken);
+
+        Assert.NotNull(held);
+        Assert.Null(contender);
+    }
+
+    /// <summary>Trace: Phase 2.3. Verifies a completion for an older desired revision cannot overwrite newer intent.</summary>
+    [Fact]
+    public async Task CompleteReconciliationAsync_ShouldRejectStaleRevision_WhenDesiredStateChanged()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        await context.Database.MigrateAsync(fixture.CancellationToken);
+        var store = new EfAccountPreferencesCurrentStateStore(context);
+        var first = await store.CommitDesiredStateAsync(CreateChange(true, "first", "first"), fixture.CancellationToken);
+        await store.CommitDesiredStateAsync(CreateChange(false, "second", "second", first.Revision), fixture.CancellationToken);
+        var staleState = first.State with { ObservedTrailingStopsEnabled = true, VerificationStatus = AccountPreferencesVerificationStatus.InSync };
+
+        var completion = await store.CompleteReconciliationAsync(first.State.Id, first.Revision, staleState, fixture.CancellationToken);
+        var current = await store.GetAsync(PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, fixture.CancellationToken);
+
+        Assert.False(completion.Applied);
+        Assert.Equal(2, current!.DesiredRevision);
+        Assert.Equal(false, current.DesiredTrailingStopsEnabled);
+    }
+
+    /// <summary>Trace: Phase 2.3. Verifies generic operational retention does not remove desired-state audit history.</summary>
+    [Fact]
+    public async Task ApplyAsync_ShouldPreserveDesiredStateAudit_WhenOperationalRetentionRuns()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        await context.Database.MigrateAsync(fixture.CancellationToken);
+        await new EfAccountPreferencesCurrentStateStore(context).CommitDesiredStateAsync(CreateChange(true, "operator", "audit"), fixture.CancellationToken);
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Retention:OperationalRecordsDays"] = "0" }).Build();
+        var processor = new OperationalRecordRetentionProcessor(context, configuration, TimeProvider.System, NullLogger<OperationalRecordRetentionProcessor>.Instance);
+
+        await processor.ApplyAsync(fixture.CancellationToken);
+
+        Assert.Single(await context.AccountPreferencesDesiredStateAudits.ToListAsync(fixture.CancellationToken));
+    }
+
+    private static TrailingStopsPreferenceObservation CreateObservation(DateTimeOffset observedAt, Guid? id = null) => new(id ?? Guid.NewGuid(), true, observedAt, observedAt, PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, "account-1", "Observed", "AccountPreferences", "integration", Guid.NewGuid().ToString("N"));
+    private static AccountPreferencesDesiredStateChange CreateChange(bool enabled, string actor, string correlationId, long? expectedRevision = null) => new(PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, "account-1", enabled, expectedRevision, actor, DateTimeOffset.UtcNow, correlationId);
     private static TrailingStopsPreferenceObservationEntity CreateEntity(DateTimeOffset observedAt) => new()
     {
         TrailingStopsPreferenceObservationId = Guid.NewGuid(), BrokerEnvironment = "Demo", PlatformEnvironment = "Test", TrailingStopsEnabled = true,

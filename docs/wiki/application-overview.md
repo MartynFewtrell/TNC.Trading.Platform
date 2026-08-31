@@ -194,16 +194,23 @@ The following capabilities are planned at the product level but are not implemen
 
 ## Account Preferences feature
 
-The Account Preferences vertical slice owns the live trailing-stops read/update
-contract, Test-only environment policy, typed provider outcomes, and verified
-observation history. Application handlers depend on inward-owned gateway and
-observation-store ports. Infrastructure supplies the IG HTTP adapter and SQL
-append-only store; API translates outcomes to protected HTTP responses; Web
-renders the Operator control and paged history.
+The Account Preferences vertical slice separates durable operator intent from
+external observation. The current-state store owns the desired Boolean,
+configured account, revision, status, retry metadata, and last observed value.
+The reconciler owns account-bound observe-only verification and durable due
+work. A separate remediation handler owns the explicit revision-bound provider
+write workflow.
 
-The live value is never reconstructed from local history. Updates are confirmed
-by a fresh provider GET, and indeterminate writes are reconciled without a
-blind PUT retry. Unknown provider state is not stored as `false`. Observations
-are retained online according to `Retention:OperationalRecordsDays`, using the
-90-day default when the setting is missing or non-positive. Archive/export
-remains follow-on work.
+Application handlers depend on inward-owned state, gateway, lease, and nudge
+ports. Infrastructure supplies the SQL current-state and audit stores, SQL
+lease, IG HTTP adapter, and retained observation history. API translates the
+contracts to protected HTTP routes; Web renders desired and observed values
+independently. The SQL-only current-state query remains available when IG is
+unavailable.
+
+New and migrated installations begin `Unconfigured`; observations are never
+promoted into desired intent. Verification records `InSync`, `Drifted`,
+`VerificationFailed`, or `Unsupported` and schedules bounded retries for
+recoverable failures. It is triggered after usable authentication, desired
+state changes, manual retry, and supervisor due-work processing. No current
+workflow places trades.

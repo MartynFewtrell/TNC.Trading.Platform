@@ -36,6 +36,22 @@ public sealed class AppHostSettingsTests
         Assert.Null(settings.AcsEndpoint);
         Assert.Null(settings.AcsSenderAddress);
         Assert.Null(settings.AcsConnectionString);
+        Assert.Null(settings.AccountPreferencesBaseUrl);
+    }
+
+    [Fact]
+    public void FromConfiguration_ShouldParseAccountPreferencesBaseUrl_WhenConfigured()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Ig:AccountPreferencesBaseUrl"] = "http://127.0.0.1:8081/gateway/deal/"
+            })
+            .Build();
+
+        var settings = AppHostSettings.FromConfiguration(configuration);
+
+        Assert.Equal("http://127.0.0.1:8081/gateway/deal/", settings.AccountPreferencesBaseUrl);
     }
 
     /// <summary>

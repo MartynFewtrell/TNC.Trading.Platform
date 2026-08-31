@@ -9,6 +9,7 @@ internal sealed record TrailingStopsPreferenceObservation(
     DateTimeOffset RecordedAtUtc,
     PlatformEnvironmentKind PlatformEnvironment,
     BrokerEnvironmentKind BrokerEnvironment,
+    string? AccountId,
     string ObservationKind,
     string Source,
     string? Actor,

@@ -144,15 +144,22 @@ If the **IG login** accordion shows a failed state, check that the credentials a
 ## Trailing-stops validation boundaries
 
 The Account Preferences page presents the configured broker `Test` environment.
+It reads desired state from SQL while account-bound verification observes IG
+asynchronously. Apply the EF migration that creates
+`AccountPreferencesCurrentStates` and its desired-state audit table before
+testing. New and migrated rows begin `Unconfigured`; do not seed desired intent
+from retained observations.
 The stored provider key may remain the legacy `Demo` value so historical
 partitions retain their lineage. This presentation mapping does not migrate or
 rewrite existing observations.
 
-Trailing-stops reads and writes use the typed `trailingStopsEnabled` provider
-property. A malformed successful update acknowledgement is indeterminate and
-is reconciled by one authoritative GET. A valid readback mismatch returns HTTP
-409 Problem Details. Observation history is partitioned by platform and broker
-environment, and cursors cannot cross partitions. Retention is controlled by
+Trailing-stops verification uses the typed `trailingStopsEnabled` provider
+property. Set `Ig:AccountPreferencesBaseUrl` to the WireMock provider double to
+exercise success, mismatch, timeout, malformed response, and account-mismatch
+scenarios. The API starts and serves the SQL projection while the provider is
+unavailable. Use verification retry for recovery and revision-bound remediation
+for an explicit provider correction. Observation history is partitioned by
+platform and broker environment, and cursors cannot cross partitions. Retention is controlled by
 `Retention:OperationalRecordsDays`, with the 90-day default when the setting is
 missing or non-positive.
 

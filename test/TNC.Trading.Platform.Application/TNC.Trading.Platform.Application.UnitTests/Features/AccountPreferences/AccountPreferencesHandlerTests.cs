@@ -33,6 +33,41 @@ public sealed class AccountPreferencesHandlerTests
     }
 
     /// <summary>
+    /// Trace: Account preferences load-performance mitigation Phase 1, Steps 1.1-1.3. Verifies a missing SQL projection is a valid unconfigured result.
+    /// Expected: the handler returns explicit Unconfigured query state and does not call the provider, preventing a fresh database from becoming a retryable outage.
+    /// </summary>
+    [Fact]
+    public async Task GetAccountPreferences_ShouldReturnUnconfiguredWithoutGatewayCall_WhenCurrentStateRowIsMissing()
+    {
+        var fixture = new Fixture(BrokerEnvironmentKind.Demo, new FakeCurrentStateStore(null));
+
+        var result = await fixture.Get.HandleAsync(new GetAccountPreferencesRequest(), CancellationToken.None);
+
+        Assert.IsType<AccountPreferencesQueryState.Unconfigured>(result.QueryState);
+        Assert.Null(result.State);
+        Assert.Equal(0, fixture.Gateway.GetCallCount);
+    }
+
+    /// <summary>
+    /// Trace: Account preferences load-performance mitigation Phase 1, Steps 1.1-1.3. Verifies a populated SQL projection remains authoritative for the query.
+    /// Expected: the complete durable state is returned as Configured and the provider is not called, keeping the initial read independent of IG availability.
+    /// </summary>
+    [Fact]
+    public async Task GetAccountPreferences_ShouldReturnConfiguredStateWithoutGatewayCall_WhenCurrentStateRowIsPopulated()
+    {
+        var fixture = new Fixture(BrokerEnvironmentKind.Demo);
+        var expectedState = new AccountPreferencesCurrentState(Guid.NewGuid(), PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, "account", true, 7, "operator", fixture.Now, false, "account", fixture.Now.AddMinutes(1), "snapshot", "attempt", AccountPreferencesVerificationStatus.Drifted, fixture.Now.AddMinutes(2), fixture.Now.AddMinutes(3), 2, "safe failure", "correlation", [1, 2, 3]);
+        fixture = new Fixture(BrokerEnvironmentKind.Demo, new FakeCurrentStateStore(expectedState));
+
+        var result = await fixture.Get.HandleAsync(new GetAccountPreferencesRequest(), CancellationToken.None);
+
+        var configured = Assert.IsType<AccountPreferencesQueryState.Configured>(result.QueryState);
+        Assert.Same(expectedState, configured.State);
+        Assert.Same(expectedState, result.State);
+        Assert.Equal(0, fixture.Gateway.GetCallCount);
+    }
+
+    /// <summary>
     /// Trace: Phase 2.4, authoritative confirmation. Verifies a successful PUT is followed by a GET and only the GET state is observed.
     /// Expected: the response and observation contain the authoritative GET value, guarding against trusting an unconfirmed write response.
     /// </summary>
@@ -164,18 +199,27 @@ public sealed class AccountPreferencesHandlerTests
         public readonly DateTimeOffset Now = new(2026, 8, 30, 12, 0, 0, TimeSpan.Zero);
         public readonly PlatformConfigurationSnapshot ConfigurationSnapshot;
 
-        public Fixture(BrokerEnvironmentKind brokerEnvironment)
+        public Fixture(BrokerEnvironmentKind brokerEnvironment, IAccountPreferencesCurrentStateStore? currentStateStore = null)
         {
             var configuration = new PlatformConfigurationService(new FakeConfigurationStore(brokerEnvironment));
             ConfigurationSnapshot = new FakeConfigurationStore(brokerEnvironment).Snapshot;
             var timeProvider = new FixedTimeProvider(Now);
             Update = new(configuration, Gateway, Store, Events, timeProvider);
-            Get = new(configuration, Gateway, Store, Events, timeProvider);
+            Get = new(configuration, Gateway, Store, Events, timeProvider, currentStateStore);
             History = new(configuration, Store);
         }
 
         public AccountPreferencesModel Preferences(bool enabled) => new(enabled, "OK", Now.AddMinutes(-1));
-        public TrailingStopsPreferenceObservation Observation(Guid id) => new(id, true, Now, Now, PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, "ReadObserved", "AccountPreferences", null, id.ToString("N"));
+        public TrailingStopsPreferenceObservation Observation(Guid id) => new(id, true, Now, Now, PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, null, "ReadObserved", "AccountPreferences", null, id.ToString("N"));
+    }
+
+    private sealed class FakeCurrentStateStore(AccountPreferencesCurrentState? result) : IAccountPreferencesCurrentStateStore
+    {
+        public Task<AccountPreferencesCurrentState?> GetAsync(PlatformEnvironmentKind platformEnvironment, BrokerEnvironmentKind brokerEnvironment, CancellationToken cancellationToken) => Task.FromResult(result);
+        public Task<AccountPreferencesDesiredStateCommitResult> CommitDesiredStateAsync(AccountPreferencesDesiredStateChange change, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<bool> NudgeAuthenticationAsync(PlatformEnvironmentKind platformEnvironment, BrokerEnvironmentKind brokerEnvironment, string accountId, string authenticationSnapshotId, DateTimeOffset authenticatedAtUtc, DateTimeOffset dueAtUtc, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<IReadOnlyList<AccountPreferencesCurrentState>> ClaimDueWorkAsync(DateTimeOffset nowUtc, int take, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<AccountPreferencesReconciliationCompletion> CompleteReconciliationAsync(Guid stateId, long desiredRevision, AccountPreferencesCurrentState state, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class FakeGateway : IAccountPreferencesGateway
@@ -184,6 +228,10 @@ public sealed class AccountPreferencesHandlerTests
         public readonly Queue<AccountPreferencesGatewayOutcome> UpdateResults = new();
         public int GetCallCount;
         public int UpdateCallCount;
+        public Task<AccountPreferencesObservationResult> ObserveAsync(AccountPreferencesObserveRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(new AccountPreferencesObservationResult(request.TargetAccountId, "test-attempt", DateTimeOffset.UtcNow, null));
+        public Task<AccountPreferencesRemediationResult> RemediateAsync(AccountPreferencesRemediateRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(new AccountPreferencesRemediationResult(request.TargetAccountId, "test-attempt", DateTimeOffset.UtcNow, request.TrailingStopsEnabled, false));
         public Task<AccountPreferencesGatewayOutcome> GetAsync(CancellationToken cancellationToken) { GetCallCount++; return Task.FromResult(GetResults.Dequeue()); }
         public Task<AccountPreferencesGatewayOutcome> UpdateAsync(bool trailingStopsEnabled, CancellationToken cancellationToken) { UpdateCallCount++; return Task.FromResult(UpdateResults.Dequeue()); }
     }

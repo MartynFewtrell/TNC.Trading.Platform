@@ -135,6 +135,11 @@ internal static class AppHostEnvironmentWiring
                 .WithEnvironment(environmentValue.Key, environmentValue.Value);
         }
 
+        if (!string.IsNullOrWhiteSpace(settings.AccountPreferencesBaseUrl))
+        {
+            configuredApi = configuredApi.WithEnvironment("Ig__AccountPreferencesBaseUrl", settings.AccountPreferencesBaseUrl);
+        }
+
         return configuredApi;
     }
 

@@ -8,11 +8,27 @@ internal sealed class GetAccountPreferencesHandler(
     IAccountPreferencesGateway gateway,
     ITrailingStopsPreferenceObservationStore observationStore,
     IPlatformEventStore eventStore,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IAccountPreferencesCurrentStateStore? currentStateStore = null)
 {
     public async Task<GetAccountPreferencesResponse> HandleAsync(GetAccountPreferencesRequest request, CancellationToken cancellationToken)
     {
         var configuration = await configurationService.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (currentStateStore is not null)
+        {
+            var state = await currentStateStore.GetAsync(configuration.PlatformEnvironment, configuration.BrokerEnvironment, cancellationToken).ConfigureAwait(false);
+            if (state is null)
+            {
+                return new(
+                    new AccountPreferencesGatewayOutcome.Failed(AccountPreferencesFailureCategory.UnsupportedEnvironment, "Account preferences are not configured."),
+                    QueryState: new AccountPreferencesQueryState.Unconfigured());
+            }
+
+            AccountPreferencesGatewayOutcome legacy = state.DesiredTrailingStopsEnabled is bool desired
+                ? new AccountPreferencesGatewayOutcome.Succeeded(new AccountPreferences(desired, state.VerificationStatus.ToString(), state.ObservedAtUtc ?? state.DesiredChangedAtUtc ?? timeProvider.GetUtcNow()))
+                : new AccountPreferencesGatewayOutcome.Failed(AccountPreferencesFailureCategory.UnsupportedEnvironment, "Account preferences are not configured.");
+            return new(legacy, state, new AccountPreferencesQueryState.Configured(state));
+        }
         if (!AccountPreferencesEnvironmentPolicy.IsSupported(configuration.PlatformEnvironment, configuration.BrokerEnvironment))
         {
             return new(await GetFailure(AccountPreferencesFailureCategory.UnsupportedEnvironment, AccountPreferencesEnvironmentPolicy.UnsupportedReason, request, configuration, cancellationToken).ConfigureAwait(false));
@@ -25,18 +41,18 @@ internal sealed class GetAccountPreferencesHandler(
         }
         else if (outcome is AccountPreferencesGatewayOutcome.Failed failed)
         {
-            await RecordFailureAsync("GetFailed", failed.Category, failed.SafeReason, request, configuration, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+            await RecordFailureAsync("GetFailed", failed.Category, failed.SafeReason, request, configuration, timeProvider.GetUtcNow(), cancellationToken, eventStore).ConfigureAwait(false);
         }
         else if (outcome is AccountPreferencesGatewayOutcome.Indeterminate indeterminate)
         {
-            await RecordFailureAsync("GetIndeterminate", indeterminate.Category, indeterminate.SafeReason, request, configuration, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+            await RecordFailureAsync("GetIndeterminate", indeterminate.Category, indeterminate.SafeReason, request, configuration, timeProvider.GetUtcNow(), cancellationToken, eventStore).ConfigureAwait(false);
         }
 
         return new(outcome);
     }
 
     internal static TrailingStopsPreferenceObservation CreateObservation(AccountPreferences preferences, string kind, GetAccountPreferencesRequest request, PlatformConfigurationSnapshot configuration, DateTimeOffset recordedAtUtc) =>
-        new(Guid.NewGuid(), preferences.TrailingStopsEnabled, preferences.ObservedAtUtc, recordedAtUtc, configuration.PlatformEnvironment, configuration.BrokerEnvironment, kind, "AccountPreferences", request.Actor, request.CorrelationId ?? Guid.NewGuid().ToString("N"));
+        new(Guid.NewGuid(), preferences.TrailingStopsEnabled, preferences.ObservedAtUtc, recordedAtUtc, configuration.PlatformEnvironment, configuration.BrokerEnvironment, null, kind, "AccountPreferences", request.Actor, request.CorrelationId ?? Guid.NewGuid().ToString("N"));
 
     internal static async Task RecordFailureAsync(string eventType, AccountPreferencesFailureCategory category, string safeReason, GetAccountPreferencesRequest request, PlatformConfigurationSnapshot configuration, DateTimeOffset occurredAtUtc, CancellationToken cancellationToken, IPlatformEventStore? eventStore = null)
     {

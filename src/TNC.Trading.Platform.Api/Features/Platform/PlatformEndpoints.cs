@@ -57,12 +57,22 @@ internal static class PlatformEndpoints
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
         platform.MapGet("/account-preferences/observations", GetAccountPreferencesObservationsAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
+        platform.MapPost("/account-preferences/verification-retry", RetryAccountPreferencesVerificationAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
+        platform.MapPost("/account-preferences/remediation", RemediateAccountPreferencesAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
         platform.MapGet("/auth/administration", GetAuthAdministration)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Administrator);
 
         app.MapGet("/metadata", GetMetadata)
             .AllowAnonymous();
     }
+
+    private static async Task<IResult> RetryAccountPreferencesVerificationAsync(RetryAccountPreferencesHttpRequest request, AppAccountPreferences.ReconcileAccountPreferencesHandler handler, CancellationToken cancellationToken)
+        => await RetryAccountPreferencesVerificationEndpointHandler.HandleAsync(request, handler, cancellationToken);
+
+    private static async Task<IResult> RemediateAccountPreferencesAsync(RemediateAccountPreferencesHttpRequest request, AppAccountPreferences.RemediateAccountPreferencesHandler handler, CancellationToken cancellationToken)
+        => await RemediateAccountPreferencesEndpointHandler.HandleAsync(request, handler, cancellationToken);
 
     private static IResult GetRootAsync(IHostEnvironment environment)
         => GetMetadata(environment);

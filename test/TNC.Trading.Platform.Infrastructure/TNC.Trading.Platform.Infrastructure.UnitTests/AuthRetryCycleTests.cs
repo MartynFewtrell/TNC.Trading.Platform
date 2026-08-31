@@ -10,6 +10,7 @@ using TNC.Trading.Platform.Infrastructure.Notifications.Recorded;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 using TNC.Trading.Platform.Infrastructure.Platform;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using ApplicationReflection = TNC.Trading.Platform.Infrastructure.UnitTests.InfrastructureReflection;
 
@@ -812,6 +813,105 @@ public class AuthRetryCycleTests
         Assert.Equal(activeSuccessAtUtc, outOfScheduleStatus.IgLoginStatus.LastSuccessfulLoginAtUtc);
         Assert.Equal(activeSnapshotId, outOfScheduleStatus.IgLoginStatus.LatestSnapshotId);
         Assert.Null(outOfScheduleStatus.IgLoginStatus.LatestFailureSummary);
+    }
+
+    /// <summary>
+    /// Trace: Phase 2.1, FR6, NF1, NF2, TR8, TR10.
+    /// Verifies: continued out-of-schedule reconciliation refreshes the persisted reason and validation timestamp when the inactive reason changes from a time-window exclusion to a bank holiday.
+    /// Expected: the current reason and LastValidatedAtUtc advance, while LastTransitionAtUtc, retry state, retry-cycle identity and count, inactive-event count, and notification count remain unchanged.
+    /// Why: a valid inactive-reason rollover must remain an in-state metadata refresh rather than repeating transition side effects or failing on an out-of-schedule self-transition.
+    /// </summary>
+    [Fact]
+    public async Task TickAsync_ShouldRefreshOutOfScheduleMetadataWithoutTransition_WhenInactiveReasonChanges()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var initialUtcNow = new DateTimeOffset(2026, 4, 3, 17, 0, 0, TimeSpan.Zero);
+        var timeProvider = new TestTimeProvider(initialUtcNow);
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Bootstrap:TradingSchedule:EndOfDay"] = "16:30",
+            ["Bootstrap:TradingSchedule:BankHolidayExclusions:0"] = "2026-04-04"
+        });
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
+        await coordinator.TickAsync(CancellationToken.None);
+        var initialStatus = await coordinator.GetStatusAsync(CancellationToken.None);
+        var initialState = Assert.Single(dbContext.AuthRuntimeStates.AsNoTracking());
+        var initialEventCount = GetOperationalEvents(dbContext).Count(record => string.Equals(record.EventType, "TradingScheduleInactive", StringComparison.Ordinal));
+        var initialNotificationCount = GetNotificationRecords(dbContext).Length;
+        var initialRetryCycleCount = dbContext.AuthRetryCycles.Count();
+
+        timeProvider.Advance(TimeSpan.FromHours(10));
+        await coordinator.TickAsync(CancellationToken.None);
+
+        var refreshedStatus = await coordinator.GetStatusAsync(CancellationToken.None);
+        var refreshedState = Assert.Single(dbContext.AuthRuntimeStates.AsNoTracking());
+        Assert.Equal(PlatformSessionStatus.OutOfSchedule, refreshedStatus.SessionStatus);
+        Assert.Equal("Trading schedule is inactive for the configured bank holiday.", refreshedStatus.BlockedReason);
+        Assert.Equal(timeProvider.GetUtcNow(), refreshedState.LastValidatedAtUtc);
+        Assert.Equal(initialUtcNow.AddHours(10), refreshedState.LastValidatedAtUtc);
+        Assert.Equal(initialUtcNow, initialState.LastValidatedAtUtc);
+        Assert.Equal(initialState.LastTransitionAtUtc, refreshedState.LastTransitionAtUtc);
+        Assert.Equal(initialStatus.RetryState.Phase, refreshedStatus.RetryState.Phase);
+        Assert.Equal(initialStatus.RetryState.AutomaticAttemptNumber, refreshedStatus.RetryState.AutomaticAttemptNumber);
+        Assert.Equal(initialStatus.RetryState.NextRetryAtUtc, refreshedStatus.RetryState.NextRetryAtUtc);
+        Assert.Equal(initialStatus.RetryState.RetryLimitReached, refreshedStatus.RetryState.RetryLimitReached);
+        Assert.Equal(initialState.CurrentRetryCycleId, refreshedState.CurrentRetryCycleId);
+        Assert.Equal(initialEventCount, GetOperationalEvents(dbContext).Count(record => string.Equals(record.EventType, "TradingScheduleInactive", StringComparison.Ordinal)));
+        Assert.Equal(initialNotificationCount, GetNotificationRecords(dbContext).Length);
+        Assert.Equal(initialRetryCycleCount, dbContext.AuthRetryCycles.Count());
+    }
+
+    /// <summary>
+    /// Trace: Phase 2.1, FR6, NF1, NF2, TR8, TR10.
+    /// Verifies: repeated reconciliation during the same out-of-schedule condition refreshes validation metadata without performing transition or side-effect work.
+    /// Expected: the reason remains unchanged and LastValidatedAtUtc advances, while state, retry, event, retry-cycle, and notification values remain unchanged.
+    /// Why: repeated inactive ticks must be idempotent so operators receive fresh validation data without duplicate events, cycles, or notifications.
+    /// </summary>
+    [Fact]
+    public async Task TickAsync_ShouldRefreshValidationWithoutSideEffects_WhenOutOfScheduleReasonIsUnchanged()
+    {
+        using var dbContext = ApplicationReflection.CreateDbContext();
+        var initialUtcNow = new DateTimeOffset(2026, 4, 3, 17, 0, 0, TimeSpan.Zero);
+        var timeProvider = new TestTimeProvider(initialUtcNow);
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Bootstrap:TradingSchedule:EndOfDay"] = "16:30"
+        });
+        var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
+        await protectedCredentialService.UpdateAsync(BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
+        await coordinator.TickAsync(CancellationToken.None);
+        var initialStatus = await coordinator.GetStatusAsync(CancellationToken.None);
+        var initialState = Assert.Single(dbContext.AuthRuntimeStates.AsNoTracking());
+        var initialEventCount = GetOperationalEvents(dbContext).Count(record => string.Equals(record.EventType, "TradingScheduleInactive", StringComparison.Ordinal));
+        var initialNotificationCount = GetNotificationRecords(dbContext).Length;
+        var initialRetryCycleCount = dbContext.AuthRetryCycles.Count();
+
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        await coordinator.TickAsync(CancellationToken.None);
+
+        var refreshedStatus = await coordinator.GetStatusAsync(CancellationToken.None);
+        var refreshedState = Assert.Single(dbContext.AuthRuntimeStates.AsNoTracking());
+        Assert.Equal(initialStatus.SessionStatus, refreshedStatus.SessionStatus);
+        Assert.Equal(initialStatus.BlockedReason, refreshedStatus.BlockedReason);
+        Assert.Equal(timeProvider.GetUtcNow(), refreshedState.LastValidatedAtUtc);
+        Assert.Equal(initialUtcNow.AddMinutes(1), refreshedState.LastValidatedAtUtc);
+        Assert.Equal(initialUtcNow, initialState.LastValidatedAtUtc);
+        Assert.Equal(initialState.LastTransitionAtUtc, refreshedState.LastTransitionAtUtc);
+        Assert.Equal(initialStatus.RetryState.Phase, refreshedStatus.RetryState.Phase);
+        Assert.Equal(initialStatus.RetryState.AutomaticAttemptNumber, refreshedStatus.RetryState.AutomaticAttemptNumber);
+        Assert.Equal(initialStatus.RetryState.NextRetryAtUtc, refreshedStatus.RetryState.NextRetryAtUtc);
+        Assert.Equal(initialStatus.RetryState.RetryLimitReached, refreshedStatus.RetryState.RetryLimitReached);
+        Assert.Equal(initialState.CurrentRetryCycleId, refreshedState.CurrentRetryCycleId);
+        Assert.Equal(initialEventCount, GetOperationalEvents(dbContext).Count(record => string.Equals(record.EventType, "TradingScheduleInactive", StringComparison.Ordinal)));
+        Assert.Equal(initialNotificationCount, GetNotificationRecords(dbContext).Length);
+        Assert.Equal(initialRetryCycleCount, dbContext.AuthRetryCycles.Count());
     }
 
     /// <summary>

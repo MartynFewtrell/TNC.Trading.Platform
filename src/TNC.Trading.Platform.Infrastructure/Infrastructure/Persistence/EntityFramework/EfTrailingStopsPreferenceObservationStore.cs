@@ -17,6 +17,7 @@ internal sealed class EfTrailingStopsPreferenceObservationStore(PlatformDbContex
             RecordedAtUtc = observation.RecordedAtUtc,
             PlatformEnvironment = observation.PlatformEnvironment.ToString(),
             BrokerEnvironment = observation.BrokerEnvironment.ToString(),
+            AccountId = observation.AccountId,
             ObservationKind = observation.ObservationKind,
             Source = observation.Source,
             Actor = observation.Actor,
@@ -51,7 +52,7 @@ internal sealed class EfTrailingStopsPreferenceObservationStore(PlatformDbContex
         var observations = entities.Select(item => new TrailingStopsPreferenceObservation(
             item.TrailingStopsPreferenceObservationId, item.TrailingStopsEnabled, item.ObservedAtUtc, item.RecordedAtUtc,
             Enum.Parse<PlatformEnvironmentKind>(item.PlatformEnvironment), Enum.Parse<BrokerEnvironmentKind>(item.BrokerEnvironment),
-            item.ObservationKind, item.Source, item.Actor, item.CorrelationId)).ToList();
+            item.AccountId, item.ObservationKind, item.Source, item.Actor, item.CorrelationId)).ToList();
         return new(observations, observations.Count == pageSize ? observations[^1].Id.ToString("N") : null, false);
     }
 }
