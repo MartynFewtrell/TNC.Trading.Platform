@@ -93,7 +93,7 @@ public sealed class SyntheticTokenIntegrationTestFixture : IAsyncLifetime
     {
         await foreach (var resourceEvent in appHost!.ResourceNotifications.WatchAsync(cancellationToken))
         {
-            var state = resourceEvent.Snapshot.State.Text;
+            var state = resourceEvent.Snapshot.State?.Text;
             if (state == KnownResourceStates.FailedToStart ||
                 state == KnownResourceStates.Exited ||
                 state == KnownResourceStates.Finished)

@@ -9,7 +9,7 @@ internal static class RealKeycloakAccessTokenFactory
 {
     private const string ClientId = "tnc-trading-platform-api-tests";
     private const string Password = "LocalAuth!123";
-    private static readonly Uri TokenEndpoint = new("http://localhost:8080/realms/tnc-trading-platform/protocol/openid-connect/token");
+    private static readonly Uri TokenEndpoint = new("https://localhost:8080/realms/tnc-trading-platform/protocol/openid-connect/token");
 
     public static async Task<HttpRequestMessage> CreateAuthenticatedRequestAsync(HttpMethod method, string path, string userName, string? scope = null)
     {

@@ -6,8 +6,8 @@ namespace TNC.Trading.Platform.AppHost.UnitTests;
 
 public sealed class KeycloakReadinessPolicyTests
 {
-    private static readonly Uri DiscoveryUri = new("http://localhost:8080/realms/tnc-trading-platform/.well-known/openid-configuration");
-    private const string ExpectedIssuer = "http://localhost:8080/realms/tnc-trading-platform";
+    private static readonly Uri DiscoveryUri = new("https://localhost:8080/realms/tnc-trading-platform/.well-known/openid-configuration");
+    private const string ExpectedIssuer = "https://localhost:8080/realms/tnc-trading-platform";
 
     /// <summary>
     /// Trace: Keycloak testing improvements Phase 1, DD-02.

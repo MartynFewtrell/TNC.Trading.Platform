@@ -1,25 +1,29 @@
-using WireMock.RequestBuilders;
-using WireMock.ResponseBuilders;
-using WireMock.Server;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 
 namespace TNC.Trading.Platform.TestShared.AccountPreferences;
 
 public sealed class ControllableIgProvider : IAsyncDisposable
 {
-    private readonly WireMockServer server;
+    private readonly HttpListener listener;
+    private readonly CancellationTokenSource cancellationTokenSource = new();
     private readonly List<string> requests = [];
     private readonly object sync = new();
+    private readonly Task serverTask;
+    private readonly Uri baseUri;
     private bool available = true;
     private bool preference;
     private int delayMilliseconds;
 
-    private ControllableIgProvider(WireMockServer server)
+    private ControllableIgProvider(HttpListener listener, Uri baseUri)
     {
-        this.server = server;
-        ConfigureRoutes();
+        this.listener = listener;
+        this.baseUri = baseUri;
+        serverTask = ProcessRequestsAsync();
     }
 
-    public Uri BaseUri => new(server.Url + "/");
+    public Uri BaseUri => baseUri;
     public bool Preference { get { lock (sync) return preference; } set { lock (sync) preference = value; } }
     public bool Available { get { lock (sync) return available; } set { lock (sync) available = value; } }
     public int DelayMilliseconds { get { lock (sync) return delayMilliseconds; } set { lock (sync) delayMilliseconds = value; } }
@@ -30,48 +34,96 @@ public sealed class ControllableIgProvider : IAsyncDisposable
         lock (sync) requests.Clear();
     }
 
-    public static ControllableIgProvider Start() => new(WireMockServer.Start());
-
-    public ValueTask DisposeAsync()
+    public static ControllableIgProvider Start()
     {
-        server.Stop();
-        server.Dispose();
-        return ValueTask.CompletedTask;
+        using var portLease = new TcpListener(IPAddress.Loopback, 0);
+        portLease.Start();
+        var port = ((IPEndPoint)portLease.LocalEndpoint).Port;
+        var baseUri = new Uri($"http://127.0.0.1:{port}/");
+        var listener = new HttpListener();
+        listener.Prefixes.Add(baseUri.AbsoluteUri);
+        listener.Start();
+
+        return new ControllableIgProvider(listener, baseUri);
     }
 
-    private void ConfigureRoutes()
+    public async ValueTask DisposeAsync()
     {
-        server.Given(Request.Create().WithPath("/gateway/deal/session").UsingPost())
-            .RespondWith(Response.Create().WithCallback(_ => Respond("POST /gateway/deal/session", "{\"lightstreamerEndpoint\":\"https://stream.test\"}")));
-        server.Given(Request.Create().WithPath("/gateway/deal/preferences").UsingGet())
-            .RespondWith(Response.Create().WithCallback(_ => Respond("GET /gateway/deal/preferences", PreferenceBody())));
-        server.Given(Request.Create().WithPath("/gateway/deal/preferences").UsingPut())
-            .RespondWith(Response.Create().WithCallback(request =>
+        cancellationTokenSource.Cancel();
+        listener.Close();
+        await serverTask;
+        cancellationTokenSource.Dispose();
+    }
+
+    private async Task ProcessRequestsAsync()
+    {
+        try
+        {
+            while (!cancellationTokenSource.IsCancellationRequested)
             {
-                var body = request.Body ?? string.Empty;
-                lock (sync) preference = body.Contains("true", StringComparison.OrdinalIgnoreCase);
-                return Respond("PUT /gateway/deal/preferences", PreferenceBody());
-            }));
+                var context = await listener.GetContextAsync();
+                await HandleRequestAsync(context, cancellationTokenSource.Token);
+            }
+        }
+        catch (HttpListenerException) when (cancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        catch (ObjectDisposedException) when (cancellationTokenSource.IsCancellationRequested)
+        {
+        }
     }
 
-    private string PreferenceBody()
+    private async Task HandleRequestAsync(HttpListenerContext context, CancellationToken cancellationToken)
     {
-        lock (sync) return $"{{\"enabled\":{preference.ToString().ToLowerInvariant()}}}";
+        var requestName = $"{context.Request.HttpMethod} {context.Request.Url!.AbsolutePath}";
+        var body = string.Empty;
+        if (context.Request.HttpMethod == HttpMethod.Put.Method)
+        {
+            using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8, leaveOpen: true);
+            body = await reader.ReadToEndAsync(cancellationToken);
+        }
+
+        var response = GetResponse(requestName, body);
+        if (response.DelayMilliseconds > 0)
+        {
+            await Task.Delay(response.DelayMilliseconds, cancellationToken);
+        }
+
+        var responseBytes = Encoding.UTF8.GetBytes(response.Body);
+        context.Response.StatusCode = response.StatusCode;
+        context.Response.ContentType = "application/json";
+        context.Response.ContentLength64 = responseBytes.Length;
+        await context.Response.OutputStream.WriteAsync(responseBytes, cancellationToken);
+        context.Response.Close();
     }
 
-    private WireMock.ResponseMessage Respond(string requestName, string body)
+    private ProviderResponse GetResponse(string requestName, string requestBody)
     {
-        lock (sync) requests.Add(requestName);
-        if (!available) return new WireMock.ResponseMessage
+        lock (sync)
         {
-            StatusCode = 503,
-            BodyOriginal = "{\"errorCode\":\"SERVICE_UNAVAILABLE\"}"
-        };
-        if (delayMilliseconds > 0) Thread.Sleep(delayMilliseconds);
-        return new WireMock.ResponseMessage
-        {
-            StatusCode = 200,
-            BodyOriginal = body
-        };
+            requests.Add(requestName);
+            if (!available)
+            {
+                return new ProviderResponse(503, "{\"errorCode\":\"SERVICE_UNAVAILABLE\"}", delayMilliseconds);
+            }
+
+            return requestName switch
+            {
+                "POST /gateway/deal/session" => new ProviderResponse(200, "{\"lightstreamerEndpoint\":\"https://stream.test\"}", delayMilliseconds),
+                "GET /gateway/deal/preferences" => new ProviderResponse(200, PreferenceBody(), delayMilliseconds),
+                "PUT /gateway/deal/preferences" => UpdatePreference(requestBody),
+                _ => new ProviderResponse(404, "{}", delayMilliseconds)
+            };
+        }
     }
+
+    private ProviderResponse UpdatePreference(string requestBody)
+    {
+        preference = requestBody.Contains("true", StringComparison.OrdinalIgnoreCase);
+        return new ProviderResponse(200, PreferenceBody(), delayMilliseconds);
+    }
+
+    private string PreferenceBody() => $"{{\"enabled\":{preference.ToString().ToLowerInvariant()}}}";
+
+    private sealed record ProviderResponse(int StatusCode, string Body, int DelayMilliseconds);
 }

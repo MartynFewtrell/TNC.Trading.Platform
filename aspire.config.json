@@ -1,0 +1,5 @@
+{
+  "appHost": {
+    "path": "src/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.csproj"
+  }
+}

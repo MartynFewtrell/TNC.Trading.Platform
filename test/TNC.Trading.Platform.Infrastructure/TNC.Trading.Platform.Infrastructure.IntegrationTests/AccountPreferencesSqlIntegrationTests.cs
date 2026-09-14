@@ -237,7 +237,15 @@ public sealed class AccountPreferencesSqlIntegrationTests(SqlServerDatabaseFixtu
         await context.Database.MigrateAsync(fixture.CancellationToken);
         var store = new EfAccountPreferencesCurrentStateStore(context);
         await store.CommitDesiredStateAsync(CreateChange(true, "operator", "due"), fixture.CancellationToken);
-        await store.NudgeAuthenticationAsync(PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, "account-1", DateTimeOffset.UtcNow.AddMinutes(-1), fixture.CancellationToken);
+        var authenticatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
+        await store.NudgeAuthenticationAsync(
+            PlatformEnvironmentKind.Test,
+            BrokerEnvironmentKind.Demo,
+            "account-1",
+            "authentication-snapshot-1",
+            authenticatedAtUtc,
+            authenticatedAtUtc,
+            fixture.CancellationToken);
 
         var due = await store.ClaimDueWorkAsync(DateTimeOffset.UtcNow, 10, fixture.CancellationToken);
 
