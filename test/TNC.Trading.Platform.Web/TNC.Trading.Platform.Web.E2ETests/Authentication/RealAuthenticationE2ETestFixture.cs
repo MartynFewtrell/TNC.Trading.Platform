@@ -34,17 +34,53 @@ public sealed class RealAuthenticationE2ETestFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (managedFixture is not null)
+        var currentManagedFixture = managedFixture;
+        var currentProvider = provider;
+        Exception? firstException = null;
+        List<Exception>? cleanupExceptions = null;
+
+        try
         {
-            await managedFixture.DisposeAsync();
+            if (currentManagedFixture is not null)
+            {
+                await currentManagedFixture.DisposeAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            firstException = exception;
+            (cleanupExceptions ??= []).Add(exception);
+        }
+        finally
+        {
             managedFixture = null;
         }
 
-        if (provider is not null)
+        try
         {
-            await provider.DisposeAsync();
+            if (currentProvider is not null)
+            {
+                await currentProvider.DisposeAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            firstException ??= exception;
+            (cleanupExceptions ??= []).Add(exception);
+        }
+        finally
+        {
             provider = null;
         }
 
+        if (firstException is not null)
+        {
+            if (cleanupExceptions is { Count: > 1 })
+            {
+                firstException.Data["CleanupExceptions"] = cleanupExceptions.Skip(1).ToArray();
+            }
+
+            throw firstException;
+        }
     }
 }

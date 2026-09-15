@@ -28,6 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\Shared\Authentication\AppHostCleanup.cs" Link="Shared\Authentication\AppHostCleanup.cs" />
     <Compile Include="..\..\Shared\Authentication\ManagedAppHostFixture.cs" Link="Shared\Authentication\ManagedAppHostFixture.cs" />
     <Compile Include="..\..\Shared\Authentication\KeycloakReadinessPolicy.cs" Link="Shared\Authentication\KeycloakReadinessPolicy.cs" />
   </ItemGroup>

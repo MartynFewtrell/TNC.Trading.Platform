@@ -70,18 +70,50 @@ public sealed class ManagedAppHostFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (application is not null)
+        var currentApplication = application;
+        var currentBuilder = builder;
+
+        if (currentApplication is null && currentBuilder is null)
         {
-            await application.StopAsync().ConfigureAwait(false);
-            await application.DisposeAsync().ConfigureAwait(false);
-            application = null;
+            return;
         }
 
-        if (builder is not null)
-        {
-            await builder.DisposeAsync().ConfigureAwait(false);
-            builder = null;
-        }
+        await AppHostCleanup.DisposeAsync(
+            async () =>
+            {
+                if (currentApplication is not null)
+                {
+                    await currentApplication.StopAsync().ConfigureAwait(false);
+                }
+            },
+            async () =>
+            {
+                try
+                {
+                    if (currentApplication is not null)
+                    {
+                        await currentApplication.DisposeAsync().ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    application = null;
+                }
+            },
+            async () =>
+            {
+                try
+                {
+                    if (currentBuilder is not null)
+                    {
+                        await currentBuilder.DisposeAsync().ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    builder = null;
+                }
+            }).ConfigureAwait(false);
     }
 
     private HttpClient CreateHttpClient(string resourceName, string? endpointName = null)
