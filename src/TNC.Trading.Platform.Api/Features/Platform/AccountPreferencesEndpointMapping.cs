@@ -102,6 +102,6 @@ internal sealed record AccountPreferencesResponse(
     string ApplicationStatus);
 internal sealed record AccountPreferencesObservationResponse(Guid Id, bool TrailingStopsEnabled, DateTimeOffset ObservedAtUtc, DateTimeOffset RecordedAtUtc, string PlatformEnvironment, string BrokerEnvironment, string ObservationKind, string Source, string? Actor, string CorrelationId);
 internal sealed record AccountPreferencesHistoryResponse(IReadOnlyList<AccountPreferencesObservationResponse> Observations, string? NextCursor);
-internal sealed record UpdateAccountPreferencesHttpRequest(bool? TrailingStopsEnabled);
+internal sealed record UpdateAccountPreferencesHttpRequest(bool? TrailingStopsEnabled, string? AccountId = null, string? Actor = null);
 internal sealed record RetryAccountPreferencesHttpRequest(string? AccountId);
 internal sealed record RemediateAccountPreferencesHttpRequest(string? AccountId, long? DesiredRevision, bool? TrailingStopsEnabled);

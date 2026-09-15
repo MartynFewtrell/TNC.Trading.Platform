@@ -23,6 +23,7 @@ Applies to: `test/**/*.cs, test/**/*.csproj`
 - Keep Aspire test projects and test code under `test/`.
 - Use the `Aspire.Hosting.Testing` package when writing Aspire tests.
 - Use `DistributedApplicationTestingBuilder` to launch the `AppHost` in tests.
+- Access resources by their declared name and endpoint with `CreateHttpClient(resourceName)` or `CreateHttpClient(resourceName, endpointName)` and the corresponding endpoint APIs. Do not infer resource identity from process output or local sockets.
 
 - Treat Aspire tests as closed-box integration tests.
   - Interact with the system via external boundaries (HTTP endpoints, exposed ports, resource endpoints).
@@ -30,20 +31,20 @@ Applies to: `test/**/*.cs, test/**/*.csproj`
   - Do not depend on in-process access to services hosted inside the `AppHost`.
 
 - Ensure resources are cleaned up.
-  - Dispose the testing builder and/or application instance at the end of each test (or test fixture) so containers/resources are torn down.
+  - Make the fixture own the testing builder, distributed application, and any controlled dependency it creates.
+  - Use `await using` or `IAsyncLifetime` and await application and builder disposal so containers and resources are torn down.
+- Keep readiness bounded.
+  - Use `WaitForResourceHealthyAsync(resourceName, cancellationToken)` or an equivalent bounded health/readiness check before issuing assertions.
+  - Do not use hard-coded sleeps as readiness checks.
+- Keep test configuration scoped to the fixture or testing builder. Do not mutate process-wide environment variables, launch profiles, or shared configuration as a test setup shortcut.
 
 - Prefer running multiple Aspire test instances concurrently.
-  - Do not rely on fixed ports by default.
+  - Keep Aspire's randomized proxy ports enabled and pass fixture-provided endpoint URIs to clients and browsers.
 
 ### SHOULD
 
-- Keep port randomization enabled (default).
-  - Only disable port randomization when a concrete requirement needs stable ports.
-  - If port randomization must be disabled, pass `"DcpPublisher:RandomizePorts=false"` as an argument when creating the testing builder.
-
-- Keep the dashboard disabled (default).
-  - Enable the dashboard only for local debugging scenarios.
-  - If the dashboard must be enabled, set `DisableDashboard = false` when creating the testing builder.
+- Keep port randomization enabled. Do not disable it in tests or CI.
+- Keep the Aspire dashboard disabled for automated tests. Use named resource endpoints for assertions; the dashboard is a manual diagnostic surface, not an application endpoint.
 
 - Prefer end-to-end assertions that validate service interactions, not only single-service behavior.
 
@@ -51,7 +52,9 @@ Applies to: `test/**/*.cs, test/**/*.csproj`
 
 - MUST NOT attempt to mock, substitute, or replace dependency injection services inside the launched application processes.
 - MUST NOT add hard-coded sleeps/time-based waits as the primary readiness strategy.
-- MUST NOT disable port randomization in CI unless required.
+- MUST NOT parse AppHost output, scan TCP listeners, infer endpoints from launch profiles, or use dashboard endpoints as application endpoints.
+- MUST NOT use fixed-port leases or process-wide environment overrides to coordinate test resources.
+- MUST NOT disable port randomization in CI.
 
 ## Output and Validation (optional)
 

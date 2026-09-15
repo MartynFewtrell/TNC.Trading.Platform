@@ -119,6 +119,6 @@ public sealed class AppHostCompositionTests
 
         Assert.Equal("Test", apiEnvironmentValues["Authentication__Provider"]);
         Assert.Equal("Keycloak", webEnvironmentValues["Authentication__Provider"]);
-        Assert.Equal(AppHostCompositionConstants.KeycloakAuthority, webEnvironmentValues["Authentication__Keycloak__Authority"]);
+        Assert.DoesNotContain("Authentication__Keycloak__Authority", webEnvironmentValues.Keys);
     }
 }

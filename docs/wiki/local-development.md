@@ -225,22 +225,20 @@ dotnet test -m:1
 
 The auth work package now also includes a dedicated Web unit test project for policy registration, direct `PlatformApiClient` boundary coverage, and bUnit component coverage for the refreshed Blazor shell and operator pages. It is included in the repository-wide `dotnet test` run.
 
-The AppHost-backed Web functional and Web end-to-end auth suites validate the delivered Docker plus Keycloak topology directly. The API integration suite still prefers real Keycloak-issued bearer tokens for protected-route coverage, but it also retains a narrow synthetic slice that temporarily switches only the API project to the test auth provider so invalid JWT and claim-shape negatives can reach the API boundary deterministically. Web functional and browser suites now start the shared AppHost through Aspire-managed testing, discover the live Web listener from the managed runtime listener set instead of relying on fixed launch-settings ports, and force session-scoped Keycloak state for those auth collections so realm imports stay deterministic between runs.
+The AppHost-backed Web functional and Web end-to-end auth suites validate the delivered Docker plus Keycloak topology directly. The API integration suite still prefers real Keycloak-issued bearer tokens for protected-route coverage, but it also retains a narrow synthetic slice that temporarily switches only the API project to the test auth provider so invalid JWT and claim-shape negatives can reach the API boundary deterministically. Automated suites start the shared AppHost through Aspire-managed testing, use named resources and fixture-provided randomized endpoints, and force session-scoped Keycloak state for those auth collections so realm imports stay deterministic between runs.
 
 The retained real-runtime auth matrix is intentionally small:
 
-- one Web E2E sign-in smoke from listener discovery to protected UI content
+- one Web E2E sign-in smoke from the fixture-provided `web` endpoint to protected UI content
 - one Web functional post-sign-out fail-closed smoke
 - one Web functional insufficient-role route-denial smoke
 - one Web functional sign-out CSRF negative
 
-Before any retained real-runtime assertion runs, the test harness waits for the Aspire Keycloak resource to become Healthy, verifies that the application realm discovery issuer exactly matches `http://localhost:8080/realms/tnc-trading-platform`, and completes a behavior-level readiness check. API tests prove token issuance with the expected test client, user, and scope. Web tests prove the real sign-in challenge reaches the Keycloak login page and the protected UI flow. The harness retries connection failures and temporary `404`, `429`, and `503` responses under one bounded deadline. Permanent HTTP or protocol failures, including `400`, `401`, malformed discovery data, and issuer mismatches, fail immediately.
+Before any retained real-runtime assertion runs, the test harness waits for the named Aspire resources to become Healthy and completes a behavior-level readiness check under one bounded deadline. API tests prove token issuance with the expected test client, user, and scope. Web tests prove the real sign-in challenge reaches the Keycloak login page and the protected UI flow. The harness retries connection failures and temporary `404`, `429`, and `503` responses under that deadline. Permanent HTTP or protocol failures fail immediately.
 
 The Web sign-in smoke also proves the imported wildcard localhost callback and origin configuration works with the runtime-discovered Web listener. The fixture does not need to mutate the Keycloak client for each randomized callback, which keeps the session state isolated.
 
-Real-authentication test processes coordinate the fixed Keycloak port through the machine-local lease `%TEMP%\TNC.Trading.Platform\leases\keycloak-port-8080.lock`. The lease waits up to five minutes, then times out with diagnostics if another participating process still owns it. xUnit collections serialize fixtures only within one test assembly; the lease covers participating API, Web functional, and Web E2E processes on the same machine. It cannot coordinate another machine or an isolated container, and an independently running AppHost can still create a bind conflict on port 8080.
-
-Fixture cleanup attempts every owned cleanup action, including stopping and waiting for external processes, disposing Aspire applications and builders, restoring environment overrides, and releasing the port lease. When cleanup itself fails, secondary exceptions are retained with the original failure so readiness errors do not hide resource leaks.
+Automated AppHost tests keep randomized resource endpoints enabled. Fixtures own their builder, application, controlled endpoints, and test-scoped configuration; they await asynchronous disposal and do not scan sockets or listeners, use fixed-port leases or dashboard endpoints, or mutate process-wide environment state. xUnit collections are used only where an intentional configuration or data-isolation boundary is shared.
 
 ### Manual validation
 
@@ -265,7 +263,7 @@ Verify these paths through the AppHost-exposed service URLs:
 
 In development, also check the Scalar link from AppHost.
 
-When validating the Web UI manually, prefer the runtime listener URLs surfaced by the AppHost dashboard or console output rather than assuming `launchSettings.json` ports.
+Manual development may use the stable endpoints documented by AppHost and its dashboard links. Automated tests use randomized Aspire resource endpoints and must not depend on launch-settings ports, console output, or dashboard endpoint parsing.
 
 For AppHost-backed distributed validation, use the same Docker plus Keycloak local runtime that the automated integration, functional, and end-to-end suites use. There is no supported synthetic AppHost runtime path for local startup or for AppHost-backed manual checks.
 

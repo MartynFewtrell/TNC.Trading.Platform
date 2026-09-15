@@ -1,4 +1,3 @@
-using SharedAppHostProcessHandle = TNC.Trading.Platform.TestShared.Authentication.AppHostProcessHandle;
 using TNC.Trading.Platform.TestShared.Authentication;
 using TNC.Trading.Platform.TestShared.AccountPreferences;
 
@@ -6,21 +5,29 @@ namespace TNC.Trading.Platform.Web.FunctionalTests.Authentication;
 
 public sealed class RealAuthenticationFunctionalTestFixture : IAsyncLifetime
 {
-    private SharedAppHostProcessHandle? appHostProcess;
-    private KeycloakPortLease? keycloakPortLease;
+    private ManagedAppHostFixture? managedFixture;
     private ControllableIgProvider? provider;
 
     public Uri WebBaseUri { get; private set; } = null!;
+    public Uri ApiBaseUri { get; private set; } = null!;
+    public Uri TokenEndpoint { get; private set; } = null!;
     public ControllableIgProvider Provider => provider ?? throw new InvalidOperationException("The test fixture has not been initialized.");
 
     public async Task InitializeAsync()
     {
-        keycloakPortLease = await KeycloakPortLease.AcquireAsync();
         try
         {
             provider = ControllableIgProvider.Start();
-            appHostProcess = await RealAppHostProcessFactory.StartAppHostProcessAsync(provider.BaseUri);
-            WebBaseUri = await RealAppHostProcessFactory.GetWebBaseUriAsync(appHostProcess);
+            managedFixture = new ManagedAppHostFixture(new Dictionary<string, string?>
+            {
+                ["Ig:AccountPreferencesBaseUrl"] = provider.BaseUri.ToString(),
+                ["AppHost:UsePersistentKeycloakState"] = bool.FalseString,
+                ["Authentication:Test:EnableInteractiveSignIn"] = bool.FalseString
+            });
+            await managedFixture.InitializeAsync();
+            WebBaseUri = managedFixture.WebEndpointUri;
+            ApiBaseUri = managedFixture.ApiEndpointUri;
+            TokenEndpoint = new Uri(managedFixture.KeycloakEndpointUri, "/realms/tnc-trading-platform/protocol/openid-connect/token");
         }
         catch
         {
@@ -31,10 +38,10 @@ public sealed class RealAuthenticationFunctionalTestFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (appHostProcess is not null)
+        if (managedFixture is not null)
         {
-            await appHostProcess.DisposeAsync();
-            appHostProcess = null;
+            await managedFixture.DisposeAsync();
+            managedFixture = null;
         }
 
         if (provider is not null)
@@ -43,10 +50,5 @@ public sealed class RealAuthenticationFunctionalTestFixture : IAsyncLifetime
             provider = null;
         }
 
-        if (keycloakPortLease is not null)
-        {
-            await keycloakPortLease.DisposeAsync();
-            keycloakPortLease = null;
-        }
     }
 }

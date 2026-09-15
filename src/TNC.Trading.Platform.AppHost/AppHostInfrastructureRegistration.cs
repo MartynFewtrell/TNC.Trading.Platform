@@ -40,9 +40,8 @@ internal static class AppHostInfrastructureRegistration
             });
         var keycloakAdminUser = builder.AddParameter("keycloak-admin-user", AppHostCompositionConstants.KeycloakAdminUserName);
         var keycloak = builder.AddKeycloak(
-                "keycloak",
-                port: 8080,
-                adminUsername: keycloakAdminUser)
+            "keycloak",
+            adminUsername: keycloakAdminUser)
             .WithEndpointProxySupport(proxyEnabled: false)
             .WithLifetime(usePersistentKeycloakState ? ContainerLifetime.Persistent : ContainerLifetime.Session)
             .WithRealmImport("./Realms")

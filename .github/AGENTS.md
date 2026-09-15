@@ -56,3 +56,7 @@ When working on repository customization assets, load context in this order when
 
 - When repository customization work confirms a durable routing rule, response contract pattern, or authoring lesson, update this file or `./.github/lessons.md` in the same change.
 - Prefer adding one concise durable note here over restating the same lesson across multiple prompts or agents.
+
+## Testing routing
+
+- Route Aspire test changes through named resources and endpoints, bounded readiness, fixture-scoped configuration, randomized ports, and awaited asynchronous disposal. Socket scans, dashboard assumptions, fixed-port leases, and process-wide overrides are invalid resource contracts.

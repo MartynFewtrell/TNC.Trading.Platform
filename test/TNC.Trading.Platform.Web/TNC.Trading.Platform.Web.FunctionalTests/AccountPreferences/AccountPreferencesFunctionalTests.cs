@@ -24,16 +24,13 @@ public sealed class AccountPreferencesFunctionalTests
     {
         fixture.Provider.ClearRequests();
         fixture.Provider.Available = false;
-        var cookies = new CookieContainer();
-        await Authentication.RealAuthenticationSessionFactory.AuthenticateBrowserSessionAsync(
-            fixture.WebBaseUri,
-            cookies,
+        using var client = new HttpClient { BaseAddress = fixture.ApiBaseUri };
+        using var request = await TNC.Trading.Platform.Api.IntegrationTests.Authentication.RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
+            "/api/platform/account-preferences",
             "local-operator",
-            "/account-preferences",
             "platform.operator");
-
-        using var client = Authentication.FunctionalBrowserClientFactory.Create(fixture.WebBaseUri, allowAutoRedirect: false, cookies);
-        using var response = await client.GetAsync("/api/platform/account-preferences");
+        using var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var state = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -50,29 +47,42 @@ public sealed class AccountPreferencesFunctionalTests
     [Fact]
     public async Task AccountPreferences_ShouldPersistAndConverge_WhenProviderRecovers()
     {
-        var cookies = new CookieContainer();
-        await Authentication.RealAuthenticationSessionFactory.AuthenticateBrowserSessionAsync(
-            fixture.WebBaseUri,
-            cookies,
-            "local-operator",
-            "/account-preferences",
-            "platform.operator");
-
         fixture.Provider.Available = false;
-        using var client = Authentication.FunctionalBrowserClientFactory.Create(fixture.WebBaseUri, allowAutoRedirect: false, cookies);
+        using var client = new HttpClient { BaseAddress = fixture.ApiBaseUri };
 
-        using var unavailableRead = await client.GetAsync("/api/platform/account-preferences");
+        using var unavailableRequest = await TNC.Trading.Platform.Api.IntegrationTests.Authentication.RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
+            "/api/platform/account-preferences",
+            "local-operator",
+            "platform.operator");
+        using var unavailableRead = await client.SendAsync(unavailableRequest);
         Assert.Equal(HttpStatusCode.OK, unavailableRead.StatusCode);
         var initialState = await unavailableRead.Content.ReadFromJsonAsync<JsonElement>();
         Assert.True(initialState.TryGetProperty("desiredTrailingStopsEnabled", out _));
 
-        using var update = await client.PutAsJsonAsync("/api/platform/account-preferences", new { trailingStopsEnabled = true });
-        Assert.Equal(HttpStatusCode.OK, update.StatusCode);
+        using var updateRequest = await TNC.Trading.Platform.Api.IntegrationTests.Authentication.RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
+            HttpMethod.Put,
+            "/api/platform/account-preferences",
+            "local-operator",
+            "platform.operator");
+        updateRequest.Content = JsonContent.Create(new { trailingStopsEnabled = true, accountId = "test-account", actor = "local-operator" });
+        using var update = await client.SendAsync(updateRequest);
+        var updateBody = await update.Content.ReadAsStringAsync();
+        Assert.True(update.StatusCode == HttpStatusCode.OK, $"Expected OK but received {update.StatusCode}: {updateBody}");
 
         fixture.Provider.Available = true;
         fixture.Provider.Preference = true;
-        using var retry = await client.PostAsJsonAsync("/api/platform/account-preferences/verification-retry", new { accountId = (string?)null });
-        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        using var retryRequest = await TNC.Trading.Platform.Api.IntegrationTests.Authentication.RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
+            HttpMethod.Post,
+            "/api/platform/account-preferences/verification-retry",
+            "local-operator",
+            "platform.operator");
+        retryRequest.Content = JsonContent.Create(new { accountId = "test-account" });
+        using var retry = await client.SendAsync(retryRequest);
+        var retryBody = await retry.Content.ReadAsStringAsync();
+        Assert.True(retry.StatusCode == HttpStatusCode.OK, $"Expected OK but received {retry.StatusCode}: {retryBody}");
         var recoveredState = await retry.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("InSync", recoveredState.GetProperty("verificationStatus").GetString());
         Assert.Contains("GET /gateway/deal/preferences", fixture.Provider.Requests);

@@ -59,6 +59,17 @@ Applies to: `test/**/*.cs, test/**/*.csproj`
   - Tests MUST NOT depend on execution order.
   - Tests MUST avoid shared mutable state across test runs.
   - Tests that create external state MUST either clean up, or use unique identifiers to prevent cross-test pollution.
+- Every mutable integration dependency MUST be fixture-owned or explicitly provisioned by the test and readiness-checked before use. Ownership includes startup, configuration, diagnostics, reset, and asynchronous cleanup.
+- Test setup MUST NOT discover arbitrary Docker containers, inspect unrelated container credentials, or attach to infrastructure that the fixture did not create or explicitly provision.
+- Use xUnit collection fixtures only when tests intentionally share a configuration or data-isolation boundary. Do not use collections or global serialization as a workaround for an unowned dependency or a port conflict.
+
+### UI test boundaries
+
+- Use plain xUnit for state, policy, mapping, and other in-process behavior.
+- Use bUnit for Blazor component rendering and lifecycle behavior.
+- Use Aspire-hosted tests for distributed topology, resource wiring, service interaction, and real infrastructure boundaries.
+- Use Playwright for browser-only behavior such as navigation, redirects, cookies, JavaScript execution, and user-visible cross-page workflows.
+- Do not add direct DOM-parser dependencies for component or browser assertions unless a documented test independently requires parser behavior.
 
 #### Requirement traceability (functional tests)
 
@@ -88,6 +99,7 @@ Applies to: `test/**/*.cs, test/**/*.csproj`
 
 - MUST NOT mix unit tests and Aspire-based integration/E2E tests in the same test project.
 - MUST NOT add time-based sleeps/waits as a primary flake mitigation strategy.
+- MUST NOT use global serialization to hide lifecycle, ownership, readiness, or isolation defects.
 
 ## Output and Validation (optional)
 

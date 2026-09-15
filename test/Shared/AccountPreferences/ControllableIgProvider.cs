@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Sockets;
 using System.Text;
 
 namespace TNC.Trading.Platform.TestShared.AccountPreferences;
@@ -36,15 +35,29 @@ public sealed class ControllableIgProvider : IAsyncDisposable
 
     public static ControllableIgProvider Start()
     {
-        using var portLease = new TcpListener(IPAddress.Loopback, 0);
-        portLease.Start();
-        var port = ((IPEndPoint)portLease.LocalEndpoint).Port;
-        var baseUri = new Uri($"http://127.0.0.1:{port}/");
-        var listener = new HttpListener();
-        listener.Prefixes.Add(baseUri.AbsoluteUri);
-        listener.Start();
+        return Start(() => Random.Shared.Next(40_000, 60_000));
+    }
 
-        return new ControllableIgProvider(listener, baseUri);
+    internal static ControllableIgProvider Start(Func<int> candidatePortSelector)
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            var listener = new HttpListener();
+            var port = candidatePortSelector();
+            var baseUri = new Uri($"http://127.0.0.1:{port}/");
+            listener.Prefixes.Add(baseUri.AbsoluteUri);
+            try
+            {
+                listener.Start();
+                return new ControllableIgProvider(listener, baseUri);
+            }
+            catch (HttpListenerException)
+            {
+                listener.Close();
+            }
+        }
+
+        throw new InvalidOperationException("The controllable IG provider could not bind an endpoint after 20 attempts.");
     }
 
     public async ValueTask DisposeAsync()

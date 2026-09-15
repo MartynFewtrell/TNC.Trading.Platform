@@ -1,4 +1,3 @@
-using SharedAppHostProcessHandle = TNC.Trading.Platform.TestShared.Authentication.AppHostProcessHandle;
 using TNC.Trading.Platform.TestShared.Authentication;
 using TNC.Trading.Platform.TestShared.AccountPreferences;
 
@@ -6,8 +5,7 @@ namespace TNC.Trading.Platform.Web.E2ETests.Authentication;
 
 public sealed class RealAuthenticationE2ETestFixture : IAsyncLifetime
 {
-    private SharedAppHostProcessHandle? appHostProcess;
-    private KeycloakPortLease? keycloakPortLease;
+    private ManagedAppHostFixture? managedFixture;
     private ControllableIgProvider? provider;
 
     public Uri WebBaseUri { get; private set; } = null!;
@@ -15,12 +13,17 @@ public sealed class RealAuthenticationE2ETestFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        keycloakPortLease = await KeycloakPortLease.AcquireAsync();
         try
         {
             provider = ControllableIgProvider.Start();
-            appHostProcess = await AppHostProcessFactory.StartAppHostProcessAsync(provider.BaseUri);
-            WebBaseUri = await AppHostProcessFactory.GetWebBaseUriAsync(appHostProcess);
+            managedFixture = new ManagedAppHostFixture(new Dictionary<string, string?>
+            {
+                ["AppHost:UsePersistentKeycloakState"] = bool.FalseString,
+                ["Ig:AccountPreferencesBaseUrl"] = provider.BaseUri.ToString(),
+                ["Authentication:Test:EnableInteractiveSignIn"] = bool.FalseString
+            });
+            await managedFixture.InitializeAsync();
+            WebBaseUri = managedFixture.WebEndpointUri;
         }
         catch
         {
@@ -31,10 +34,10 @@ public sealed class RealAuthenticationE2ETestFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (appHostProcess is not null)
+        if (managedFixture is not null)
         {
-            await appHostProcess.DisposeAsync();
-            appHostProcess = null;
+            await managedFixture.DisposeAsync();
+            managedFixture = null;
         }
 
         if (provider is not null)
@@ -43,10 +46,5 @@ public sealed class RealAuthenticationE2ETestFixture : IAsyncLifetime
             provider = null;
         }
 
-        if (keycloakPortLease is not null)
-        {
-            await keycloakPortLease.DisposeAsync();
-            keycloakPortLease = null;
-        }
     }
 }

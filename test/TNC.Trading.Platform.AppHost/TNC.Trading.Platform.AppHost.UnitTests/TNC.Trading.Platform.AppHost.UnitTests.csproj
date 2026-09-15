@@ -28,7 +28,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\Shared\Authentication\AppHostProcessHandle.cs" Link="Shared\Authentication\AppHostProcessHandle.cs" />
     <Compile Include="..\..\Shared\Authentication\KeycloakReadinessPolicy.cs" Link="Shared\Authentication\KeycloakReadinessPolicy.cs" />
   </ItemGroup>
 

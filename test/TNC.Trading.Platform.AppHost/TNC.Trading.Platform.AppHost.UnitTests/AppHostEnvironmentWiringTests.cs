@@ -81,7 +81,7 @@ public sealed class AppHostEnvironmentWiringTests
 
         Assert.Equal("Keycloak", environmentValues["Authentication__Provider"]);
         Assert.Equal("role", environmentValues["Authentication__Authorization__RoleClaimType"]);
-        Assert.Equal(AppHostCompositionConstants.KeycloakAuthority, environmentValues["Authentication__Keycloak__Authority"]);
+        Assert.DoesNotContain("Authentication__Keycloak__Authority", environmentValues.Keys);
         Assert.DoesNotContain("Authentication__Test__Issuer", environmentValues.Keys);
         Assert.DoesNotContain("Authentication__Test__SigningKey", environmentValues.Keys);
     }
@@ -132,7 +132,7 @@ public sealed class AppHostEnvironmentWiringTests
         var environmentValues = AppHostEnvironmentWiring.GetWebAuthenticationEnvironmentValues(settings);
 
         Assert.Equal("Keycloak", environmentValues["Authentication__Provider"]);
-        Assert.Equal(AppHostCompositionConstants.KeycloakAuthority, environmentValues["Authentication__Keycloak__Authority"]);
+        Assert.DoesNotContain("Authentication__Keycloak__Authority", environmentValues.Keys);
         Assert.Equal("role", environmentValues["Authentication__Authorization__RoleClaimType"]);
         Assert.DoesNotContain("Authentication__Test__Issuer", environmentValues.Keys);
         Assert.DoesNotContain("Authentication__Test__SigningKey", environmentValues.Keys);
@@ -331,7 +331,8 @@ public sealed class AppHostEnvironmentWiringTests
         Assert.Equal(AppHostCompositionConstants.TestIssuer, syntheticApiEnvironmentValues["Authentication__Test__Issuer"]);
         Assert.Equal(AppHostCompositionConstants.TestSigningKey, syntheticApiEnvironmentValues["Authentication__Test__SigningKey"]);
         Assert.Equal("Keycloak", syntheticWebEnvironmentValues["Authentication__Provider"]);
-        Assert.Equal(AppHostCompositionConstants.KeycloakAuthority, syntheticWebEnvironmentValues["Authentication__Keycloak__Authority"]);
+        Assert.Contains("Authentication__Keycloak__Authority", syntheticWebEnvironmentValues.Keys);
+        Assert.DoesNotContain("localhost:8080", syntheticWebEnvironmentValues["Authentication__Keycloak__Authority"]);
         Assert.Equal(bool.TrueString, syntheticWebEnvironmentValues["Authentication__Test__EnableInteractiveSignIn"]);
     }
 

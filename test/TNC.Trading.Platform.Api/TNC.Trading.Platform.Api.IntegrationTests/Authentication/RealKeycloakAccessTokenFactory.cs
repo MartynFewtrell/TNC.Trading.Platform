@@ -9,26 +9,30 @@ internal static class RealKeycloakAccessTokenFactory
 {
     private const string ClientId = "tnc-trading-platform-api-tests";
     private const string Password = "LocalAuth!123";
-    private static readonly Uri TokenEndpoint = new("https://localhost:8080/realms/tnc-trading-platform/protocol/openid-connect/token");
 
-    public static async Task<HttpRequestMessage> CreateAuthenticatedRequestAsync(HttpMethod method, string path, string userName, string? scope = null)
+    public static Task<HttpRequestMessage> CreateAuthenticatedRequestAsync(Uri tokenEndpoint, string path, string userName, string? scope = null)
     {
-        var payload = await RequestTokenAsync(userName, scope);
+        return CreateAuthenticatedRequestAsync(tokenEndpoint, HttpMethod.Get, path, userName, scope);
+    }
+
+    public static async Task<HttpRequestMessage> CreateAuthenticatedRequestAsync(Uri tokenEndpoint, HttpMethod method, string path, string userName, string? scope = null)
+    {
+        var payload = await RequestTokenAsync(tokenEndpoint, userName, scope);
 
         var request = new HttpRequestMessage(method, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", payload.AccessToken);
         return request;
     }
 
-    public static async Task WaitForTokenEndpointReadinessAsync(string userName, string? scope = null, CancellationToken cancellationToken = default)
+    public static async Task WaitForTokenEndpointReadinessAsync(Uri tokenEndpoint, string userName, string? scope = null, CancellationToken cancellationToken = default)
     {
         using var tokenResponse = await KeycloakReadinessPolicy.SendWithRetryAsync(
-            TokenEndpoint,
+            tokenEndpoint,
             TimeSpan.FromSeconds(90),
             async token =>
             {
                 using var tokenClient = new HttpClient();
-                using var tokenRequest = new HttpRequestMessage(HttpMethod.Post, TokenEndpoint)
+                using var tokenRequest = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint)
                 {
                     Content = new FormUrlEncodedContent(CreateTokenForm(userName, scope))
                 };
@@ -46,10 +50,10 @@ internal static class RealKeycloakAccessTokenFactory
         }
     }
 
-    private static async Task<KeycloakTokenResponse> RequestTokenAsync(string userName, string? scope, CancellationToken cancellationToken = default)
+    private static async Task<KeycloakTokenResponse> RequestTokenAsync(Uri tokenEndpoint, string userName, string? scope, CancellationToken cancellationToken = default)
     {
         using var tokenClient = new HttpClient();
-        using var tokenRequest = new HttpRequestMessage(HttpMethod.Post, TokenEndpoint)
+        using var tokenRequest = new HttpRequestMessage(HttpMethod.Post, tokenEndpoint)
         {
             Content = new FormUrlEncodedContent(CreateTokenForm(userName, scope))
         };

@@ -8,3 +8,4 @@
 - Prefer repository scripts or tasks for repeated validation and maintenance workflows instead of institutionalizing the same ad hoc command sequences across multiple assets.
 - Record explicit routine-or-complex tier intent in agent metadata or the central tier registry when only one approved model identifier is available.
 - Clean Architecture adoption is defined by responsibility ownership and dependency direction, not by project names, project count, or canonical folders.
+- Aspire test fixtures must own named resources, bounded readiness, randomized endpoints, scoped configuration, and asynchronous disposal. Socket/listener scans, dashboard endpoint assumptions, fixed-port leases, arbitrary Docker discovery, and global overrides indicate an invalid test boundary.

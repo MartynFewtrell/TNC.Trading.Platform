@@ -1,6 +1,6 @@
-using System.Diagnostics;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Testcontainers.MsSql;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 
 namespace TNC.Trading.Platform.Infrastructure.IntegrationTests;
@@ -9,47 +9,37 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
 {
     private static readonly TimeSpan OperationTimeout = TimeSpan.FromSeconds(45);
     private readonly CancellationTokenSource fixtureCancellationTokenSource = new(OperationTimeout);
+    private readonly MsSqlContainer sqlServer = new MsSqlBuilder()
+        .WithPassword("TncTradingPlatform!Integration1")
+        .Build();
     private string databaseName = string.Empty;
     private string masterConnectionString = string.Empty;
     private string databaseConnectionString = string.Empty;
 
     public async Task InitializeAsync()
     {
-        var containerId = (await RunDockerAsync("ps --filter ancestor=mcr.microsoft.com/mssql/server:2022-latest --format {{.ID}}", fixtureCancellationTokenSource.Token))
-            .Split([Environment.NewLine, "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .FirstOrDefault()
-            ?? throw new InvalidOperationException("A running Aspire SQL Server container was not found.");
-        var environment = await RunDockerAsync($"inspect {containerId} --format \"{{{{range .Config.Env}}}}{{{{println .}}}}{{{{end}}}}\"", fixtureCancellationTokenSource.Token);
-        var password = environment
-            .Split([Environment.NewLine, "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Single(value => value.StartsWith("MSSQL_SA_PASSWORD=", StringComparison.Ordinal))["MSSQL_SA_PASSWORD=".Length..];
-        var endpoint = (await RunDockerAsync($"port {containerId} 1433/tcp", fixtureCancellationTokenSource.Token))
-            .Trim()
-            .Split(':', StringSplitOptions.RemoveEmptyEntries)
-            .Last();
-        var platformConnectionString = new SqlConnectionStringBuilder
+        try
         {
-            DataSource = $"127.0.0.1,{endpoint}",
-            UserID = "sa",
-            Password = password,
-            Encrypt = false,
-            TrustServerCertificate = true
-        }.ConnectionString;
+            await sqlServer.StartAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
+            var connectionBuilder = new SqlConnectionStringBuilder(sqlServer.GetConnectionString());
+            databaseName = $"TncTradingPlatformIntegration_{Guid.NewGuid():N}";
+            connectionBuilder.InitialCatalog = databaseName;
+            databaseConnectionString = connectionBuilder.ConnectionString;
+            connectionBuilder.InitialCatalog = "master";
+            masterConnectionString = connectionBuilder.ConnectionString;
 
-        databaseName = $"TncTradingPlatformIntegration_{Guid.NewGuid():N}";
-        var connectionBuilder = new SqlConnectionStringBuilder(platformConnectionString);
-        connectionBuilder.InitialCatalog = databaseName;
-        databaseConnectionString = connectionBuilder.ConnectionString;
-
-        connectionBuilder.InitialCatalog = "master";
-        masterConnectionString = connectionBuilder.ConnectionString;
-
-        await using var connection = new SqlConnection(masterConnectionString);
-        await connection.OpenAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"CREATE DATABASE [{databaseName}]";
-        command.CommandTimeout = (int)OperationTimeout.TotalSeconds;
-        await command.ExecuteNonQueryAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
+            await using var connection = new SqlConnection(masterConnectionString);
+            await connection.OpenAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"CREATE DATABASE [{databaseName}]";
+            command.CommandTimeout = (int)OperationTimeout.TotalSeconds;
+            await command.ExecuteNonQueryAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            var logs = await sqlServer.GetLogsAsync().ConfigureAwait(false);
+            throw new InvalidOperationException($"Owned SQL Server fixture failed to initialize.\nSTDOUT:\n{logs.Stdout}\nSTDERR:\n{logs.Stderr}", exception);
+        }
     }
 
     internal PlatformDbContext CreateDbContext()
@@ -93,41 +83,23 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (!string.IsNullOrWhiteSpace(masterConnectionString))
+        try
         {
-            await using var connection = new SqlConnection(masterConnectionString);
-            await connection.OpenAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"ALTER DATABASE [{databaseName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [{databaseName}]";
-            command.CommandTimeout = (int)OperationTimeout.TotalSeconds;
-            await command.ExecuteNonQueryAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(masterConnectionString))
+            {
+                await using var connection = new SqlConnection(masterConnectionString);
+                await connection.OpenAsync(CancellationToken.None).ConfigureAwait(false);
+                await using var command = connection.CreateCommand();
+                command.CommandText = $"ALTER DATABASE [{databaseName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [{databaseName}]";
+                command.CommandTimeout = (int)OperationTimeout.TotalSeconds;
+                await command.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
+            }
         }
-
-    }
-
-    private static async Task<string> RunDockerAsync(string arguments, CancellationToken cancellationToken)
-    {
-        using var process = Process.Start(new ProcessStartInfo
+        finally
         {
-            FileName = "docker",
-            Arguments = arguments,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        }) ?? throw new InvalidOperationException("Docker could not be started for the SQL Server integration fixture.");
-
-        var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-        var output = await outputTask.ConfigureAwait(false);
-        var error = await errorTask.ConfigureAwait(false);
-        if (process.ExitCode != 0)
-        {
-            throw new InvalidOperationException($"Docker command failed with exit code {process.ExitCode}: {error}");
+            await sqlServer.DisposeAsync().ConfigureAwait(false);
+            fixtureCancellationTokenSource.Dispose();
         }
-
-        return output;
     }
 }
 

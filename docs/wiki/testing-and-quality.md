@@ -83,7 +83,7 @@ API tests cover only hosting and composition behavior.
 | `test/TNC.Trading.Platform.Architecture/TNC.Trading.Platform.Architecture.IntegrationTests` | Architecture integration | Topology-neutral production project-reference integrity, including missing-target and cycle diagnostics. |
 | `test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.UnitTests` | Unit | Web authentication policy registration, claim mapping, direct `PlatformApiClient` boundary behavior, and bUnit component coverage for the refreshed Blazor shell and key operator pages. |
 | `test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.FunctionalTests` | Functional | Requirement-driven redirect, sign-out, CSRF, and rendered HTML outcomes with one shared real AppHost-plus-Keycloak runtime per auth collection. |
-| `test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.E2ETests` | End-to-end | One retained browser smoke that proves the real AppHost-plus-Keycloak sign-in path from runtime listener discovery through the protected UI surface. |
+| `test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.E2ETests` | End-to-end | One retained browser smoke that proves the real AppHost-plus-Keycloak sign-in path through the fixture-provided `web` resource endpoint. |
 
 ## AppHost-backed distributed validation model
 
@@ -94,7 +94,7 @@ The distributed validation model now follows the delivered Aspire topology rathe
 - AppHost-focused unit tests now cover `AppHostSettings`, provider-parity environment wiring, infrastructure/project registration, and a resource-model composition smoke that checks preserved resource names, waits, endpoint registrations, and operator-facing links before the higher-cost distributed suites run.
 - AppHost-backed integration, functional, and end-to-end suites validate the real Aspire-managed runtime with Docker-backed infrastructure, SQL Server, Mailpit, and Keycloak.
 - The only supported AppHost override is the narrow API-authentication switch used by the synthetic bearer-token integration slice; it keeps the Web runtime on Keycloak while allowing API-only invalid-token and claim-shape negatives to reach the protected boundary.
-- Shared real-runtime helpers now start the AppHost through Aspire-managed testing, discover runtime listener URLs from the started resource set and observed local listeners, and validate the delivered listener set instead of fixed launch-settings assumptions.
+- Shared real-runtime helpers now start the AppHost through Aspire-managed testing, use named `api`, `web`, and `keycloak` resources, wait for bounded health readiness, and pass fixture-provided endpoints to clients and browsers.
 - The real-token API authentication integration suite now reuses one AppHost-plus-Keycloak process per xUnit collection, while the synthetic-token API negatives stay isolated in their own AppHost-backed collection because they still require the API-only test-provider override.
 - The Web functional and Web end-to-end auth suites now each reuse one AppHost-plus-Keycloak process per xUnit collection so the retained distributed coverage proves the delivered topology without repeatedly paying startup cost for every test case.
 
@@ -288,7 +288,7 @@ The Web unit, functional, and end-to-end tests cover:
 - one retained functional sign-out smoke that proves a real Keycloak-backed sign-out forces the next protected navigation back to sign-in
 - one retained functional insufficient-role smoke that proves a signed-in viewer is denied from the operator-only configuration route through the real runtime
 - one retained functional CSRF negative that proves the real sign-out POST rejects requests without the antiforgery token
-- one retained real Keycloak browser smoke that discovers the live Web listener from AppHost startup output and reaches the protected UI without fixed-port assumptions
+- one retained real Keycloak browser smoke that uses the fixture-provided randomized `web` endpoint and reaches the protected UI without fixed-port assumptions
 
 ### Keycloak readiness and isolation
 
@@ -300,17 +300,15 @@ The readiness policy classifies failures deliberately:
 - `400`, `401`, other permanent HTTP failures, an exact-issuer mismatch, and malformed successful discovery data fail immediately with URI, status, and safe diagnostic context.
 - Timeouts retain the last transient status or exception without response content, tokens, or credentials.
 
-Each distributed fixture attempts complete cleanup even when startup or disposal fails. It kills and waits for external AppHost processes, drains captured output, disposes the managed application and builder, restores environment-variable scopes, and preserves secondary cleanup exceptions with the primary failure. A failed readiness check must not leave a process, container, or test override behind.
+Each distributed fixture attempts complete cleanup even when startup or disposal fails. It asynchronously disposes the managed application and builder, cleans up every dependency it owns, and preserves secondary cleanup exceptions with the primary failure. A failed readiness check must not leave a container, database, or test override behind.
 
 The real-authentication projects disable persistent Keycloak state. Each AppHost test session therefore receives volume-free, session-scoped Keycloak state and imports the checked-in realm into a clean container. This is test isolation, not a change to the persistent local-development mode. Container lifetime, durable data, and test session state remain separate concerns.
 
 The imported realm contains wildcard localhost callback and origin entries. The retained browser sign-in smoke proves that the randomized Web listener can complete the Keycloak callback without mutating the client through the Admin API. This keeps the session fixture free from cross-test client configuration changes while preserving the real provider path.
 
-### Port coordination and concurrent validation
+### Randomized endpoints and concurrent validation
 
-Keycloak intentionally owns host port `8080` because the local issuer, browser redirects, cookies, and authority all use that origin. The participating real-authentication processes acquire a machine-local file lease at `%TEMP%\TNC.Trading.Platform\leases\keycloak-port-8080.lock` before starting the fixed-port AppHost. Acquisition waits up to five minutes and polls for release; disposal closes the lock and removes the file.
-
-The lease coordinates processes on the same machine that use this shared lock path. It does not coordinate separate machines, isolated CI containers, or processes that do not participate in the harness. xUnit collection fixtures serialize tests inside one test assembly only. They cannot prevent the API, Web functional, and Web E2E projects from starting concurrently, so the cross-process lease remains necessary. An independently running external AppHost can still bind port 8080 first and cause a test startup conflict.
+Automated AppHost tests keep Aspire proxy-port randomization enabled. They do not parse AppHost output, scan local listeners, infer launch-profile ports, use dashboard endpoints as application endpoints, or acquire fixed-port leases. Each fixture passes named resource endpoints to its clients and browser contexts, so multiple test processes can run concurrently without process-wide coordination.
 
 Use these focused commands from the repository root when validating the retained real-runtime slices:
 
@@ -320,7 +318,15 @@ dotnet test test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.FunctionalTes
 dotnet test test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.E2ETests/TNC.Trading.Platform.Web.E2ETests.csproj --filter "FullyQualifiedName~Authentication"
 ```
 
-To prove cross-process coordination, start the API, Web functional, and Web E2E commands concurrently. They should serialize fixed-port ownership through the five-minute lease. A timeout or bind error should be recorded as an environment conflict, not interpreted as an authentication assertion failure. Stop any separately running AppHost before repeating the proof.
+Run the focused commands concurrently when validating isolation. A readiness or resource-ownership failure should include fixture diagnostics and be treated as a test infrastructure failure, not hidden by global serialization.
+
+### Test responsibility boundaries
+
+Plain xUnit owns state, policy, mapping, and other in-process behavior. bUnit owns Blazor component rendering and lifecycle behavior. Aspire-hosted tests own distributed topology, resource wiring, and real infrastructure boundaries. Playwright owns browser-only behavior such as navigation, redirects, cookies, JavaScript execution, and user-visible workflows. Direct DOM-parser dependencies are not used unless a documented test independently requires parser behavior.
+
+### CI diagnostics
+
+CI runs restore/build, fast project tests, Docker-backed Aspire and service integration tests, and browser/real-Keycloak tests as separate ordered stages. Every project command writes a TRX result under `artifacts/test-results/<stage>/<project>`. TRX files are uploaded for every result, while fixture logs, resource status, endpoint metadata, SQL diagnostics, and Playwright traces, screenshots, and videos are uploaded only on failure. Diagnostic output must be sanitized and must not contain credentials or unredacted connection strings. Fixture-owned diagnostics belong under `TEST_ARTIFACTS_DIRECTORY`.
 
 Focused manual validation still complements the automated suite for the refreshed shared shell, theme switching, remembered browser preference, header presentation, and narrower-width layout behavior.
 
@@ -334,7 +340,7 @@ The current suite ownership is intentionally pyramid-shaped so the repository ke
 | UI role boundaries and access-denied routing | Web unit tests, Web functional tests | One real-runtime functional viewer-to-configuration denial smoke |
 | Sign-out wiring, fail-closed post-sign-out behavior, and OIDC logout participation | Web unit tests, API integration tests, Web functional tests | One real-runtime functional post-sign-out protected-route smoke |
 | Sign-out CSRF hardening | Web functional tests | One real-runtime functional missing-antiforgery negative |
-| Browser-provider parity for the delivered local auth path | Web unit tests, Web functional tests | One real-runtime E2E sign-in smoke from AppHost listener discovery to protected content |
+| Browser-provider parity for the delivered local auth path | Web unit tests, Web functional tests | One real-runtime E2E sign-in smoke from the fixture-provided `web` endpoint to protected content |
 | Refreshed Blazor shell and operator-page rendering | Web unit tests with bUnit | Manual responsive and theme checks only |
 
 The current real-runtime auth matrix is intentionally narrow: one browser sign-in smoke, one functional sign-out smoke, one functional insufficient-role smoke, and one functional CSRF negative. Broader route matrices, role-policy checks, API-boundary checks, and rendered-component checks now live in lower-level suites so the distributed layer stays small and evidence-driven.

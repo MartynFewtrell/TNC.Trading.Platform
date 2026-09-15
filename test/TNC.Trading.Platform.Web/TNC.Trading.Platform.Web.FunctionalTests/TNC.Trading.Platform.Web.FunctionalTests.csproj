@@ -24,10 +24,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\Shared\Authentication\AppHostProcessHandle.cs" Link="Shared\Authentication\AppHostProcessHandle.cs" />
+    <Compile Include="..\..\Shared\Authentication\ManagedAppHostFixture.cs" Link="Shared\Authentication\ManagedAppHostFixture.cs" />
+    <Compile Include="..\..\TNC.Trading.Platform.Api\TNC.Trading.Platform.Api.IntegrationTests\Authentication\RealKeycloakAccessTokenFactory.cs" Link="Shared\Authentication\RealKeycloakAccessTokenFactory.cs" />
     <Compile Include="..\..\Shared\Authentication\KeycloakReadinessPolicy.cs" Link="Shared\Authentication\KeycloakReadinessPolicy.cs" />
-    <Compile Include="..\..\Shared\Authentication\KeycloakPortLease.cs" Link="Shared\Authentication\KeycloakPortLease.cs" />
-    <Compile Include="..\..\Shared\Authentication\RealAppHostProcessFactory.cs" Link="Shared\Authentication\RealAppHostProcessFactory.cs" />
     <Compile Include="..\..\Shared\AccountPreferences\ControllableIgProvider.cs" Link="Shared\AccountPreferences\ControllableIgProvider.cs" />
   </ItemGroup>
 
