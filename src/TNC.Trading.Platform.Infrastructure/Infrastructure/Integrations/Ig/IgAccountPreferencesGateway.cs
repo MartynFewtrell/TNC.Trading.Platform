@@ -134,7 +134,10 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
             var category = response.StatusCode == HttpStatusCode.Conflict
                 ? AccountPreferencesFailureCategory.Rejected
                 : (int)response.StatusCode >= 500 ? AccountPreferencesFailureCategory.Unavailable : AccountPreferencesFailureCategory.Unsupported;
-            return (new AccountPreferencesGatewayOutcome.Failed(category, "IG account preferences provider returned a non-success response."), false);
+            var reason = category == AccountPreferencesFailureCategory.Unavailable
+                ? "IG account preference observation was not available."
+                : "IG account preferences provider returned a non-success response.";
+            return (new AccountPreferencesGatewayOutcome.Failed(category, reason), false);
         }
         if (method == HttpMethod.Put)
         {

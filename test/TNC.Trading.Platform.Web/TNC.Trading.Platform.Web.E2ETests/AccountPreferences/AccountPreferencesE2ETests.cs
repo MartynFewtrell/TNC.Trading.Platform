@@ -15,6 +15,13 @@ public sealed class AccountPreferencesE2ETests : PageTest
 
     public override BrowserNewContextOptions ContextOptions() => new() { IgnoreHTTPSErrors = true };
 
+    public override async Task InitializeAsync()
+    {
+        fixture.Provider.Reset();
+        await base.InitializeAsync();
+        await fixture.ResetAccountPreferencesAsync();
+    }
+
     /// <summary>
     /// Trace: account-preferences operator display requirement.
     /// Verifies: the authenticated operator page distinguishes durable desired intent from the provider observation.
@@ -22,14 +29,52 @@ public sealed class AccountPreferencesE2ETests : PageTest
     /// Why: the UI must preserve SQL-owned intent during an external provider outage.
     /// </summary>
     [Fact]
-    public async Task AccountPreferences_ShouldShowDesiredAndObservedLabels_WhenProviderIsUnavailable()
+    public async Task AccountPreferences_ShouldRefreshWithConfirmedSave_WhenPreferenceIsChanged()
     {
-        await OpenAccountPreferencesWhenProviderIsUnavailableAsync();
-        await Expect(Page.GetByText("Unconfigured", new() { Exact = true })).ToBeVisibleAsync();
-        await Expect(Page.GetByText("Desired setting", new() { Exact = false })).ToBeVisibleAsync();
-        await Expect(Page.GetByText("Last observed at IG", new() { Exact = false })).ToBeVisibleAsync();
-        await Expect(Page.GetByTestId("account-preferences-error")).ToBeHiddenAsync();
-        await Expect(Page.GetByText("Account preferences provider is unavailable.", new() { Exact = false })).ToBeHiddenAsync();
+        await OpenAccountPreferencesAsync();
+        await Page.GetByRole(AriaRole.Radio, new() { Name = "Enabled", Exact = true }).Filter(new() { Visible = true }).CheckAsync();
+        await Page.GetByTestId("account-preferences-save").ClickAsync();
+        await Expect(Page.GetByTestId("account-preferences-confirmation")).ToContainTextAsync("saved and confirmed");
+        await Expect(Page.GetByText("Enabled", new() { Exact = true }).First).ToBeVisibleAsync();
+    }
+
+    [Fact]
+    public async Task AccountPreferences_ShouldShowCheckStatusEquality_WhenProviderMatchesDesiredValue()
+    {
+        await OpenAccountPreferencesAsync();
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Check status" }).ClickAsync();
+
+        await Expect(Page.GetByText("Last confirmed", new() { Exact = false })).ToBeVisibleAsync();
+        await Expect(Page.GetByText("Disabled", new() { Exact = true }).Last).ToBeVisibleAsync();
+        await Expect(Page.GetByRole(AriaRole.Alert)).ToHaveCountAsync(0);
+    }
+
+    [Fact]
+    public async Task AccountPreferences_ShouldAutomaticallyCorrectDrift_WhenCheckStatusFindsDifferentProviderValue()
+    {
+        fixture.Provider.Preference = true;
+        await OpenAccountPreferencesAsync();
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Check status" }).ClickAsync();
+
+        await Expect(Page.GetByText("Last confirmed", new() { Exact = false })).ToBeVisibleAsync();
+        await Expect(Page.GetByText("Disabled", new() { Exact = true }).Last).ToBeVisibleAsync();
+        await Expect(Page.GetByRole(AriaRole.Alert)).ToHaveCountAsync(0);
+    }
+
+    [Fact]
+    public async Task AccountPreferences_ShouldShowExactWarning_WhenProviderIsUnavailableDuringRemediation()
+    {
+        await OpenAccountPreferencesAsync();
+        await Page.GetByRole(AriaRole.Radio, new() { Name = "Enabled", Exact = true }).Filter(new() { Visible = true }).ClickAsync();
+        await Page.GetByTestId("account-preferences-save").ClickAsync();
+        await Expect(Page.GetByText("Last confirmed", new() { Exact = false })).ToBeVisibleAsync();
+        await Expect(Page.GetByText("Enabled", new() { Exact = true }).Last).ToBeVisibleAsync();
+        fixture.Provider.Preference = false;
+        fixture.Provider.Available = false;
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Check status" }).ClickAsync();
+
+        var warning = Page.GetByTestId("account-preferences-warning");
+        await Expect(warning).ToHaveTextAsync("IG account preference observation was not available.");
     }
 
     /// <summary>
@@ -41,14 +86,13 @@ public sealed class AccountPreferencesE2ETests : PageTest
     [Fact]
     public async Task AccountPreferences_ShouldActivateObservedHistory_WhenHistoryTabIsSelected()
     {
-        await OpenAccountPreferencesWhenProviderIsUnavailableAsync();
+        await OpenAccountPreferencesAsync();
 
         await Test.StepAsync("Activate the observed history tab", async () =>
         {
-            var observedHistoryTab = Page.GetByRole(AriaRole.Tab, new() { Name = "Observed history" });
-            await observedHistoryTab.FocusAsync();
-            await observedHistoryTab.PressAsync("Space");
-            await Expect(Page.GetByRole(AriaRole.Tab, new() { Name = "Observed history" })).ToHaveAttributeAsync("aria-selected", "true");
+            var observedHistoryTab = Page.GetByRole(AriaRole.Tab, new() { Name = "Observed history" }).Last;
+            await observedHistoryTab.ClickAsync();
+            await Expect(observedHistoryTab).ToHaveAttributeAsync("aria-selected", "true");
         });
 
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Observed history" })).ToBeVisibleAsync();
@@ -64,16 +108,18 @@ public sealed class AccountPreferencesE2ETests : PageTest
     [Fact]
     public async Task AccountPreferences_ShouldNavigateTabsWithKeyboard_WhenSettingsTabHasFocus()
     {
-        await OpenAccountPreferencesWhenProviderIsUnavailableAsync();
+        await OpenAccountPreferencesAsync();
 
         await Test.StepAsync("Move to observed history with the keyboard", async () =>
         {
-            var settingsTab = Page.GetByRole(AriaRole.Tab, new() { Name = "Settings" });
-            await settingsTab.FocusAsync();
-            await settingsTab.PressAsync("ArrowRight");
+            var settingsTab = Page.GetByRole(AriaRole.Tab, new() { Name = "Settings" }).Last;
+            await settingsTab.ClickAsync();
+            var observedHistoryTab = Page.GetByRole(AriaRole.Tab, new() { Name = "Observed history" }).Last;
+            await observedHistoryTab.FocusAsync();
+            await observedHistoryTab.PressAsync("Enter");
         });
 
-        await Expect(Page.GetByRole(AriaRole.Tab, new() { Name = "Observed history" })).ToHaveAttributeAsync("aria-selected", "true");
+        await Expect(Page.GetByRole(AriaRole.Tab, new() { Name = "Observed history" }).Filter(new() { Visible = true })).ToHaveAttributeAsync("aria-selected", "true");
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Observed history" })).ToBeVisibleAsync();
     }
 
@@ -86,13 +132,25 @@ public sealed class AccountPreferencesE2ETests : PageTest
     [Fact]
     public async Task AccountPreferences_ShouldExposeAccessibleHistoryControls_WhenHistoryTabIsActive()
     {
-        await OpenAccountPreferencesWhenProviderIsUnavailableAsync();
-        var observedHistoryTab = Page.GetByRole(AriaRole.Tab, new() { Name = "Observed history" });
-        await observedHistoryTab.FocusAsync();
-        await observedHistoryTab.PressAsync("Space");
+        await OpenAccountPreferencesAsync();
+        var observedHistoryTab = Page.GetByRole(AriaRole.Tab, new() { Name = "Observed history" }).Last;
+        await observedHistoryTab.ClickAsync();
+        await Expect(observedHistoryTab).ToHaveAttributeAsync("aria-selected", "true");
 
         await Expect(Page.GetByRole(AriaRole.Table, new() { Name = "Trailing stop observations, newest observed first" })).ToBeVisibleAsync();
         await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Load older observations" })).ToBeVisibleAsync();
+    }
+
+    [Fact]
+    public async Task AccountPreferences_ShouldPageReadOnlyHistory_WhenOlderObservationsAreAvailable()
+    {
+        await OpenAccountPreferencesAsync();
+        await ActivateObservedHistoryAsync();
+
+        var historyTable = Page.GetByRole(AriaRole.Table, new() { Name = "Trailing stop observations, newest observed first" });
+        await Expect(historyTable).ToBeVisibleAsync();
+        var loadOlder = Page.GetByRole(AriaRole.Button, new() { Name = "Load older observations" });
+        await Expect(loadOlder).ToBeDisabledAsync();
     }
 
     /// <summary>
@@ -104,17 +162,16 @@ public sealed class AccountPreferencesE2ETests : PageTest
     [Fact]
     public async Task AccountPreferences_ShouldDisableLoadOlderObservations_WhenNoNextCursorExists()
     {
-        await OpenAccountPreferencesWhenProviderIsUnavailableAsync();
-        var observedHistoryTab = Page.GetByRole(AriaRole.Tab, new() { Name = "Observed history" });
-        await observedHistoryTab.FocusAsync();
-        await observedHistoryTab.PressAsync("Space");
+        await OpenAccountPreferencesAsync();
+        var observedHistoryTab = Page.GetByRole(AriaRole.Tab, new() { Name = "Observed history" }).Filter(new() { Visible = true });
+        await observedHistoryTab.ClickAsync();
+        await Expect(observedHistoryTab).ToHaveAttributeAsync("aria-selected", "true");
 
         await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Load older observations" })).ToBeDisabledAsync();
     }
 
-    private async Task OpenAccountPreferencesWhenProviderIsUnavailableAsync()
+    private async Task OpenAccountPreferencesAsync()
     {
-        fixture.Provider.Available = false;
         await Page.GotoAsync(new Uri(fixture.WebBaseUri, "/authentication/sign-in?returnUrl=%2Faccount-preferences").ToString(), new() { WaitUntil = WaitUntilState.DOMContentLoaded });
         await Expect(Page.Locator("#username")).ToBeVisibleAsync(new() { Timeout = 60_000 });
         await Page.Locator("#username").FillAsync("local-operator");
@@ -122,7 +179,14 @@ public sealed class AccountPreferencesE2ETests : PageTest
         await Page.Locator("#kc-login").ClickAsync();
         await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex(@"/account-preferences(?:\?.*)?$"), new() { Timeout = 30_000 });
         await Expect(Page.GetByTestId("account-preferences-loading")).ToBeHiddenAsync();
-        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Account preference state" })).ToBeVisibleAsync();
+        await Expect(Page.Locator("#account-preferences-state-heading")).ToBeVisibleAsync();
+    }
+
+    private async Task ActivateObservedHistoryAsync()
+    {
+        var observedHistoryTab = Page.GetByRole(AriaRole.Tab, new() { Name = "Observed history" }).Filter(new() { Visible = true });
+        await observedHistoryTab.ClickAsync();
+        await Expect(observedHistoryTab).ToHaveAttributeAsync("aria-selected", "true");
     }
 
     private static class Test

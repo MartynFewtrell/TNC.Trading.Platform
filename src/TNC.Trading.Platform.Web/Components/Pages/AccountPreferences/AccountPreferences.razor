@@ -12,34 +12,31 @@
 else if (Presenter.IsLoading && Presenter.State.History.Count == 0) { <p data-testid="account-preferences-loading">Loading account preferences...</p> }
 else
 {
-    <section class="panel platform-page-header"><div><h1>Account preferences</h1><p class="hint">Live trailing stops control for the configured account.</p></div></section>
+    <section class="panel platform-page-header"><div><h1>Trailing stops</h1></div></section>
     @if (!string.IsNullOrWhiteSpace(Presenter.CurrentError)) { <p class="error" role="alert" data-testid="account-preferences-error">@Presenter.CurrentError</p> }
+    @if (!string.IsNullOrWhiteSpace(Presenter.State.FailureSummary))
+    {
+        <p class="error account-preferences-warning" role="alert" data-testid="account-preferences-warning" aria-live="assertive">@Presenter.State.FailureSummary</p>
+    }
     <div class="account-preferences-tabs">
-    <RadzenTabs @bind-SelectedIndex="selectedTabIndex" Change="OnTabChanged" AriaLabel="Account preference views">
+    <RadzenTabs @bind-SelectedIndex="selectedTabIndex" AriaLabel="Account preference views">
         <Tabs>
             <RadzenTabsItem Text="Settings">
                 <section class="panel" aria-labelledby="account-preferences-state-heading">
-                    <h2 id="account-preferences-state-heading">Account preference state</h2>
-                    @if (!string.IsNullOrWhiteSpace(Presenter.State.FailureSummary)) { <p class="error account-preferences-warning" role="alert">@Presenter.State.FailureSummary</p> }
+                    <h2 id="account-preferences-state-heading">Trailing stops</h2>
                     <dl class="account-preferences-state">
-                        <div><dt>Desired setting</dt><dd>@(Presenter.State.DesiredTrailingStopsEnabled is bool desired ? (desired ? "Enabled" : "Disabled") : "Unconfigured")</dd></div>
-                        <div><dt>Target account</dt><dd>@(Presenter.State.AccountId ?? "Not configured")</dd></div>
-                        <div><dt>Last observed at IG</dt><dd>@(Presenter.State.ObservedTrailingStopsEnabled is bool observed ? (observed ? "Enabled" : "Disabled") : "No observation")</dd></div>
-                        <div><dt>Observed account</dt><dd>@(Presenter.State.ObservedAccountId ?? "None")</dd></div>
-                        <div><dt>Status</dt><dd data-testid="account-preferences-application-status">@Presenter.State.VerificationStatus</dd></div>
+                        <div><dt>Trailing stops</dt><dd>@(Presenter.State.DesiredTrailingStopsEnabled is bool desired ? (desired ? "Enabled" : "Disabled") : "Unconfigured")</dd></div>
+                        @if (Presenter.State.ConfirmedTrailingStopsEnabled is bool confirmed) { <div><dt>Last confirmed</dt><dd>@(confirmed ? "Enabled" : "Disabled")</dd></div> }
                     </dl>
-                    @if (Presenter.State.VerificationStatus is "PendingVerification") { <p role="status">Verification is pending.</p> }
+                    @if (Presenter.State.VerificationStatus is "Pending") { <p role="status">Verification is pending.</p> }
                     <div class="account-preferences-actions" role="group" aria-label="Verification actions">
-                        @if (Presenter.State.AccountId is not null) { <button class="platform-primary-action" type="button" @onclick="RetryAsync" disabled="@(Presenter.IsOperating || Presenter.IsSaving)">@(Presenter.IsOperating ? "Working..." : "Retry verification")</button> }
-                        @if (Presenter.State.DesiredRevision is not null && Presenter.State.ObservedTrailingStopsEnabled != Presenter.State.DesiredTrailingStopsEnabled) { <button class="platform-primary-action" type="button" @onclick="RemediateAsync" disabled="@(Presenter.IsOperating || Presenter.IsSaving)">Apply desired setting</button> }
+                        @if (Presenter.State.DesiredRevision is not null) { <button class="platform-primary-action" type="button" @onclick="CheckStatusAsync" disabled="@(Presenter.IsOperating || Presenter.IsSaving)">@(Presenter.IsOperating ? "Checking..." : "Check status")</button> }
                     </div>
                 </section>
                 @if (Presenter.State.HasConfirmedValue)
                 {
                     <section class="panel">
-                        <h2>@(Presenter.State.TrailingStopsEnabled ? "Trailing stops enabled" : "Trailing stops disabled")</h2>
-                        <p data-testid="account-preferences-last-confirmed">Last confirmed: @(Presenter.State.ConfirmedTrailingStopsEnabled == true ? "Enabled" : "Disabled")</p>
-                        @if (Presenter.State.HasPendingChange) { <p data-testid="account-preferences-pending">Pending change: not yet confirmed</p> }
+                        <h2>Trailing stops configuration</h2>
                         <fieldset class="account-preferences-choice" disabled="@Presenter.IsSaving">
                             <legend>Trailing stops</legend>
                             <InputRadioGroup TValue="bool" Value="@Presenter.State.TrailingStopsEnabled" ValueChanged="Presenter.Select" ValueExpression="@(() => Presenter.State.TrailingStopsEnabled)">
@@ -48,7 +45,7 @@ else
                             </InputRadioGroup>
                         </fieldset>
                         <div class="account-preferences-actions" role="group" aria-label="Preference actions">
-                            <button @ref="saveButton" class="platform-primary-action" type="button" data-testid="account-preferences-save" @onclick="SaveAsync" disabled="@(Presenter.IsSaving || Presenter.IsLoading)">@(Presenter.IsSaving ? "Saving..." : "Save preference")</button>
+                            <button @ref="saveButton" class="platform-primary-action" type="button" data-testid="account-preferences-save" @onclick="SaveAsync" disabled="@(Presenter.IsSaving || Presenter.IsOperating || Presenter.IsLoading)">@(Presenter.IsSaving ? "Saving..." : "Save preferences")</button>
                         </div>
                         @if (!string.IsNullOrWhiteSpace(Presenter.SaveError)) { <p class="error" role="alert">@Presenter.SaveError</p> }
                         @if (!string.IsNullOrWhiteSpace(Presenter.Message))
@@ -102,10 +99,7 @@ else
         await Presenter.LoadNextHistoryPageAsync(requestLifetime.Token);
         historyLoadMessage = "Older observations loaded.";
     }
-    private async Task RetryAsync() => await Presenter.RetryAsync(requestLifetime.Token);
-    private async Task RemediateAsync() => await Presenter.RemediateAsync(requestLifetime.Token);
-    private void OnTabChanged(int index) => selectedTabIndex = index;
-
+    private async Task CheckStatusAsync() => await Presenter.CheckStatusAsync(requestLifetime.Token);
     public void Dispose()
     {
         requestLifetime.Cancel();

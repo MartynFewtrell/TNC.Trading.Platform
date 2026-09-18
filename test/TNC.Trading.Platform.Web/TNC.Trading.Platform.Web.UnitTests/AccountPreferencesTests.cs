@@ -97,7 +97,7 @@ public sealed class AccountPreferencesTests
         var cut = context.RenderComponent<AccountPreferences>();
         cut.WaitForAssertion(() =>
         {
-            Assert.Contains("Live trailing stops control for the configured account.", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Trailing stops", cut.Markup, StringComparison.Ordinal);
             Assert.Equal(2, cut.FindAll("input[type='radio']").Count);
             Assert.Contains("Enabled", cut.Markup, StringComparison.Ordinal);
             Assert.Contains("Disabled", cut.Markup, StringComparison.Ordinal);
@@ -125,8 +125,8 @@ public sealed class AccountPreferencesTests
             Assert.Equal("true", cut.FindAll("[role='tab']")[0].GetAttribute("aria-selected"));
             Assert.Contains("Account preference views", cut.Markup, StringComparison.Ordinal);
             Assert.Single(cut.FindAll("dl.account-preferences-state"));
-            Assert.Equal(5, cut.FindAll("dl.account-preferences-state dt").Count);
-            Assert.Equal(5, cut.FindAll("dl.account-preferences-state dd").Count);
+            Assert.Equal(2, cut.FindAll("dl.account-preferences-state dt").Count);
+            Assert.Equal(2, cut.FindAll("dl.account-preferences-state dd").Count);
             Assert.Equal(2, cut.FindAll("fieldset.account-preferences-choice input[type='radio']").Count);
             Assert.Equal(2, cut.FindAll("fieldset.account-preferences-choice label").Count);
             Assert.Empty(cut.FindAll("table caption"));
@@ -148,7 +148,7 @@ public sealed class AccountPreferencesTests
         var cut = context.RenderComponent<AccountPreferences>();
         cut.WaitForElement(".account-preferences-tabs");
         Assert.Equal(
-            ["Apply desired setting", "Retry verification", "Save preference"],
+            ["Check status", "Save preferences"],
             cut.FindAll("button.platform-primary-action").Select(button => button.TextContent.Trim()).OrderBy(text => text).ToArray());
         cut.WaitForElement("[data-testid='account-preferences-save']");
         cut.Find("fieldset input[type='radio']").Change(new ChangeEventArgs { Value = "false" });
@@ -157,7 +157,7 @@ public sealed class AccountPreferencesTests
         cut.WaitForAssertion(() =>
         {
             Assert.Contains("Observed account differs", cut.Find(".account-preferences-warning").TextContent, StringComparison.Ordinal);
-            Assert.Equal(["Verification actions", "Preference actions"], cut.FindAll("[role='group']").Select(group => group.GetAttribute("aria-label")).ToArray());
+            Assert.Contains("Verification actions", cut.Markup, StringComparison.Ordinal);
             Assert.Contains(cut.FindAll("[role='alert']"), alert => alert.TextContent.Contains("Unable to save and confirm account preferences.", StringComparison.Ordinal));
         });
     }
@@ -202,7 +202,7 @@ public sealed class AccountPreferencesTests
         cut.WaitForAssertion(() =>
         {
             Assert.DoesNotContain("account-preferences-loading", cut.Markup, StringComparison.Ordinal);
-            Assert.Contains("Desired setting", cut.Find("dl.account-preferences-state").TextContent, StringComparison.Ordinal);
+            Assert.Contains("Trailing stops", cut.Find("dl.account-preferences-state").TextContent, StringComparison.Ordinal);
             Assert.Contains("Unconfigured", cut.Markup, StringComparison.Ordinal);
             Assert.DoesNotContain("account-preferences-error", cut.Markup, StringComparison.Ordinal);
             Assert.Equal(2, context.ApiHandler.Requests.Count);
@@ -222,8 +222,9 @@ public sealed class AccountPreferencesTests
 
         cut.WaitForAssertion(() =>
         {
-            Assert.Contains("Trailing stops enabled", cut.Markup, StringComparison.Ordinal);
-            Assert.Contains("Last confirmed: Enabled", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Trailing stops", cut.Find("dl.account-preferences-state").TextContent, StringComparison.Ordinal);
+            Assert.Contains("Last confirmed", cut.Find("dl.account-preferences-state").TextContent, StringComparison.Ordinal);
+            Assert.Contains("Enabled", cut.Find("dl.account-preferences-state").TextContent, StringComparison.Ordinal);
             Assert.NotEmpty(cut.FindAll("input[type='radio']"));
             Assert.DoesNotContain("data-testid=\"account-preferences-error\"", cut.Markup, StringComparison.Ordinal);
         });
@@ -243,10 +244,12 @@ public sealed class AccountPreferencesTests
         cut.FindAll("fieldset input[type='radio']")[0].Change(new ChangeEventArgs { Value = "true" });
         cut.WaitForAssertion(() =>
         {
-            Assert.Contains("Trailing stops enabled", cut.Markup, StringComparison.Ordinal);
-            Assert.Contains("Last confirmed: Disabled", cut.Markup, StringComparison.Ordinal);
-            Assert.Contains("Pending change: not yet confirmed", cut.Markup, StringComparison.Ordinal);
-            Assert.Equal("OK", cut.Find("[data-testid='account-preferences-application-status']").TextContent.Trim());
+            var state = cut.Find("dl.account-preferences-state").TextContent;
+            Assert.Contains("Trailing stops", state, StringComparison.Ordinal);
+            Assert.Contains("Last confirmed", state, StringComparison.Ordinal);
+            Assert.Contains("Disabled", state, StringComparison.Ordinal);
+            Assert.DoesNotContain("Enabled", state, StringComparison.Ordinal);
+            Assert.True(cut.FindAll("fieldset input[type='radio']")[0].HasAttribute("checked"));
         });
     }
 
@@ -267,13 +270,11 @@ public sealed class AccountPreferencesTests
             Assert.Equal("status", confirmation.GetAttribute("role"));
             Assert.Equal("true", confirmation.GetAttribute("aria-atomic"));
             Assert.Contains("saved and confirmed", confirmation.TextContent, StringComparison.Ordinal);
-            Assert.Equal("Applied", cut.Find("[data-testid='account-preferences-application-status']").TextContent.Trim());
         });
         cut.Find("[data-testid='account-preferences-confirmation'] button").Click();
         cut.WaitForAssertion(() =>
         {
             Assert.DoesNotContain("account-preferences-confirmation", cut.Markup, StringComparison.Ordinal);
-            Assert.Equal("Applied", cut.Find("[data-testid='account-preferences-application-status']").TextContent.Trim());
             Assert.Contains(context.JSInterop.Invocations, invocation => invocation.Identifier.Contains("focus", StringComparison.OrdinalIgnoreCase));
         });
     }
@@ -314,7 +315,8 @@ public sealed class AccountPreferencesTests
 
         cut.WaitForAssertion(() => Assert.Contains(context.ApiHandler.Requests,
             request => request.Content is not null &&
-                JsonSerializer.Deserialize<Dictionary<string, bool>>(request.Content)!.Single().Value == bool.Parse(expectedJsonValue)));
+                JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(request.Content)!.Values.Any(value => value.ValueKind == JsonValueKind.True || value.ValueKind == JsonValueKind.False) &&
+                JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(request.Content)!.TryGetValue("trailingStopsEnabled", out var value) && value.GetBoolean() == bool.Parse(expectedJsonValue)));
     }
 
     /// <summary>Trace: FR3, SR1. Verifies saving disables the complete Boolean fieldset and Save action while the provider update is in flight.</summary>

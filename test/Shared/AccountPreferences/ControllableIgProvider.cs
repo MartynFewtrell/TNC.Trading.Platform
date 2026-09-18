@@ -11,18 +11,21 @@ public sealed class ControllableIgProvider : IAsyncDisposable
     private readonly object sync = new();
     private readonly Task serverTask;
     private readonly Uri baseUri;
+    private readonly string accountId;
     private bool available = true;
     private bool preference;
     private int delayMilliseconds;
 
-    private ControllableIgProvider(HttpListener listener, Uri baseUri)
+    private ControllableIgProvider(HttpListener listener, Uri baseUri, string accountId)
     {
         this.listener = listener;
         this.baseUri = baseUri;
+        this.accountId = accountId;
         serverTask = ProcessRequestsAsync();
     }
 
     public Uri BaseUri => baseUri;
+    public string AccountId => accountId;
     public bool Preference { get { lock (sync) return preference; } set { lock (sync) preference = value; } }
     public bool Available { get { lock (sync) return available; } set { lock (sync) available = value; } }
     public int DelayMilliseconds { get { lock (sync) return delayMilliseconds; } set { lock (sync) delayMilliseconds = value; } }
@@ -33,13 +36,26 @@ public sealed class ControllableIgProvider : IAsyncDisposable
         lock (sync) requests.Clear();
     }
 
-    public static ControllableIgProvider Start()
+    public void Reset()
     {
-        return Start(() => Random.Shared.Next(40_000, 60_000));
+        lock (sync)
+        {
+            available = true;
+            preference = false;
+            delayMilliseconds = 0;
+            requests.Clear();
+        }
     }
 
-    internal static ControllableIgProvider Start(Func<int> candidatePortSelector)
+    public static ControllableIgProvider Start(string accountId = "configured-demo-session")
     {
+        return Start(() => Random.Shared.Next(40_000, 60_000), accountId);
+    }
+
+    internal static ControllableIgProvider Start(Func<int> candidatePortSelector, string accountId = "configured-demo-session")
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(accountId);
+
         for (var attempt = 0; attempt < 20; attempt++)
         {
             var listener = new HttpListener();
@@ -49,7 +65,7 @@ public sealed class ControllableIgProvider : IAsyncDisposable
             try
             {
                 listener.Start();
-                return new ControllableIgProvider(listener, baseUri);
+                return new ControllableIgProvider(listener, baseUri, accountId);
             }
             catch (HttpListenerException)
             {
@@ -105,6 +121,11 @@ public sealed class ControllableIgProvider : IAsyncDisposable
         var responseBytes = Encoding.UTF8.GetBytes(response.Body);
         context.Response.StatusCode = response.StatusCode;
         context.Response.ContentType = "application/json";
+        if (response.Headers is not null)
+        {
+            foreach (var header in response.Headers)
+                context.Response.Headers[header.Key] = header.Value;
+        }
         context.Response.ContentLength64 = responseBytes.Length;
         await context.Response.OutputStream.WriteAsync(responseBytes, cancellationToken);
         context.Response.Close();
@@ -122,9 +143,9 @@ public sealed class ControllableIgProvider : IAsyncDisposable
 
             return requestName switch
             {
-                "POST /gateway/deal/session" => new ProviderResponse(200, "{\"lightstreamerEndpoint\":\"https://stream.test\"}", delayMilliseconds),
-                "GET /gateway/deal/preferences" => new ProviderResponse(200, PreferenceBody(), delayMilliseconds),
-                "PUT /gateway/deal/preferences" => UpdatePreference(requestBody),
+                "POST /gateway/deal/session" => SessionResponse(),
+                "GET /gateway/deal/accounts/preferences" => new ProviderResponse(200, PreferenceBody(), delayMilliseconds),
+                "PUT /gateway/deal/accounts/preferences" => UpdatePreference(requestBody),
                 _ => new ProviderResponse(404, "{}", delayMilliseconds)
             };
         }
@@ -133,10 +154,20 @@ public sealed class ControllableIgProvider : IAsyncDisposable
     private ProviderResponse UpdatePreference(string requestBody)
     {
         preference = requestBody.Contains("true", StringComparison.OrdinalIgnoreCase);
-        return new ProviderResponse(200, PreferenceBody(), delayMilliseconds);
+        return new ProviderResponse(200, "{\"status\":\"SUCCESS\"}", delayMilliseconds);
     }
 
-    private string PreferenceBody() => $"{{\"enabled\":{preference.ToString().ToLowerInvariant()}}}";
+    private ProviderResponse SessionResponse() => new(
+        200,
+        $"{{\"currentAccountId\":\"{accountId}\"}}",
+        delayMilliseconds,
+        new Dictionary<string, string>
+        {
+            ["CST"] = "test-cst",
+            ["X-SECURITY-TOKEN"] = "test-security-token"
+        });
 
-    private sealed record ProviderResponse(int StatusCode, string Body, int DelayMilliseconds);
+    private string PreferenceBody() => $"{{\"trailingStopsEnabled\":{preference.ToString().ToLowerInvariant()}}}";
+
+    private sealed record ProviderResponse(int StatusCode, string Body, int DelayMilliseconds, IReadOnlyDictionary<string, string>? Headers = null);
 }

@@ -25,8 +25,9 @@ public sealed class AccountPreferencesEndpointTests
     {
         var result = await UpdateAccountPreferencesEndpointHandler.HandleAsync(
             new UpdateAccountPreferencesHttpRequest(null),
-            new UpdateAccountPreferencesValidator(),
+            new System.Security.Claims.ClaimsPrincipal(),
             null!,
+            new DefaultHttpContext(),
             CancellationToken.None);
 
         Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.ValidationProblem>(result);

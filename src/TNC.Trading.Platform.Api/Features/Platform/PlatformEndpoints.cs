@@ -57,9 +57,7 @@ internal static class PlatformEndpoints
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
         platform.MapGet("/account-preferences/observations", GetAccountPreferencesObservationsAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
-        platform.MapPost("/account-preferences/verification-retry", RetryAccountPreferencesVerificationAsync)
-            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
-        platform.MapPost("/account-preferences/remediation", RemediateAccountPreferencesAsync)
+        platform.MapPost("/account-preferences/check-status", CheckAccountPreferencesStatusAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
         platform.MapGet("/auth/administration", GetAuthAdministration)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Administrator);
@@ -67,12 +65,6 @@ internal static class PlatformEndpoints
         app.MapGet("/metadata", GetMetadata)
             .AllowAnonymous();
     }
-
-    private static async Task<IResult> RetryAccountPreferencesVerificationAsync(RetryAccountPreferencesHttpRequest request, AppAccountPreferences.ReconcileAccountPreferencesHandler handler, CancellationToken cancellationToken)
-        => await RetryAccountPreferencesVerificationEndpointHandler.HandleAsync(request, handler, cancellationToken);
-
-    private static async Task<IResult> RemediateAccountPreferencesAsync(RemediateAccountPreferencesHttpRequest request, AppAccountPreferences.RemediateAccountPreferencesHandler handler, CancellationToken cancellationToken)
-        => await RemediateAccountPreferencesEndpointHandler.HandleAsync(request, handler, cancellationToken);
 
     private static IResult GetRootAsync(IHostEnvironment environment)
         => GetMetadata(environment);
@@ -144,10 +136,26 @@ internal static class PlatformEndpoints
 
     private static async Task<IResult> UpdateAccountPreferencesAsync(
         UpdateAccountPreferencesHttpRequest request,
-        AppAccountPreferences.UpdateAccountPreferencesValidator validator,
-        AppAccountPreferences.UpdateAccountPreferencesHandler handler,
+        ClaimsPrincipal user,
+        AppAccountPreferences.SaveAccountPreferencesHandler handler,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
-        => await UpdateAccountPreferencesEndpointHandler.HandleAsync(request, validator, handler, cancellationToken);
+        => await UpdateAccountPreferencesEndpointHandler.HandleAsync(request, user, handler, httpContext, cancellationToken);
+
+    private static async Task<IResult> CheckAccountPreferencesStatusAsync(
+        AppAccountPreferences.CheckAccountPreferencesStatusHandler handler,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(new AppAccountPreferences.CheckAccountPreferencesStatusCommand(), httpContext.TraceIdentifier, cancellationToken);
+        return result.State is { } state
+            ? TypedResults.Ok((result.FailureCategory is not null
+                ? state with { FailureSummary = result.SafeReason }
+                : state).ToResponse())
+            : result.FailureCategory is { } category
+                ? AccountPreferencesEndpointMapping.ToProblemResult(category, result.SafeReason)
+                : TypedResults.Problem(statusCode: 503, title: "Account preferences check is unavailable.");
+    }
 
     private static async Task<IResult> GetAccountPreferencesObservationsAsync(
         int? pageSize,

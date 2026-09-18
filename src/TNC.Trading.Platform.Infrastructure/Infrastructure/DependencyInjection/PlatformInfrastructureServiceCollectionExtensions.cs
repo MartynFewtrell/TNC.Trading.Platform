@@ -94,6 +94,7 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         services.AddScoped<EfTrailingStopsPreferenceObservationStore>();
         services.AddScoped<ITrailingStopsPreferenceObservationStore>(provider => provider.GetRequiredService<EfTrailingStopsPreferenceObservationStore>());
         services.AddScoped<IAccountPreferencesCurrentStateStore, EfAccountPreferencesCurrentStateStore>();
+        services.AddScoped<IAccountPreferencesOperationStore, EfAccountPreferencesOperationStore>();
         services.AddScoped<IAccountPreferencesReconciliationLease, SqlAccountPreferencesReconciliationLease>();
         services.AddScoped<IAccountDetailsRefreshLease, SqlAccountDetailsRefreshLease>();
         services.AddHttpClient<IAccountDetailsGateway, IgAccountDetailsGateway>(client =>

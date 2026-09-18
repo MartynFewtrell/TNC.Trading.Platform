@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
 using TNC.Trading.Platform.Application.Features.AccountPreferences;
 
@@ -5,15 +6,16 @@ namespace TNC.Trading.Platform.Api.Features.Platform;
 
 internal static class UpdateAccountPreferencesEndpointHandler
 {
-    public static async Task<IResult> HandleAsync(UpdateAccountPreferencesHttpRequest request, UpdateAccountPreferencesValidator validator, UpdateAccountPreferencesHandler handler, CancellationToken cancellationToken)
+    public static async Task<IResult> HandleAsync(UpdateAccountPreferencesHttpRequest request, ClaimsPrincipal user, SaveAccountPreferencesHandler handler, HttpContext httpContext, CancellationToken cancellationToken)
     {
-        var errors = validator.Validate(new UpdateAccountPreferencesRequest(request.TrailingStopsEnabled, Actor: request.Actor, TargetAccountId: request.AccountId));
-        if (errors.Count > 0)
-        {
-            return TypedResults.ValidationProblem(new Dictionary<string, string[]> { [nameof(request.TrailingStopsEnabled)] = errors.ToArray() });
-        }
+        if (request.TrailingStopsEnabled is null)
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]> { [nameof(request.TrailingStopsEnabled)] = ["A trailing-stops value is required."] });
+        if (!httpContext.Request.Headers.TryGetValue("Idempotency-Key", out var idempotencyKey) || string.IsNullOrWhiteSpace(idempotencyKey))
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["Idempotency-Key"] = ["An Idempotency-Key header is required."] });
 
-        var result = await handler.HandleAsync(new UpdateAccountPreferencesRequest(request.TrailingStopsEnabled, Actor: request.Actor, TargetAccountId: request.AccountId), cancellationToken);
-        return result.Outcome.ToHttpResult();
+        var result = await handler.HandleAsync(
+            new SaveAccountPreferencesCommand(request.TrailingStopsEnabled.Value, request.ExpectedRevision, idempotencyKey.ToString()),
+            PlatformAuthAuditEventResolver.ResolveUserName(user), httpContext.TraceIdentifier, cancellationToken);
+        return result.ToSaveHttpResult();
     }
 }

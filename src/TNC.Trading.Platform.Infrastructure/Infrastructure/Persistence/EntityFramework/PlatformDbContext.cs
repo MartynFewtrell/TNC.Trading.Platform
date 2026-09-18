@@ -31,6 +31,7 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
     internal DbSet<TrailingStopsPreferenceObservationEntity> TrailingStopsPreferenceObservations => Set<TrailingStopsPreferenceObservationEntity>();
     internal DbSet<AccountPreferencesCurrentStateEntity> AccountPreferencesCurrentStates => Set<AccountPreferencesCurrentStateEntity>();
     internal DbSet<AccountPreferencesDesiredStateAuditEntity> AccountPreferencesDesiredStateAudits => Set<AccountPreferencesDesiredStateAuditEntity>();
+    internal DbSet<AccountPreferencesOperationEntity> AccountPreferencesOperations => Set<AccountPreferencesOperationEntity>();
 
     internal DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
@@ -187,6 +188,19 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.Property(item => item.Actor).HasMaxLength(128).IsRequired();
             entity.Property(item => item.ChangeType).HasMaxLength(64).IsRequired();
             entity.Property(item => item.CorrelationId).HasMaxLength(64).IsRequired();
+        });
+
+        modelBuilder.Entity<AccountPreferencesOperationEntity>(entity =>
+        {
+            entity.HasKey(item => item.AccountPreferencesOperationId);
+            entity.HasIndex(item => new { item.PlatformEnvironment, item.BrokerEnvironment, item.IdempotencyKey }).IsUnique();
+            entity.Property(item => item.IdempotencyKey).HasMaxLength(128).IsRequired();
+            entity.Property(item => item.PlatformEnvironment).HasMaxLength(32).IsRequired();
+            entity.Property(item => item.BrokerEnvironment).HasMaxLength(32).IsRequired();
+            entity.Property(item => item.AccountId).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.Actor).HasMaxLength(128).IsRequired();
+            entity.Property(item => item.CorrelationId).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.Phase).HasMaxLength(32).IsRequired();
         });
 
         modelBuilder.Entity<AccountDetailsAccountEntity>(entity =>

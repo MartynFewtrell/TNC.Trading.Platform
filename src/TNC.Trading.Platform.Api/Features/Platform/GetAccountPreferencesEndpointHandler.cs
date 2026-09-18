@@ -12,7 +12,7 @@ internal static class GetAccountPreferencesEndpointHandler
         {
             AccountPreferencesQueryState.Unconfigured => AccountPreferencesEndpointMapping.ToUnconfiguredResponse(),
             AccountPreferencesQueryState.Configured configured => TypedResults.Ok(configured.State.ToResponse()),
-            _ => result.Outcome.ToHttpResult()
+            _ => result.Outcome.ToGatewayHttpResult()
         };
     }
 }

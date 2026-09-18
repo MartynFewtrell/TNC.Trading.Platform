@@ -196,21 +196,21 @@ The following capabilities are planned at the product level but are not implemen
 
 The Account Preferences vertical slice separates durable operator intent from
 external observation. The current-state store owns the desired Boolean,
-configured account, revision, status, retry metadata, and last observed value.
-The reconciler owns account-bound observe-only verification and durable due
-work. A separate remediation handler owns the explicit revision-bound provider
-write workflow.
+configured account, revision, status, retry metadata, and last confirmed value.
+The SQL projection is read without contacting IG. Explicit application
+commands own IG-first save and body-free Check status compare-and-converge.
+The operation store owns recovery across the IG-to-SQL boundary.
 
-Application handlers depend on inward-owned state, gateway, lease, and nudge
-ports. Infrastructure supplies the SQL current-state and audit stores, SQL
-lease, IG HTTP adapter, and retained observation history. API translates the
-contracts to protected HTTP routes; Web renders desired and observed values
-independently. The SQL-only current-state query remains available when IG is
-unavailable.
+Application handlers depend on inward-owned state, gateway, lease, journal,
+and login-snapshot ports. Infrastructure supplies the SQL current-state,
+audit, journal, and observation stores, SQL lease, IG HTTP adapter, and login
+snapshot store. API translates the contracts to protected HTTP routes; Web
+renders the desired and last confirmed values independently and applies each
+returned projection.
 
 New and migrated installations begin `Unconfigured`; observations are never
-promoted into desired intent. Verification records `InSync`, `Drifted`,
-`VerificationFailed`, or `Unsupported` and schedules bounded retries for
-recoverable failures. It is triggered after usable authentication, desired
-state changes, manual retry, and supervisor due-work processing. No current
-workflow places trades.
+promoted into desired intent. Save preferences derives account and actor from
+server-side context, confirms the requested value through IG, then persists
+the complete local projection. Check status observes IG and converges it to
+the persisted desired value. Failures preserve desired intent and expose a
+bounded safe warning. No current workflow places trades.

@@ -19,7 +19,7 @@ public sealed class RealAuthenticationE2ETestFixture : IAsyncLifetime
             managedFixture = new ManagedAppHostFixture(new Dictionary<string, string?>
             {
                 ["AppHost:UsePersistentKeycloakState"] = bool.FalseString,
-                ["Ig:AccountPreferencesBaseUrl"] = provider.BaseUri.ToString(),
+                ["Ig:AccountPreferencesBaseUrl"] = new Uri(provider.BaseUri, "gateway/deal/").ToString(),
                 ["Authentication:Test:EnableInteractiveSignIn"] = bool.FalseString
             });
             await managedFixture.InitializeAsync();
@@ -31,6 +31,10 @@ public sealed class RealAuthenticationE2ETestFixture : IAsyncLifetime
             throw;
         }
     }
+
+    public Task ResetAccountPreferencesAsync() =>
+        managedFixture?.ResetAccountPreferencesAsync(Provider.AccountId)
+        ?? throw new InvalidOperationException("The test fixture has not been initialized.");
 
     public async Task DisposeAsync()
     {

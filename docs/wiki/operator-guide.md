@@ -568,16 +568,21 @@ To populate history, a successful IG login must occur during an active trading-s
 shows `Live trailing stops control for the configured account.` The page states
 that the control does not authorize real orders or monetary exposure.
 
-Initial load reads SQL state. The page labels the operator value `Desired setting` and the external fact `Last observed at IG`, with verification status and retry information beside them. Saving commits desired state and shows `Pending` while background verification runs; it does not wait for a provider read. `InSync`, `Drifted`, `VerificationFailed`, and `Unsupported` remain distinct states.
+Initial load reads SQL state. The settings view is headed `Trailing stops`, shows
+the desired value and `Last confirmed`, and places durable warnings directly
+under the heading. `Check status` is the explicit command for comparing and
+converging IG with the persisted desired value. The configuration view is named
+`Trailing stops configuration` and presents the Enabled and Disabled choices
+with `Save preferences`.
 
-If the initial preference load fails, the page does not expose an editable
-default Boolean or a Save action. Save confirmation is a persistent,
-dismissible status message separate from application status. Dismissing the
-confirmation restores focus to the Save action. A confirmed save with a
-history refresh failure reports `Trailing stops preference saved and
-confirmed. Observed history could not be refreshed.` The separate history
-section remains read-only evidence of verified reads and confirmed updates,
-never a cached live value.
+Save preferences changes IG before the local projection is confirmed. A
+successful response refreshes the returned projection without a page reload.
+The server owns the account and actor; the browser cannot nominate either.
+Indeterminate save outcomes show a safe error such as `Save outcome unknown`.
+Check status repairs detected drift when possible and otherwise preserves the
+desired value while showing a red durable warning. The separate `Observed
+history` view remains read-only evidence of successful checks, recoveries, and
+confirmed saves, never a cached live value.
 
 History is bounded and keyset-paged with an opaque cursor. Equal values remain
 separate observations, while failed or unknown provider outcomes are not shown

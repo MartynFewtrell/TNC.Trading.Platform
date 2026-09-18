@@ -25,10 +25,22 @@ public sealed class ControllableIgProviderTests
         await using var provider = ControllableIgProvider.Start(() => candidatePorts[candidateIndex++]);
 
         using var httpClient = new HttpClient();
-        var response = await httpClient.GetAsync(new Uri(provider.BaseUri, "gateway/deal/preferences"));
+        var response = await httpClient.GetAsync(new Uri(provider.BaseUri, "gateway/deal/accounts/preferences"));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("{\"enabled\":false}", await response.Content.ReadAsStringAsync());
+        Assert.Equal("{\"trailingStopsEnabled\":false}", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Start_ShouldReturnConfiguredSessionAccount_WhenSessionIsRequested()
+    {
+        await using var provider = ControllableIgProvider.Start("configured-test-account");
+        using var httpClient = new HttpClient();
+
+        using var response = await httpClient.PostAsync(new Uri(provider.BaseUri, "gateway/deal/session"), null);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("\"currentAccountId\":\"configured-test-account\"", await response.Content.ReadAsStringAsync());
     }
 
     private static int GetFreePort()

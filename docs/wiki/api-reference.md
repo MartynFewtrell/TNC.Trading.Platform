@@ -550,13 +550,13 @@ In development, the API also exposes:
 
 ## Account Preferences
 
-Account Preferences is an Operator-only control for the configured IG Test account. SQL owns durable desired state; IG supplies account-bound observed state during asynchronous verification. The feature does not authorize real orders or monetary exposure, and Live is rejected before provider I/O.
+Account Preferences is an Operator-only control for the configured IG Test account. SQL owns the durable projection and IG supplies the account-bound confirmed value. The feature does not authorize real orders or monetary exposure, and Live is rejected before provider I/O.
 
-`GET /api/platform/account-preferences` is a SQL-only projection returning desired state, target account, desired revision, verification status, last verified time, retry metadata, and a secret-safe failure summary. Statuses are `Unconfigured`, `Pending`, `InSync`, `Drifted`, `VerificationFailed`, and `Unsupported`. Legacy `trailingStopsEnabled` and `applicationStatus` aliases remain during migration.
+`GET /api/platform/account-preferences` is a SQL-only projection. It returns desired and observed values, server-owned account identifiers, desired revision, verification status, last verification time, retry metadata, and a secret-safe failure summary. Statuses are `Unconfigured`, `Pending`, `InSync`, `VerificationFailed`, and `Unsupported`; `Drifted` is an intermediate condition during Check status. Legacy `trailingStopsEnabled` and `applicationStatus` aliases remain in the response.
 
-`PUT /api/platform/account-preferences` commits the desired value and target account to SQL, records audit atomically, advances the revision, and returns `200 OK` with `Pending` verification. It does not wait for IG.
+`PUT /api/platform/account-preferences` requires an `Idempotency-Key` header and accepts only `trailingStopsEnabled` and optional `expectedRevision` in the body. The server derives the target account from the latest IG login snapshot and the audit actor from authenticated claims. It performs an account-bound IG read, conditional write when needed, and confirming readback before atomically persisting the desired state, audit, confirmed observation, projection, and journal completion. A matching repeated key replays the operation; incompatible reuse returns `409`.
 
-`POST /api/platform/account-preferences/verification-retry` requests an authorized verification attempt. `POST /api/platform/account-preferences/remediation` requires the target account and desired revision and performs one account-bound GET, at most one PUT, and a confirming GET in the same session. Stale revisions return `409`; drift is warned by default and never repaired automatically.
+`POST /api/platform/account-preferences/check-status` has no request body. It compares the persisted desired value with IG, updates IG when they differ, confirms the result, and returns the refreshed SQL projection. It can recover an earlier `RemoteApplied` save journal entry before comparing state. Stale revisions, account mismatch, and lease contention return `409`; an indeterminate save returns `503` with `Save outcome unknown`. A processed provider failure returns `200` with `VerificationFailed` and a safe warning in the projection.
 The live routes map invalid input to `400`, recognized IG allowance exhaustion
 to `429`, malformed provider data to `502`, provider rejection/unavailability
 to `503`, and timeout to `504`. History returns `400` for invalid page size or

@@ -23,6 +23,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\Shared\AccountPreferences\ControllableIgProvider.cs" Link="Shared\AccountPreferences\ControllableIgProvider.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\..\src\TNC.Trading.Platform.Infrastructure\TNC.Trading.Platform.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\src\TNC.Trading.Platform.ServiceDefaults\TNC.Trading.Platform.ServiceDefaults.csproj" />
   </ItemGroup>

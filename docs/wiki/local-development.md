@@ -144,22 +144,24 @@ If the **IG login** accordion shows a failed state, check that the credentials a
 ## Trailing-stops validation boundaries
 
 The Account Preferences page presents the configured broker `Test` environment.
-It reads desired state from SQL while account-bound verification observes IG
-asynchronously. Apply the EF migration that creates
-`AccountPreferencesCurrentStates` and its desired-state audit table before
-testing. New and migrated rows begin `Unconfigured`; do not seed desired intent
-from retained observations.
+It reads the projection from SQL and performs IG effects only through Save
+preferences and Check status. Apply the EF migration that creates
+`AccountPreferencesCurrentStates`, its desired-state audit table, and the
+account-preferences operation journal before testing. New and migrated rows
+begin `Unconfigured`; do not seed desired intent from retained observations.
 The stored provider key may remain the legacy `Demo` value so historical
 partitions retain their lineage. This presentation mapping does not migrate or
 rewrite existing observations.
 
-Trailing-stops verification uses the typed `trailingStopsEnabled` provider
-property. Set `Ig:AccountPreferencesBaseUrl` to the WireMock provider double to
-exercise success, mismatch, timeout, malformed response, and account-mismatch
-scenarios. The API starts and serves the SQL projection while the provider is
-unavailable. Use verification retry for recovery and revision-bound remediation
-for an explicit provider correction. Observation history is partitioned by
-platform and broker environment, and cursors cannot cross partitions. Retention is controlled by
+The controllable provider uses the production adapter contract: `GET` and `PUT`
+`/gateway/deal/accounts/preferences`, the `trailingStopsEnabled` property, and
+the session response and headers expected by the adapter. Set
+`Ig:AccountPreferencesBaseUrl` to the provider double to exercise confirmed
+IG-first saves, idempotent replay, body-free Check status, drift convergence,
+account mismatch, unavailable-provider warnings, and `RemoteApplied` recovery.
+The API still serves the SQL projection while the provider is unavailable.
+Observation history is partitioned by platform and broker environment, and
+cursors cannot cross partitions. Retention is controlled by
 `Retention:OperationalRecordsDays`, with the 90-day default when the setting is
 missing or non-positive.
 

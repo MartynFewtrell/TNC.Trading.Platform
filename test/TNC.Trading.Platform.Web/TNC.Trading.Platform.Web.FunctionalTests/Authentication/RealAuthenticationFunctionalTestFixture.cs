@@ -5,6 +5,7 @@ namespace TNC.Trading.Platform.Web.FunctionalTests.Authentication;
 
 public sealed class RealAuthenticationFunctionalTestFixture : IAsyncLifetime
 {
+    public const string TestAccountId = "configured-demo-session";
     private ManagedAppHostFixture? managedFixture;
     private ControllableIgProvider? provider;
 
@@ -13,14 +14,18 @@ public sealed class RealAuthenticationFunctionalTestFixture : IAsyncLifetime
     public Uri TokenEndpoint { get; private set; } = null!;
     public ControllableIgProvider Provider => provider ?? throw new InvalidOperationException("The test fixture has not been initialized.");
 
+    public Task ResetAccountPreferencesAsync(CancellationToken cancellationToken = default) =>
+        managedFixture?.ResetAccountPreferencesAsync(TestAccountId, cancellationToken)
+        ?? throw new InvalidOperationException("The test fixture has not been initialized.");
+
     public async Task InitializeAsync()
     {
         try
         {
-            provider = ControllableIgProvider.Start();
+            provider = ControllableIgProvider.Start(TestAccountId);
             managedFixture = new ManagedAppHostFixture(new Dictionary<string, string?>
             {
-                ["Ig:AccountPreferencesBaseUrl"] = provider.BaseUri.ToString(),
+                ["Ig:AccountPreferencesBaseUrl"] = new Uri(provider.BaseUri, "gateway/deal/").ToString(),
                 ["AppHost:UsePersistentKeycloakState"] = bool.FalseString,
                 ["Authentication:Test:EnableInteractiveSignIn"] = bool.FalseString
             });

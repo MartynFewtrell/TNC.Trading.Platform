@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.AccountPreferences;
 using TNC.Trading.Platform.Api.Features.Platform;
@@ -77,6 +78,21 @@ public sealed class AccountPreferencesEndpointMappingTests
             new AccountPreferencesGatewayOutcome.Succeeded(preferences).ToHttpResult());
         Assert.Equal(preferences.TrailingStopsEnabled, result.Value!.TrailingStopsEnabled);
         Assert.Equal("InSync", result.Value.ApplicationStatus);
+    }
+
+    /// <summary>Trace: account-preferences migrated client contract. Verifies Check and Save projections serialize the persisted desired trailing-stops value under its canonical JSON name.</summary>
+    [Fact]
+    public void ToResponse_ShouldSerializeDesiredTrailingStopsValue_WhenStateIsProjected()
+    {
+        var state = new AccountPreferencesCurrentState(
+            Guid.NewGuid(), PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, "IG-ACCOUNT", true, 4,
+            "operator", DateTimeOffset.UtcNow, true, "IG-ACCOUNT", DateTimeOffset.UtcNow, null, null,
+            AccountPreferencesVerificationStatus.InSync, DateTimeOffset.UtcNow, null, 0, null, "correlation", []);
+
+        var json = JsonSerializer.Serialize(state.ToResponse());
+
+        using var document = JsonDocument.Parse(json);
+        Assert.True(document.RootElement.GetProperty("desiredTrailingStopsEnabled").GetBoolean());
     }
 
     /// <summary>Trace: Phase 5.1. Verifies legacy Demo storage is presented externally as Test for account-preferences history.</summary>

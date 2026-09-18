@@ -14,7 +14,7 @@ internal sealed class AccountPreferencesPageViewModel
     public string? FailureSummary { get; private set; }
     public string VerificationStatus { get; private set; } = "Unconfigured";
     public bool? ConfirmedTrailingStopsEnabled { get; private set; }
-    public bool HasConfirmedValue => DesiredTrailingStopsEnabled.HasValue;
+    public bool HasConfirmedValue => ConfirmedTrailingStopsEnabled.HasValue;
     public bool HasPendingChange => ConfirmedTrailingStopsEnabled is bool confirmed && TrailingStopsEnabled != confirmed;
     public string ApplicationStatus { get; private set; } = string.Empty;
     public DateTimeOffset ObservedAtUtc { get; private set; }

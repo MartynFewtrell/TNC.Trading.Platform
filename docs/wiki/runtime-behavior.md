@@ -728,21 +728,26 @@ flowchart TD
 ## Account Preferences authority and failure behavior
 
 Account Preferences is separate from Account Details. SQL owns the desired
-trailing-stops value and IG supplies an account-bound observation. The page and
-`GET /api/platform/account-preferences` read SQL only, so desired state remains
-available during IG failure.
+trailing-stops value and IG supplies the account-bound confirmed value. The page
+and `GET /api/platform/account-preferences` read SQL only, so the projection
+remains available during IG failure.
 
-An update commits desired state and audit, advances its revision, marks the row
-`Pending`, and nudges verification. Durable due work is processed after usable
-authentication and restart. Recoverable failures retry after 5 seconds, 30
-seconds, 2 minutes, and 10 minutes. Verification is observe-only and records
-`InSync`, `Drifted`, `VerificationFailed`, or `Unsupported`.
+Save preferences is IG-first. The server resolves the account from the latest
+IG login snapshot and the actor from authenticated claims, then performs the IG
+read, conditional write, and readback. After confirmation, one SQL transaction
+writes the desired state, audit, confirmed observation, `InSync` projection,
+and completed operation journal. The journal records `Started` and
+`RemoteApplied` so a timeout or SQL finalisation failure does not cause a blind
+second remote write. Check status can observe IG and recover a `RemoteApplied`
+operation before converging the persisted desired value.
 
-Explicit remediation is separate and revision-bound. It checks the account,
-performs one GET, at most one PUT, and a confirming GET in the same session.
-Account mismatch and stale revisions remain visible as safe failures. The SQL
-lease prevents competing replicas, while the revision guard prevents late work
-overwriting newer intent. A future order boundary must recheck fresh `InSync`
-evidence, desired revision, target account, and session generation after
-reauthentication, account changes, schedule exit, or expiry. The current
-product has no order submission, so startup verification is not trade readiness.
+Body-free Check status compares the persisted desired value with IG and repairs
+drift with one account-bound read, conditional write, and confirming readback.
+Successful checks return `InSync`; provider or account failures preserve local
+desired state and return a durable `VerificationFailed` warning with bounded
+retry metadata. The SQL lease prevents competing replicas, while the revision
+guard prevents late work overwriting newer intent. A future order boundary must
+recheck fresh `InSync` evidence, desired revision, target account, and session
+generation after reauthentication, account changes, schedule exit, or expiry.
+The current product has no order submission, so startup verification is not
+trade readiness.

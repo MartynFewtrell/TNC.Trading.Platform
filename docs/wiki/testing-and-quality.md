@@ -558,20 +558,26 @@ When extending the application, keep these areas protected:
 
 ## Account Preferences coverage
 
-Coverage verifies the SQL desired-state and IG observed-state split. Application
-tests cover status classification, revision guards, bounded retry timing,
-account mismatch, observe-only reconciliation, manual retry, and explicit
-remediation. Infrastructure SQL tests cover the current-state and audit
-migration, atomic commits, restart durability, leases, stale completion
+Coverage verifies the SQL projection and explicit IG command boundary.
+Application unit tests cover SQL-only GET behavior, IG-first save ordering,
+server-derived account and actor, idempotency replay and conflict, equal-value
+save, journal recovery, lease and revision guards, Check status equality,
+drift convergence, account mismatch, and safe failure classification.
+Infrastructure SQL integration tests cover the current-state, audit, history,
+and operation-journal migrations, unique idempotency keys, `RemoteApplied`
+recovery, atomic finalisation, restart durability, leases, stale completion
 protection, and account-bound observations.
 
-API tests cover the SQL-only GET, `Pending` update response, retry and
-remediation routes, authorization, stale revisions, and secret-safe Problem
-Details. The provider double is configured through
-`Ig:AccountPreferencesBaseUrl`, so closed-box tests prove convergence without
-contacting real IG. bUnit and Playwright coverage verifies desired and observed
-labels, status warnings, retry/remediation affordances, and independent
-display when IG is unavailable.
+API tests cover the SQL-only GET, minimal save body, required
+`Idempotency-Key`, body-free Check status, server-derived identity,
+authorization, `409` conflicts, `503` unknown saves, processed
+`VerificationFailed` projections, and secret-safe Problem Details. The
+provider double is configured through `Ig:AccountPreferencesBaseUrl`, so
+closed-box integration and functional tests prove provider sequences and
+convergence without contacting real IG. bUnit tests verify the rationalised
+labels and layout, warning placement, projection refresh, one Check status
+action, Save preferences state, confirmation dismissal, and initial-load
+failure behavior.
 
 Application tests cover Test-only policy, legacy Demo presentation, validation,
 typed failures, confirmed updates, indeterminate-write reconciliation,
@@ -592,8 +598,11 @@ dismissal, and safe handling of initial-load failure. They also retain coverage
 for disabled loading/save state, authorization, history paging, and
 cancellation on disposal.
 
-Distributed checks are bounded and retain diagnostics. Default automation does
-not contact the real IG service; real-IG verification remains operator-
-controlled manual evidence only. These bUnit tests do not prove browser
-behavior, responsive reflow, keyboard interaction, or assistive-technology
-behavior, which require separate manual validation.
+Playwright E2E tests own browser activation, state-fixture reset, Save
+preferences and Check status interaction, projection refresh, observed-history
+display, and the specified keyboard accessibility regression. Distributed
+checks are bounded and retain diagnostics. Default automation does not contact
+the real IG service; real-IG verification remains operator-controlled manual
+evidence only. bUnit tests do not prove browser behavior, responsive reflow,
+keyboard interaction, or assistive-technology behavior beyond the dedicated
+E2E coverage.

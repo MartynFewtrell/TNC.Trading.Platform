@@ -45,6 +45,8 @@ internal static class PlatformApplicationServiceCollectionExtensions
         services.AddScoped<GetAccountPreferencesHandler>();
         services.AddScoped<UpdateAccountPreferencesValidator>();
         services.AddScoped<UpdateAccountPreferencesHandler>();
+        services.AddScoped<SaveAccountPreferencesHandler>();
+        services.AddScoped<CheckAccountPreferencesStatusHandler>();
         services.AddScoped<ReconcileAccountPreferencesHandler>();
         services.AddScoped<IAccountPreferencesVerificationNudge, NudgeAccountPreferencesVerificationHandler>();
         services.AddScoped<RemediateAccountPreferencesHandler>();

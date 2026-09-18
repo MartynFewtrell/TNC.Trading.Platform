@@ -73,6 +73,7 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
             DROP TABLE IF EXISTS [TrailingStopsPreferenceObservations];
             DROP TABLE IF EXISTS [AccountPreferencesDesiredStateAudits];
             DROP TABLE IF EXISTS [AccountPreferencesCurrentStates];
+            DROP TABLE IF EXISTS [AccountPreferencesOperations];
             DROP TABLE IF EXISTS [OperationalEvents];
             DROP TABLE IF EXISTS [PlatformConfigurations];
             DROP TABLE IF EXISTS [ProtectedCredentials];

@@ -58,7 +58,7 @@ internal sealed class AccountPreferencesPagePresenter(PlatformApiClient platform
         Message = null;
         try
         {
-            State.Apply(await platformApiClient.UpdateAccountPreferencesAsync(State.TrailingStopsEnabled, cancellationToken));
+            State.Apply(await platformApiClient.UpdateAccountPreferencesAsync(State.TrailingStopsEnabled, State.DesiredRevision, Guid.NewGuid().ToString("N"), cancellationToken));
             Message = "Trailing stops preference saved and confirmed.";
             try
             {
@@ -94,21 +94,11 @@ internal sealed class AccountPreferencesPagePresenter(PlatformApiClient platform
         }
     }
 
-    public async Task RetryAsync(CancellationToken cancellationToken)
+    public async Task CheckStatusAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(State.AccountId)) return;
         IsOperating = true; CurrentError = null;
-        try { State.Apply(await platformApiClient.RetryAccountPreferencesVerificationAsync(State.AccountId, cancellationToken)); }
-        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException) { CurrentError = CreateErrorMessage("Unable to retry account preferences verification", exception); }
-        finally { IsOperating = false; }
-    }
-
-    public async Task RemediateAsync(CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(State.AccountId) || State.DesiredRevision is null) return;
-        IsOperating = true; CurrentError = null;
-        try { State.Apply(await platformApiClient.RemediateAccountPreferencesAsync(State.AccountId, State.DesiredRevision.Value, State.TrailingStopsEnabled, cancellationToken)); Message = "Account preferences remediation completed."; }
-        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException) { CurrentError = CreateErrorMessage("Unable to remediate account preferences", exception); }
+        try { State.Apply(await platformApiClient.CheckAccountPreferencesStatusAsync(cancellationToken)); }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException) { CurrentError = CreateErrorMessage("Unable to check account preferences status", exception); }
         finally { IsOperating = false; }
     }
 

@@ -1,5 +1,6 @@
 using Aspire.Hosting;
 using Aspire.Hosting.Testing;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 
 namespace TNC.Trading.Platform.TestShared.Authentication;
@@ -60,6 +61,61 @@ public sealed class ManagedAppHostFixture : IAsyncLifetime
     public HttpClient CreateApiClient() => CreateHttpClient("api", "https");
 
     public HttpClient CreateWebClient() => CreateHttpClient("web", "https");
+
+    public async Task ResetAccountPreferencesAsync(string sessionAccountId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionAccountId);
+        if (application is null)
+        {
+            throw new InvalidOperationException("The managed AppHost fixture has not been initialized.");
+        }
+
+        var connectionString = await application.GetConnectionStringAsync("platformdb", cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The managed AppHost fixture did not expose the platformdb connection string.");
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE [IgLoginSnapshots]
+            SET [CurrentAccountId] = @sessionAccountId
+            WHERE [BrokerEnvironment] = 'Demo';
+            DELETE FROM [TrailingStopsPreferenceObservations]
+            WHERE [PlatformEnvironment] = 'Test' AND [BrokerEnvironment] = 'Demo';
+            DELETE audit
+            FROM [AccountPreferencesDesiredStateAudits] AS audit
+            INNER JOIN [AccountPreferencesCurrentStates] AS state
+                ON state.[AccountPreferencesCurrentStateId] = audit.[AccountPreferencesCurrentStateId]
+            WHERE state.[PlatformEnvironment] = 'Test' AND state.[BrokerEnvironment] = 'Demo';
+            DELETE FROM [AccountPreferencesOperations]
+            WHERE [PlatformEnvironment] = 'Test' AND [BrokerEnvironment] = 'Demo';
+            UPDATE [AccountPreferencesCurrentStates]
+            SET [AccountId] = @sessionAccountId,
+                [DesiredTrailingStopsEnabled] = 0,
+                [DesiredRevision] = 1,
+                [DesiredActor] = 'test-fixture',
+                [DesiredChangedAtUtc] = SYSUTCDATETIME(),
+                [ObservedTrailingStopsEnabled] = 0,
+                [ObservedAccountId] = @sessionAccountId,
+                [ObservedAtUtc] = SYSUTCDATETIME(),
+                [AuthenticationSnapshotId] = NULL,
+                [AttemptId] = NULL,
+                [VerificationStatus] = 'InSync',
+                [LastVerifiedAtUtc] = SYSUTCDATETIME(),
+                [NextRetryAtUtc] = NULL,
+                [RetryCount] = 0,
+                [FailureSummary] = NULL,
+                [CorrelationId] = NULL
+            WHERE [PlatformEnvironment] = 'Test' AND [BrokerEnvironment] = 'Demo';
+            IF @@ROWCOUNT = 0
+            BEGIN
+                INSERT INTO [AccountPreferencesCurrentStates]
+                ([AccountPreferencesCurrentStateId], [PlatformEnvironment], [BrokerEnvironment], [AccountId], [DesiredTrailingStopsEnabled], [DesiredRevision], [DesiredActor], [DesiredChangedAtUtc], [ObservedTrailingStopsEnabled], [ObservedAccountId], [ObservedAtUtc], [VerificationStatus], [LastVerifiedAtUtc], [RetryCount])
+                VALUES (NEWID(), 'Test', 'Demo', @sessionAccountId, 0, 1, 'test-fixture', SYSUTCDATETIME(), 0, @sessionAccountId, SYSUTCDATETIME(), 'InSync', SYSUTCDATETIME(), 0);
+            END;
+            """;
+        command.Parameters.AddWithValue("@sessionAccountId", sessionAccountId);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     public Task WaitForResourceHealthyAsync(string resourceName, CancellationToken cancellationToken = default)
     {

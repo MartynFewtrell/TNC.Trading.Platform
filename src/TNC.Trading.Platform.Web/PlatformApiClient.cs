@@ -10,7 +10,10 @@ namespace TNC.Trading.Platform.Web;
 
 internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTokenProvider accessTokenProvider)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     public async Task<PlatformStatusViewModel> GetStatusAsync(CancellationToken cancellationToken)
     {
@@ -146,32 +149,24 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
             ?? throw new InvalidOperationException("Account preferences response was empty.");
     }
 
-    public async Task<AccountPreferencesViewModel> UpdateAccountPreferencesAsync(bool trailingStopsEnabled, CancellationToken cancellationToken)
+    public async Task<AccountPreferencesViewModel> UpdateAccountPreferencesAsync(bool trailingStopsEnabled, long? expectedRevision, string idempotencyKey, CancellationToken cancellationToken)
     {
         using var request = await CreateAuthorizedRequestAsync(HttpMethod.Put, "/api/platform/account-preferences", [PlatformAuthenticationDefaults.Scopes.Operator], cancellationToken);
-        request.Content = JsonContent.Create(new { TrailingStopsEnabled = trailingStopsEnabled }, options: JsonOptions);
+        request.Headers.Add("Idempotency-Key", idempotencyKey);
+        request.Content = JsonContent.Create(new { TrailingStopsEnabled = trailingStopsEnabled, ExpectedRevision = expectedRevision }, options: JsonOptions);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessStatusCodeAsync(response, cancellationToken);
         return await response.Content.ReadFromJsonAsync<AccountPreferencesViewModel>(JsonOptions, cancellationToken)
             ?? throw new InvalidOperationException("Updated account preferences response was empty.");
     }
 
-    public async Task<AccountPreferencesViewModel> RetryAccountPreferencesVerificationAsync(string accountId, CancellationToken cancellationToken)
+    public async Task<AccountPreferencesViewModel> CheckAccountPreferencesStatusAsync(CancellationToken cancellationToken)
     {
-        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Post, "/api/platform/account-preferences/verification-retry", [PlatformAuthenticationDefaults.Scopes.Operator], cancellationToken);
-        request.Content = JsonContent.Create(new { AccountId = accountId }, options: JsonOptions);
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Post, "/api/platform/account-preferences/check-status", [PlatformAuthenticationDefaults.Scopes.Operator], cancellationToken);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessStatusCodeAsync(response, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<AccountPreferencesViewModel>(JsonOptions, cancellationToken) ?? throw new InvalidOperationException("Verification retry response was empty.");
-    }
-
-    public async Task<AccountPreferencesViewModel> RemediateAccountPreferencesAsync(string accountId, long revision, bool trailingStopsEnabled, CancellationToken cancellationToken)
-    {
-        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Post, "/api/platform/account-preferences/remediation", [PlatformAuthenticationDefaults.Scopes.Operator], cancellationToken);
-        request.Content = JsonContent.Create(new { AccountId = accountId, DesiredRevision = revision, TrailingStopsEnabled = trailingStopsEnabled }, options: JsonOptions);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<AccountPreferencesViewModel>(JsonOptions, cancellationToken) ?? throw new InvalidOperationException("Remediation response was empty.");
+        return await response.Content.ReadFromJsonAsync<AccountPreferencesViewModel>(JsonOptions, cancellationToken)
+            ?? throw new InvalidOperationException("Verification retry response was empty.");
     }
 
     public async Task<AccountPreferencesHistoryViewModel> GetAccountPreferencesHistoryAsync(int pageSize, string? cursor, CancellationToken cancellationToken)
@@ -241,7 +236,8 @@ internal sealed record AccountPreferencesViewModel
     public string VerificationStatus { get; }
     public DateTimeOffset? LastVerifiedAtUtc { get; }
     public DateTimeOffset? NextRetryAtUtc { get; }
-    public string? FailureSummary { get; }
+    [JsonPropertyName("failureSummary")]
+    public string? FailureSummary { get; init; }
     public bool? TrailingStopsEnabled { get; }
     public string ApplicationStatus { get; }
 }

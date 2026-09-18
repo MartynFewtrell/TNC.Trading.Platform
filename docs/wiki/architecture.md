@@ -600,22 +600,24 @@ This keeps audit persistence on the server side and avoids exposing secrets or d
 ## Account Preferences boundary
 
 Application owns the Account Preferences operation contracts, Test-only guard,
-desired-state policy, comparison rules, typed provider outcomes, and
-observation model. SQL owns durable operator intent; IG supplies observed
-external fact. API and Web are inbound adapters; Infrastructure implements the
-current-state, audit, lease, observation, and account-bound IG ports.
+desired-state policy, comparison and convergence rules, typed provider
+outcomes, operation journal contract, and observation model. SQL owns the
+durable projection and journal; IG supplies the account-bound external fact.
+API and Web are inbound adapters; Infrastructure implements the current-state,
+audit, lease, journal, observation, login-snapshot, and account-bound IG ports.
 
-The update path commits desired state and audit atomically, advances the desired
-revision, marks verification `Pending`, and returns without provider I/O.
-Observe-only reconciliation binds results to the configured account, desired
-revision, attempt identifier, and observation time. A mismatch becomes
-`Drifted`; unavailable or malformed responses become `VerificationFailed` or
-`Unsupported`. A SQL lease and revision guard protect replicas and late work.
+The SQL-only GET is a projection query. Save preferences resolves account and
+actor on the server, uses the account lease and revision guard, performs IG
+read/conditional-write/readback, and finalises desired state, audit, confirmed
+observation, projection, and journal in one SQL transaction. Check status uses
+the same lease and revision boundaries to compare and converge IG. A durable
+`RemoteApplied` journal phase supports recovery after remote confirmation but
+before SQL finalisation.
 
-Explicit remediation requires authorization for the same desired revision. It
-performs an initial GET, at most one PUT, and a confirming GET in one
-account-bound session. Account mismatch and stale revision are rejected;
-automatic drift repair and blind PUT retries are prohibited.
+Account mismatch, stale revision, and lease contention are rejected before
+provider I/O where applicable. Provider failures become typed safe warnings;
+blind remote-write retries are prohibited. Successful observations are stored
+in append-only history with the desired revision and correlation context.
 
 When order submission is implemented, its application boundary must fail
 closed unless verification is fresh, `InSync`, and bound to the same desired
