@@ -107,6 +107,86 @@ public sealed class AccountPreferencesTests
     }
 
     /// <summary>
+    /// Trace: Account Preferences UI Clarity. Verifies the initial Settings tab is named and selected, exposes the state definition-list hierarchy, and retains native Boolean radio semantics.
+    /// Expected: the Settings tab is selected, the history panel is inactive, and each state term has a corresponding description.
+    /// Why: the safety-sensitive workflow must be immediately understandable without coupling the test to incidental styling classes.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldShowSettingsInformationArchitecture_WhenInitialLoadSucceeds()
+    {
+        using var context = new PlatformComponentTestContext("local-operator", null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(true)),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()));
+        var cut = context.RenderComponent<AccountPreferences>();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Equal(["Settings", "Observed history"], cut.FindAll("[role='tab']").Select(tab => tab.TextContent.Trim()).ToArray());
+            Assert.Equal("true", cut.FindAll("[role='tab']")[0].GetAttribute("aria-selected"));
+            Assert.Contains("Account preference views", cut.Markup, StringComparison.Ordinal);
+            Assert.Single(cut.FindAll("dl.account-preferences-state"));
+            Assert.Equal(5, cut.FindAll("dl.account-preferences-state dt").Count);
+            Assert.Equal(5, cut.FindAll("dl.account-preferences-state dd").Count);
+            Assert.Equal(2, cut.FindAll("fieldset.account-preferences-choice input[type='radio']").Count);
+            Assert.Equal(2, cut.FindAll("fieldset.account-preferences-choice label").Count);
+            Assert.Empty(cut.FindAll("table caption"));
+        });
+    }
+
+    /// <summary>
+    /// Trace: Account Preferences UI Clarity. Verifies provider mismatch and save feedback remain alerts in the workflow they qualify, while each command group has an accessible name.
+    /// Expected: Settings contains the verification and preference action groups, and a failed save is rendered beside the save workflow.
+    /// Why: contextual feedback must be discoverable without making operators infer which action or state it describes.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldPlaceFeedbackAndActionsInOwningWorkflow_WhenSaveFails()
+    {
+        using var context = new PlatformComponentTestContext("local-operator", null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new AccountPreferencesViewModel("target", true, 1, null, false, "observed", DateTimeOffset.Parse("2026-08-30T10:00:00Z"), "Mismatch", null, null, "Observed account differs", true, "Mismatch")),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()),
+            _ => new HttpResponseMessage(HttpStatusCode.Conflict));
+        var cut = context.RenderComponent<AccountPreferences>();
+        cut.WaitForElement(".account-preferences-tabs");
+        Assert.Equal(
+            ["Apply desired setting", "Retry verification", "Save preference"],
+            cut.FindAll("button.platform-primary-action").Select(button => button.TextContent.Trim()).OrderBy(text => text).ToArray());
+        cut.WaitForElement("[data-testid='account-preferences-save']");
+        cut.Find("fieldset input[type='radio']").Change(new ChangeEventArgs { Value = "false" });
+        cut.Find("[data-testid='account-preferences-save']").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Contains("Observed account differs", cut.Find(".account-preferences-warning").TextContent, StringComparison.Ordinal);
+            Assert.Equal(["Verification actions", "Preference actions"], cut.FindAll("[role='group']").Select(group => group.GetAttribute("aria-label")).ToArray());
+            Assert.Contains(cut.FindAll("[role='alert']"), alert => alert.TextContent.Contains("Unable to save and confirm account preferences.", StringComparison.Ordinal));
+        });
+    }
+
+    /// <summary>
+    /// Trace: Account Preferences UI Clarity. Verifies the diagnostic tab exposes a named history table and an honest one-way cursor action after activation.
+    /// Expected: history has its caption, history action group, and Load older observations control.
+    /// Why: operators need an explicit diagnostic workflow without numeric paging assumptions or hidden cursor behavior.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldExposeNamedHistoryAndOlderObservationsAction_WhenHistoryTabIsSelected()
+    {
+        using var context = new PlatformComponentTestContext("local-operator", null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(true)),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History("older-cursor")));
+        var cut = context.RenderComponent<AccountPreferences>();
+        cut.WaitForAssertion(() => cut.FindAll("[role='tab']").Single(tab => tab.TextContent.Trim() == "Observed history").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Equal("Trailing stop observations, newest observed first", cut.Find("table caption").TextContent.Trim());
+            Assert.Equal("History actions", cut.Find("[role='group']").GetAttribute("aria-label"));
+            var loadOlder = cut.Find("button[aria-label='Load older observations']");
+            Assert.Equal("Load older observations", loadOlder.TextContent.Trim());
+            Assert.False(loadOlder.HasAttribute("disabled"));
+        });
+    }
+
+    /// <summary>
     /// Trace: Phase 5.1. Verifies a successful fresh-install response renders the explicit Unconfigured state without a provider warning and requests history only after current state succeeds.
     /// Expected: the page leaves loading, shows Unconfigured, contains no current-state error, and records current-state and history requests in order.
     /// Why: an absent SQL projection is valid configuration state and must not be mistaken for provider unavailability or cause parallel initial reads.
@@ -122,7 +202,7 @@ public sealed class AccountPreferencesTests
         cut.WaitForAssertion(() =>
         {
             Assert.DoesNotContain("account-preferences-loading", cut.Markup, StringComparison.Ordinal);
-            Assert.Contains("Desired setting:", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Desired setting", cut.Find("dl.account-preferences-state").TextContent, StringComparison.Ordinal);
             Assert.Contains("Unconfigured", cut.Markup, StringComparison.Ordinal);
             Assert.DoesNotContain("account-preferences-error", cut.Markup, StringComparison.Ordinal);
             Assert.Equal(2, context.ApiHandler.Requests.Count);
@@ -146,8 +226,9 @@ public sealed class AccountPreferencesTests
             Assert.Contains("Last confirmed: Enabled", cut.Markup, StringComparison.Ordinal);
             Assert.NotEmpty(cut.FindAll("input[type='radio']"));
             Assert.DoesNotContain("data-testid=\"account-preferences-error\"", cut.Markup, StringComparison.Ordinal);
-            Assert.Contains("Unable to load account preferences history", cut.Find("[data-testid='account-preferences-history-error']").TextContent, StringComparison.Ordinal);
         });
+        cut.FindAll("[role='tab']").Single(tab => tab.TextContent.Trim() == "Observed history").Click();
+        cut.WaitForAssertion(() => Assert.Contains("Unable to load account preferences history", cut.Markup, StringComparison.Ordinal));
     }
 
     /// <summary>Trace: FR3, NF2. Verifies a changed radio selection renders the exact pending heading, preserves last-confirmed text, and displays a non-live pending cue.</summary>
@@ -165,7 +246,7 @@ public sealed class AccountPreferencesTests
             Assert.Contains("Trailing stops enabled", cut.Markup, StringComparison.Ordinal);
             Assert.Contains("Last confirmed: Disabled", cut.Markup, StringComparison.Ordinal);
             Assert.Contains("Pending change: not yet confirmed", cut.Markup, StringComparison.Ordinal);
-            Assert.Contains("Application status: OK", cut.Markup, StringComparison.Ordinal);
+            Assert.Equal("OK", cut.Find("[data-testid='account-preferences-application-status']").TextContent.Trim());
         });
     }
 
@@ -186,13 +267,13 @@ public sealed class AccountPreferencesTests
             Assert.Equal("status", confirmation.GetAttribute("role"));
             Assert.Equal("true", confirmation.GetAttribute("aria-atomic"));
             Assert.Contains("saved and confirmed", confirmation.TextContent, StringComparison.Ordinal);
-            Assert.Contains("Application status: Applied", cut.Markup, StringComparison.Ordinal);
+            Assert.Equal("Applied", cut.Find("[data-testid='account-preferences-application-status']").TextContent.Trim());
         });
         cut.Find("[data-testid='account-preferences-confirmation'] button").Click();
         cut.WaitForAssertion(() =>
         {
             Assert.DoesNotContain("account-preferences-confirmation", cut.Markup, StringComparison.Ordinal);
-            Assert.Contains("Application status: Applied", cut.Markup, StringComparison.Ordinal);
+            Assert.Equal("Applied", cut.Find("[data-testid='account-preferences-application-status']").TextContent.Trim());
             Assert.Contains(context.JSInterop.Invocations, invocation => invocation.Identifier.Contains("focus", StringComparison.OrdinalIgnoreCase));
         });
     }
@@ -361,6 +442,7 @@ public sealed class AccountPreferencesTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, FullHistory("cursor with space")),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()));
         var cut = context.RenderComponent<AccountPreferences>();
+        cut.WaitForAssertion(() => cut.FindAll("[role='tab']").Single(tab => tab.TextContent.Trim() == "Observed history").Click());
         cut.WaitForAssertion(() => Assert.DoesNotContain("disabled", cut.Find("[data-testid='account-preferences-next']").OuterHtml, StringComparison.Ordinal));
         cut.Find("[data-testid='account-preferences-next']").Click();
 

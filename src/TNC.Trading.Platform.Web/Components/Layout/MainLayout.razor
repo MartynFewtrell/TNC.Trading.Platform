@@ -21,13 +21,21 @@
                 @if (operatorContext.IsViewer)
                 {
                     <PlatformNavItem Href="/account-details" Icon="account_balance" Text="Account details" />
+                }
+
+                @if (operatorContext.IsOperator)
+                {
+                    <PlatformNavItem Href="/account-preferences" Icon="tune" Text="Account preferences" />
+                }
+
+                @if (operatorContext.IsViewer)
+                {
                     <PlatformNavItem Href="/status" Icon="monitor_heart" Text="Status" />
                 }
 
                 @if (operatorContext.IsOperator)
                 {
                     <PlatformNavItem Href="/configuration" Icon="settings" Text="Configuration" />
-                    <PlatformNavItem Href="/account-preferences" Icon="tune" Text="Account preferences" />
                 }
 
                 @if (operatorContext.IsViewer)

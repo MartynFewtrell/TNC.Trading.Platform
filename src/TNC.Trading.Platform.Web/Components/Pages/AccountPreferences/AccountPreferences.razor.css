@@ -1,4 +1,75 @@
-.panel fieldset {
+.account-preferences-tabs ::deep .rz-tabview {
+    --rz-tabs-background-color: transparent;
+    --rz-tabs-border: 0;
+    --rz-tabs-shadow: none;
+    --rz-tabs-padding: 1.25rem 0 0;
+    --rz-tabs-tab-background-color: transparent;
+    --rz-tabs-tab-selected-background-color: transparent;
+    --rz-tabs-tab-hover-background-color: transparent;
+    --rz-tabs-tab-color: var(--platform-muted-text-color);
+    --rz-tabs-tab-selected-color: var(--platform-text-color);
+    --rz-tabs-tab-hover-color: var(--platform-text-color);
+}
+
+.account-preferences-tabs ::deep .rz-tabview-top > .rz-tabview-nav {
+    border-bottom: 1px solid var(--platform-border-color);
+}
+
+.account-preferences-tabs ::deep .rz-tabview-top > .rz-tabview-nav li {
+    background-color: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+}
+
+.account-preferences-tabs ::deep .rz-tabview-top > .rz-tabview-nav .rz-tabview-selected {
+    border-bottom: 2px solid var(--platform-accent-color);
+    margin-bottom: -1px;
+}
+
+.account-preferences-tabs ::deep .rz-tabview-panels {
+    background-color: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.account-preferences-state {
+    display: grid;
+    gap: 0.75rem;
+    margin: 1.25rem 0;
+}
+
+.account-preferences-state > div {
+    display: grid;
+    grid-template-columns: minmax(10rem, 0.35fr) minmax(0, 1fr);
+    gap: 1rem;
+}
+
+.account-preferences-state dt {
+    font-weight: 700;
+}
+
+.account-preferences-state dd {
+    margin: 0;
+}
+
+.account-preferences-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-block: 1rem;
+}
+
+.account-preferences-actions > button {
+    min-block-size: 44px;
+}
+
+.account-preferences-choice {
+    max-inline-size: 32rem;
+}
+
+.account-preferences-choice {
     margin: 1.25rem 0;
     padding: 0;
     border: 0;
@@ -9,14 +80,14 @@
     font-weight: 700;
 }
 
-.panel fieldset > div {
+.account-preferences-choice > div {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0;
     width: 100%;
 }
 
-.panel fieldset label {
+.account-preferences-choice label {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -30,37 +101,30 @@
     overflow-wrap: anywhere;
 }
 
-.panel fieldset label + label {
+.account-preferences-choice label + label {
     margin-left: -1px;
 }
 
-.panel fieldset label:has(input[type="radio"]:checked) {
+.account-preferences-choice label:has(input[type="radio"]:checked) {
     position: relative;
     z-index: 1;
     border: 2px solid var(--platform-accent-color);
-    font-weight: 700;
-    text-decoration: underline;
-    text-decoration-thickness: 2px;
-    text-underline-offset: 0.15em;
+    background-color: color-mix(in srgb, var(--platform-accent-color) 10%, var(--platform-surface-color));
 }
 
-.panel fieldset label:focus-within {
+.account-preferences-choice label:focus-within {
     position: relative;
     z-index: 2;
     outline: 3px solid var(--platform-accent-color);
     outline-offset: 2px;
 }
 
-.panel fieldset input[type="radio"] {
+.account-preferences-choice input[type="radio"] {
     flex: 0 0 auto;
     inline-size: 1.125rem;
     block-size: 1.125rem;
     margin: 0;
     accent-color: var(--platform-accent-color);
-}
-
-.panel > button {
-    min-height: 44px;
 }
 
 .panel [role="status"] {
@@ -85,19 +149,28 @@
 }
 
 .panel [role="status"] button:focus-visible,
-.panel > button:focus-visible {
+.account-preferences-actions > button:focus-visible {
     outline: 3px solid var(--platform-accent-color);
     outline-offset: 2px;
 }
 
 @media (max-width: 600px) {
-    .panel fieldset > div {
+    .account-preferences-state > div {
+        grid-template-columns: 1fr;
+        gap: 0.25rem;
+    }
+
+    .account-preferences-choice > div {
         grid-template-columns: 1fr;
     }
 
-    .panel fieldset label + label {
+    .account-preferences-choice label + label {
         margin-top: -1px;
         margin-left: 0;
+    }
+
+    .account-preferences-actions > button {
+        inline-size: 100%;
     }
 
     .panel [role="status"] {
