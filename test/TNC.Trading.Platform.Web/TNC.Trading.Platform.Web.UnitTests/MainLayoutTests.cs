@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using Bunit;
 using Microsoft.AspNetCore.Components;
 using TNC.Trading.Platform.Application.Authentication;
@@ -19,7 +19,7 @@ public sealed class MainLayoutTests
     {
         using var context = new PlatformComponentTestContext(userName: null);
 
-        var cut = context.RenderComponent<MainLayout>(parameters =>
+        var cut = context.Render<MainLayout>(parameters =>
             parameters.Add(layout => layout.Body, CreateBody()));
 
         Assert.Contains("platform-app-shell__body--full-width", cut.Markup, StringComparison.Ordinal);
@@ -42,7 +42,7 @@ public sealed class MainLayoutTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateStatus()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateEvents()));
 
-        var cut = context.RenderComponent<MainLayout>(parameters =>
+        var cut = context.Render<MainLayout>(parameters =>
             parameters.Add(layout => layout.Body, CreateBody()));
 
         cut.WaitForAssertion(() =>
@@ -65,7 +65,7 @@ public sealed class MainLayoutTests
         using var viewerContext = new PlatformComponentTestContext(
             "local-viewer",
             [PlatformAuthenticationDefaults.Scopes.Viewer]);
-        var viewer = viewerContext.RenderComponent<MainLayout>(parameters =>
+        var viewer = viewerContext.Render<MainLayout>(parameters =>
             parameters.Add(layout => layout.Body, CreateBody()));
 
         Assert.NotEmpty(viewer.FindAll("a[href='/account-details']"));
@@ -74,7 +74,7 @@ public sealed class MainLayoutTests
         using var operatorContext = new PlatformComponentTestContext(
             "local-operator",
             [PlatformAuthenticationDefaults.Scopes.Operator]);
-        var operatorLayout = operatorContext.RenderComponent<MainLayout>(parameters =>
+        var operatorLayout = operatorContext.Render<MainLayout>(parameters =>
             parameters.Add(layout => layout.Body, CreateBody()));
 
         Assert.NotEmpty(operatorLayout.FindAll("a[href='/account-preferences']"));
@@ -82,7 +82,7 @@ public sealed class MainLayoutTests
         using var combinedContext = new PlatformComponentTestContext(
             "local-operator",
             [PlatformAuthenticationDefaults.Scopes.Viewer, PlatformAuthenticationDefaults.Scopes.Operator]);
-        var combined = combinedContext.RenderComponent<MainLayout>(parameters =>
+        var combined = combinedContext.Render<MainLayout>(parameters =>
             parameters.Add(layout => layout.Body, CreateBody()));
         var links = combined.FindAll("nav[aria-label='Primary'] a").ToList();
         var accountDetailsIndex = links.FindIndex(link => link.GetAttribute("href") == "/account-details");
@@ -106,7 +106,7 @@ public sealed class MainLayoutTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateStatus()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateEvents()));
 
-        var cut = context.RenderComponent<MainLayout>(parameters =>
+        var cut = context.Render<MainLayout>(parameters =>
             parameters.Add(layout => layout.Body, CreateBody()));
 
         cut.WaitForElement("button.platform-header__toggle").Click();

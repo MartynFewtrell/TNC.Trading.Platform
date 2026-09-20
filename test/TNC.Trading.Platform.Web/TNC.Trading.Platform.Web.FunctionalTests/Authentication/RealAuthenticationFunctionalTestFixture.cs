@@ -6,6 +6,7 @@ namespace TNC.Trading.Platform.Web.FunctionalTests.Authentication;
 public sealed class RealAuthenticationFunctionalTestFixture : IAsyncLifetime
 {
     public const string TestAccountId = "configured-demo-session";
+    private const string SwitchedAccountId = "switched-demo-session";
     private ManagedAppHostFixture? managedFixture;
     private ControllableIgProvider? provider;
 
@@ -14,9 +15,22 @@ public sealed class RealAuthenticationFunctionalTestFixture : IAsyncLifetime
     public Uri TokenEndpoint { get; private set; } = null!;
     public ControllableIgProvider Provider => provider ?? throw new InvalidOperationException("The test fixture has not been initialized.");
 
-    public Task ResetAccountPreferencesAsync(CancellationToken cancellationToken = default) =>
-        managedFixture?.ResetAccountPreferencesAsync(TestAccountId, cancellationToken)
-        ?? throw new InvalidOperationException("The test fixture has not been initialized.");
+    public async Task ResetAccountPreferencesAsync(CancellationToken cancellationToken = default)
+    {
+        var currentManagedFixture = managedFixture ?? throw new InvalidOperationException("The test fixture has not been initialized.");
+        Provider.SetAccountId(TestAccountId);
+        await currentManagedFixture.ResetAccountPreferencesAsync(TestAccountId, cancellationToken);
+    }
+
+    public async Task SwitchToDifferentAccountAsync(CancellationToken cancellationToken = default)
+    {
+        var currentManagedFixture = managedFixture ?? throw new InvalidOperationException("The test fixture has not been initialized.");
+        Provider.SetAccountId(SwitchedAccountId);
+        await currentManagedFixture.SetAccountPreferencesAccountSwitchAsync(SwitchedAccountId, TestAccountId, cancellationToken);
+    }
+
+    public Task ReassertAccountPreferencesTargetAsync(CancellationToken cancellationToken = default) =>
+        (managedFixture ?? throw new InvalidOperationException("The test fixture has not been initialized.")).SetAccountPreferencesTargetAccountAsync(TestAccountId, cancellationToken);
 
     public async Task InitializeAsync()
     {
@@ -27,7 +41,8 @@ public sealed class RealAuthenticationFunctionalTestFixture : IAsyncLifetime
             {
                 ["Ig:AccountPreferencesBaseUrl"] = new Uri(provider.BaseUri, "gateway/deal/").ToString(),
                 ["AppHost:UsePersistentKeycloakState"] = bool.FalseString,
-                ["Authentication:Test:EnableInteractiveSignIn"] = bool.FalseString
+                ["Authentication:Test:EnableInteractiveSignIn"] = bool.FalseString,
+                ["AccountPreferences:Reconciliation:Enabled"] = bool.FalseString
             });
             await managedFixture.InitializeAsync();
             WebBaseUri = managedFixture.WebEndpointUri;

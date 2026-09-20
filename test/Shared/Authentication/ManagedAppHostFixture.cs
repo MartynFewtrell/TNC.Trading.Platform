@@ -77,7 +77,8 @@ public sealed class ManagedAppHostFixture : IAsyncLifetime
         await using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE [IgLoginSnapshots]
-            SET [CurrentAccountId] = @sessionAccountId
+            SET [CurrentAccountId] = @sessionAccountId,
+                [CapturedAtUtc] = DATEADD(second, 1, SYSUTCDATETIME())
             WHERE [BrokerEnvironment] = 'Demo';
             DELETE FROM [TrailingStopsPreferenceObservations]
             WHERE [PlatformEnvironment] = 'Test' AND [BrokerEnvironment] = 'Demo';
@@ -114,6 +115,82 @@ public sealed class ManagedAppHostFixture : IAsyncLifetime
             END;
             """;
         command.Parameters.AddWithValue("@sessionAccountId", sessionAccountId);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SetAccountPreferencesSessionAccountAsync(string sessionAccountId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionAccountId);
+        if (application is null)
+        {
+            throw new InvalidOperationException("The managed AppHost fixture has not been initialized.");
+        }
+
+        var connectionString = await application.GetConnectionStringAsync("platformdb", cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The managed AppHost fixture did not expose the platformdb connection string.");
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE [IgLoginSnapshots]
+                        SET [CurrentAccountId] = @sessionAccountId,
+                                [CapturedAtUtc] = DATEADD(second, 1, SYSUTCDATETIME())
+                        WHERE [BrokerEnvironment] = 'Demo'
+                            AND [SnapshotKind] = 'Latest';
+            """;
+        command.Parameters.AddWithValue("@sessionAccountId", sessionAccountId);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SetAccountPreferencesTargetAccountAsync(string targetAccountId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetAccountId);
+        if (application is null)
+        {
+            throw new InvalidOperationException("The managed AppHost fixture has not been initialized.");
+        }
+
+        var connectionString = await application.GetConnectionStringAsync("platformdb", cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The managed AppHost fixture did not expose the platformdb connection string.");
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE [AccountPreferencesCurrentStates]
+            SET [AccountId] = @targetAccountId,
+                [ObservedAccountId] = @targetAccountId
+            WHERE [PlatformEnvironment] = 'Test' AND [BrokerEnvironment] = 'Demo';
+            """;
+        command.Parameters.AddWithValue("@targetAccountId", targetAccountId);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SetAccountPreferencesAccountSwitchAsync(string sessionAccountId, string targetAccountId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionAccountId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetAccountId);
+        if (application is null)
+        {
+            throw new InvalidOperationException("The managed AppHost fixture has not been initialized.");
+        }
+
+        var connectionString = await application.GetConnectionStringAsync("platformdb", cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The managed AppHost fixture did not expose the platformdb connection string.");
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE [IgLoginSnapshots]
+            SET [CurrentAccountId] = @sessionAccountId,
+                [CapturedAtUtc] = DATEADD(second, 1, SYSUTCDATETIME())
+            WHERE [BrokerEnvironment] = 'Demo' AND [SnapshotKind] = 'Latest';
+            UPDATE [AccountPreferencesCurrentStates]
+            SET [AccountId] = @targetAccountId,
+                [ObservedAccountId] = @targetAccountId
+            WHERE [PlatformEnvironment] = 'Test' AND [BrokerEnvironment] = 'Demo';
+            """;
+        command.Parameters.AddWithValue("@sessionAccountId", sessionAccountId);
+        command.Parameters.AddWithValue("@targetAccountId", targetAccountId);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

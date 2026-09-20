@@ -11,6 +11,7 @@ using TNC.Trading.Platform.Api.Features.TriggerManualAuthRetry;
 using TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration;
 using TNC.Trading.Platform.Api.Infrastructure.Platform;
 using TNC.Trading.Platform.Application.Authentication;
+using TNC.Trading.Platform.Application.Features.AccountPreferences;
 using TNC.Trading.Platform.Application.Services;
 using AppAccountDetails = TNC.Trading.Platform.Application.Features.AccountDetails;
 using AppGetIgLoginHistory = TNC.Trading.Platform.Application.Features.GetIgLoginHistory;
@@ -150,7 +151,11 @@ internal static class PlatformEndpoints
         var result = await handler.HandleAsync(new AppAccountPreferences.CheckAccountPreferencesStatusCommand(), httpContext.TraceIdentifier, cancellationToken);
         return result.State is { } state
             ? TypedResults.Ok((result.FailureCategory is not null
-                ? state with { FailureSummary = result.SafeReason }
+                ? state with
+                {
+                    VerificationStatus = AccountPreferencesVerificationStatus.VerificationFailed,
+                    FailureSummary = result.SafeReason
+                }
                 : state).ToResponse())
             : result.FailureCategory is { } category
                 ? AccountPreferencesEndpointMapping.ToProblemResult(category, result.SafeReason)

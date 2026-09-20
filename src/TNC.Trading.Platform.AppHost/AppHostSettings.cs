@@ -8,7 +8,8 @@ internal sealed record AppHostSettings(
     string? AcsEndpoint,
     string? AcsSenderAddress,
     string? AcsConnectionString,
-    string? AccountPreferencesBaseUrl = null)
+    string? AccountPreferencesBaseUrl = null,
+    bool AccountPreferencesReconciliationEnabled = true)
 {
     public static AppHostSettings FromConfiguration(IConfiguration configuration)
     {
@@ -23,6 +24,10 @@ internal sealed record AppHostSettings(
             AcsEndpoint: configuration["NotificationTransports:AzureCommunicationServices:Endpoint"],
             AcsSenderAddress: configuration["NotificationTransports:AzureCommunicationServices:SenderAddress"],
             AcsConnectionString: configuration["NotificationTransports:AzureCommunicationServices:ConnectionString"],
-            AccountPreferencesBaseUrl: configuration["Ig:AccountPreferencesBaseUrl"]);
+            AccountPreferencesBaseUrl: configuration["Ig:AccountPreferencesBaseUrl"],
+            AccountPreferencesReconciliationEnabled: !string.Equals(
+                configuration["AccountPreferences:Reconciliation:Enabled"],
+                bool.FalseString,
+                StringComparison.OrdinalIgnoreCase));
     }
 }

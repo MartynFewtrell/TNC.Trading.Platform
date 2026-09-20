@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using Bunit;
 using TNC.Trading.Platform.Web.Components.Pages;
 
@@ -20,7 +20,7 @@ public sealed class IgLoginHistoryTests
             null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new { RetainedSnapshots = Array.Empty<object>() }));
 
-        var cut = context.RenderComponent<IgLoginHistory>();
+        var cut = context.Render<IgLoginHistory>();
 
         cut.WaitForAssertion(() =>
         {
@@ -44,7 +44,7 @@ public sealed class IgLoginHistoryTests
             null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new { RetainedSnapshots = new[] { snapshot } }));
 
-        var cut = context.RenderComponent<IgLoginHistory>();
+        var cut = context.Render<IgLoginHistory>();
 
         cut.WaitForAssertion(() =>
         {
@@ -69,7 +69,7 @@ public sealed class IgLoginHistoryTests
             null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.InternalServerError, new { }));
 
-        var cut = context.RenderComponent<IgLoginHistory>();
+        var cut = context.Render<IgLoginHistory>();
 
         cut.WaitForAssertion(() =>
         {
@@ -93,7 +93,7 @@ public sealed class IgLoginHistoryTests
             null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new { RetainedSnapshots = new[] { snapshot } }));
 
-        var cut = context.RenderComponent<IgLoginHistory>();
+        var cut = context.Render<IgLoginHistory>();
 
         cut.WaitForAssertion(() =>
         {

@@ -94,7 +94,7 @@ public sealed class AccountPreferencesTests
         using var context = new PlatformComponentTestContext("local-operator", null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(true)),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
         cut.WaitForAssertion(() =>
         {
             Assert.Contains("Trailing stops", cut.Markup, StringComparison.Ordinal);
@@ -117,7 +117,7 @@ public sealed class AccountPreferencesTests
         using var context = new PlatformComponentTestContext("local-operator", null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(true)),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
 
         cut.WaitForAssertion(() =>
         {
@@ -127,9 +127,29 @@ public sealed class AccountPreferencesTests
             Assert.Single(cut.FindAll("dl.account-preferences-state"));
             Assert.Equal(2, cut.FindAll("dl.account-preferences-state dt").Count);
             Assert.Equal(2, cut.FindAll("dl.account-preferences-state dd").Count);
+            var confirmationTime = cut.Find("dl.account-preferences-state time");
+            Assert.Equal("2026-08-30T10:00:00.0000000+00:00", confirmationTime.GetAttribute("datetime"));
+            Assert.NotEmpty(confirmationTime.TextContent);
             Assert.Equal(2, cut.FindAll("fieldset.account-preferences-choice input[type='radio']").Count);
             Assert.Equal(2, cut.FindAll("fieldset.account-preferences-choice label").Count);
             Assert.Empty(cut.FindAll("table caption"));
+        });
+    }
+
+    /// <summary>Trace: Account Preferences UI Clarity. Verifies a response without a verification timestamp omits the complete confirmation row rather than displaying a Boolean or synthetic date.</summary>
+    [Fact]
+    public void Render_ShouldOmitLastConfirmedRow_WhenVerificationTimestampIsNull()
+    {
+        var preferences = new AccountPreferencesViewModel("target", true, 1, null, true, "target", null, "Pending", null, null, null, true, "Pending");
+        using var context = new PlatformComponentTestContext("local-operator", null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, preferences),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()));
+        var cut = context.Render<AccountPreferences>();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.DoesNotContain("Last confirmed", cut.Find("dl.account-preferences-state").TextContent, StringComparison.Ordinal);
+            Assert.Empty(cut.FindAll("dl.account-preferences-state time"));
         });
     }
 
@@ -145,7 +165,7 @@ public sealed class AccountPreferencesTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new AccountPreferencesViewModel("target", true, 1, null, false, "observed", DateTimeOffset.Parse("2026-08-30T10:00:00Z"), "Mismatch", null, null, "Observed account differs", true, "Mismatch")),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()),
             _ => new HttpResponseMessage(HttpStatusCode.Conflict));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
         cut.WaitForElement(".account-preferences-tabs");
         Assert.Equal(
             ["Check status", "Save preferences"],
@@ -163,6 +183,44 @@ public sealed class AccountPreferencesTests
     }
 
     /// <summary>
+    /// Trace: DR-01. Verifies a successful Check status response preserves a non-empty provider failure summary in the visible warning.
+    /// Expected: the supplied unavailable summary is rendered in the account-preferences warning after Check status completes.
+    /// Why: the HTTP 200 verification-failed contract must remain operator-visible rather than being mistaken for a transport error.
+    /// </summary>
+    [Fact]
+    public void CheckStatus_ShouldRenderFailureSummary_WhenVerificationFailsSuccessfully()
+    {
+        const string failureSummary = "IG account preferences service is unavailable.";
+        var failedVerification = new AccountPreferencesViewModel(
+            "target",
+            true,
+            1,
+            null,
+            false,
+            "observed",
+            null,
+            "VerificationFailed",
+            null,
+            null,
+            failureSummary,
+            true,
+            "VerificationFailed");
+        using var context = new PlatformComponentTestContext("local-operator", null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(true)),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, failedVerification));
+        var cut = context.Render<AccountPreferences>();
+
+        cut.WaitForAssertion(() => cut.Find("button.platform-primary-action").Click());
+
+        cut.WaitForAssertion(() =>
+        {
+            var warning = cut.Find("[data-testid='account-preferences-warning']");
+            Assert.Contains(failureSummary, warning.TextContent, StringComparison.Ordinal);
+        });
+    }
+
+    /// <summary>
     /// Trace: Account Preferences UI Clarity. Verifies the diagnostic tab exposes a named history table and an honest one-way cursor action after activation.
     /// Expected: history has its caption, history action group, and Load older observations control.
     /// Why: operators need an explicit diagnostic workflow without numeric paging assumptions or hidden cursor behavior.
@@ -173,7 +231,7 @@ public sealed class AccountPreferencesTests
         using var context = new PlatformComponentTestContext("local-operator", null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(true)),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History("older-cursor")));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
         cut.WaitForAssertion(() => cut.FindAll("[role='tab']").Single(tab => tab.TextContent.Trim() == "Observed history").Click());
 
         cut.WaitForAssertion(() =>
@@ -197,7 +255,7 @@ public sealed class AccountPreferencesTests
         using var context = new PlatformComponentTestContext("local-operator", null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new AccountPreferencesViewModel(null, null, null, null, null, null, null, "Unconfigured", null, null, null, null, "Unconfigured")),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
 
         cut.WaitForAssertion(() =>
         {
@@ -218,7 +276,7 @@ public sealed class AccountPreferencesTests
         using var context = new PlatformComponentTestContext("local-operator", null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(true)),
             _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
 
         cut.WaitForAssertion(() =>
         {
@@ -239,7 +297,7 @@ public sealed class AccountPreferencesTests
         using var context = new PlatformComponentTestContext("local-operator", null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(false)),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
         cut.WaitForElement("fieldset input[type='radio']");
         cut.FindAll("fieldset input[type='radio']")[0].Change(new ChangeEventArgs { Value = "true" });
         cut.WaitForAssertion(() =>
@@ -253,19 +311,22 @@ public sealed class AccountPreferencesTests
         });
     }
 
-    /// <summary>Trace: FR3, SR1. Verifies successful save renders separated application status and a persistent atomic status confirmation that can be dismissed while retaining status.</summary>
+    /// <summary>Trace: FR3, SR1. Verifies selecting Enabled then activating Save invokes the update and renders a persistent atomic confirmation that can be dismissed while retaining status.</summary>
     [Fact]
-    public void Save_ShouldShowPersistentConfirmation_WhenUpdateSucceeds()
+    public void Save_ShouldShowPersistentConfirmation_WhenEnabledIsSelectedAndUpdateSucceeds()
     {
         using var context = new PlatformComponentTestContext("local-operator", null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(false)),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(true, "Applied")),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History("next")));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
+        cut.WaitForElement("fieldset input[type='radio']");
+        cut.FindAll("fieldset input[type='radio']")[0].Change(new ChangeEventArgs { Value = "true" });
         cut.WaitForElement("[data-testid='account-preferences-save']").Click();
         cut.WaitForAssertion(() =>
         {
+            Assert.Contains(context.ApiHandler.Requests, request => request.Method == HttpMethod.Put && request.RequestUri.EndsWith("/account-preferences", StringComparison.Ordinal));
             var confirmation = cut.Find("[data-testid='account-preferences-confirmation']");
             Assert.Equal("status", confirmation.GetAttribute("role"));
             Assert.Equal("true", confirmation.GetAttribute("aria-atomic"));
@@ -285,7 +346,7 @@ public sealed class AccountPreferencesTests
     {
         using var context = new PlatformComponentTestContext("local-operator", null,
             _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
 
         cut.WaitForAssertion(() =>
         {
@@ -307,7 +368,7 @@ public sealed class AccountPreferencesTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(enabled, "Applied")),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
         cut.WaitForElement("[data-testid='account-preferences-save']");
         var radio = cut.FindAll("fieldset input[type='radio']")[enabled ? 0 : 1];
         radio.Change(new ChangeEventArgs { Value = enabled.ToString().ToLowerInvariant() });
@@ -328,7 +389,7 @@ public sealed class AccountPreferencesTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(false)),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()),
             _ => DelayedJsonResponse(updateResponse.Task, Preferences(true, "Applied")));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
         cut.WaitForElement("[data-testid='account-preferences-save']").Click();
 
         cut.WaitForAssertion(() =>
@@ -347,7 +408,7 @@ public sealed class AccountPreferencesTests
         using var context = new PlatformComponentTestContext("local-operator", null,
             _ => DelayedJsonResponse(preferencesResponse.Task, Preferences(true)),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
         cut.WaitForElement("[data-testid='account-preferences-loading']");
         Assert.DoesNotContain("account-preferences-save", cut.Markup, StringComparison.Ordinal);
 
@@ -365,11 +426,11 @@ public sealed class AccountPreferencesTests
         using var context = new PlatformComponentTestContext("local-operator", null,
             _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = delayedContent },
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
 
         cut.WaitForElement("[data-testid='account-preferences-loading']");
         await delayedContent.ReadStarted.WaitAsync(TimeSpan.FromSeconds(5));
-        context.DisposeComponents();
+        context.Dispose();
         await delayedContent.CancellationObserved.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.True(delayedContent.CancellationObserved.IsCompletedSuccessfully);
@@ -414,7 +475,7 @@ public sealed class AccountPreferencesTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(false)),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()),
             _ => DelayedJsonResponse(updateResponse.Task, Preferences(true, "Applied")));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
         cut.WaitForElement("[data-testid='account-preferences-save']");
         cut.Find("[data-testid='account-preferences-save']").Click();
 
@@ -431,7 +492,7 @@ public sealed class AccountPreferencesTests
     {
         using var context = new PlatformComponentTestContext("local-operator", null,
             _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
         cut.WaitForAssertion(() => Assert.Contains("Unable to load account preferences.", cut.Markup, StringComparison.Ordinal));
     }
 
@@ -443,7 +504,7 @@ public sealed class AccountPreferencesTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(true)),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, FullHistory("cursor with space")),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()));
-        var cut = context.RenderComponent<AccountPreferences>();
+        var cut = context.Render<AccountPreferences>();
         cut.WaitForAssertion(() => cut.FindAll("[role='tab']").Single(tab => tab.TextContent.Trim() == "Observed history").Click());
         cut.WaitForAssertion(() => Assert.DoesNotContain("disabled", cut.Find("[data-testid='account-preferences-next']").OuterHtml, StringComparison.Ordinal));
         cut.Find("[data-testid='account-preferences-next']").Click();
@@ -491,6 +552,55 @@ public sealed class AccountPreferencesTests
         Assert.False(presenter.State.ConfirmedTrailingStopsEnabled);
         Assert.Equal("Unable to save and confirm account preferences.", presenter.SaveError);
         Assert.False(presenter.IsSaving);
+    }
+
+    /// <summary>Trace: Account Preferences Phase 2. Verifies mismatch guidance appears only for the stable Problem Details type and category, without exposing account identifiers.</summary>
+    [Fact]
+    public async Task Save_ShouldShowSafeMismatchGuidance_WhenTypedAccountMismatchIsReturned()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            apiResponses: [
+                _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(false)),
+                _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()),
+                _ => PlatformWebTestData.CreateProblemResponse(HttpStatusCode.Conflict, new
+                {
+                    type = "/problems/account-preferences/account-mismatch",
+                    failureCategory = "AccountMismatch",
+                    title = "Account mismatch",
+                    detail = "Reauthenticate with the intended account, then check status. Contact an administrator to change the configured account."
+                })]);
+        var presenter = context.Services.GetRequiredService<AccountPreferencesPagePresenter>();
+        await presenter.LoadAsync(CancellationToken.None);
+        presenter.State.Select(true);
+
+        await presenter.SaveAsync(CancellationToken.None);
+
+        Assert.Contains("Reauthenticate with the intended account", presenter.SaveError, StringComparison.Ordinal);
+        Assert.DoesNotContain("configured-demo-session", presenter.SaveError, StringComparison.Ordinal);
+    }
+
+    /// <summary>Trace: Account Preferences Phase 2. Verifies arbitrary conflicts remain generic and cannot trigger account-change recovery advice.</summary>
+    [Fact]
+    public async Task Save_ShouldRemainGeneric_WhenConflictMetadataDoesNotMatch()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            apiResponses: [
+                _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, Preferences(false)),
+                _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, History()),
+                _ => PlatformWebTestData.CreateProblemResponse(HttpStatusCode.Conflict, new
+                {
+                    type = "/problems/other-conflict",
+                    failureCategory = "OtherConflict",
+                    detail = "configured-demo-session must not be disclosed"
+                })]);
+        var presenter = context.Services.GetRequiredService<AccountPreferencesPagePresenter>();
+        await presenter.LoadAsync(CancellationToken.None);
+        presenter.State.Select(true);
+
+        await presenter.SaveAsync(CancellationToken.None);
+
+        Assert.Equal("Unable to save and confirm account preferences.", presenter.SaveError);
+        Assert.DoesNotContain("configured-demo-session", presenter.SaveError, StringComparison.Ordinal);
     }
 
     /// <summary>Trace: Account Preferences UI Clarity. Verifies owned save cancellation does not become feedback and always returns the presenter to idle.</summary>
@@ -556,7 +666,7 @@ public sealed class AccountPreferencesTests
     public void Render_ShouldDenyViewerAndWireNextPage_WhenAuthorizationAndCursorApply()
     {
         using var denied = new PlatformComponentTestContext("local-viewer");
-        var deniedCut = denied.RenderComponent<AccountPreferences>();
+        var deniedCut = denied.Render<AccountPreferences>();
         deniedCut.WaitForAssertion(() => Assert.Contains("account-preferences-access", deniedCut.Markup, StringComparison.Ordinal));
     }
 

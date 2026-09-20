@@ -35,8 +35,11 @@ internal sealed class PlatformAuthenticationSupervisor : BackgroundService
         await base.StartAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
-        RunUntilStoppedAsync(stoppingToken);
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        await delay.DelayAsync(stoppingToken).ConfigureAwait(false);
+        await RunUntilStoppedAsync(stoppingToken).ConfigureAwait(false);
+    }
 
     internal async Task RunUntilStoppedAsync(CancellationToken stoppingToken)
     {

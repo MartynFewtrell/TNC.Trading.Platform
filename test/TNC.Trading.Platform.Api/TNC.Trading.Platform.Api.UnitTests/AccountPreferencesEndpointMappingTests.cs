@@ -31,9 +31,36 @@ public sealed class AccountPreferencesEndpointMappingTests
         Assert.Equal(title, details.ProblemDetails?.Title);
         Assert.Equal($"/problems/account-preferences/{typeSuffix}", details.ProblemDetails?.Type);
         Assert.Equal(category.ToString(), details.ProblemDetails?.Extensions["failureCategory"]);
-        Assert.Equal(title, details.ProblemDetails?.Detail);
+        Assert.Equal(category == AccountPreferencesFailureCategory.AccountMismatch ? AccountPreferencesAccountMismatch.Detail : title, details.ProblemDetails?.Detail);
         Assert.DoesNotContain("provider-secret-diagnostic", details.ProblemDetails?.Detail ?? string.Empty, StringComparison.Ordinal);
         Assert.DoesNotContain("provider-secret-diagnostic", details.ProblemDetails?.Extensions.Values.Select(value => value?.ToString() ?? string.Empty) ?? [], StringComparer.Ordinal);
+    }
+
+    /// <summary>Trace: FR5. Verifies Save account mismatch has the same typed Problem Details contract as Check without disclosing account identifiers.</summary>
+    [Fact]
+    public void ToSaveHttpResult_ShouldReturnTypedAccountMismatchProblem_WhenDurableTargetDiffers()
+    {
+        var result = new SaveAccountPreferencesResult(null, AccountPreferencesOperationPhase.VerificationFailed, AccountPreferencesAccountMismatch.Category, AccountPreferencesAccountMismatch.Detail, Conflict: true).ToSaveHttpResult();
+        var details = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.ProblemHttpResult>(result);
+
+        Assert.Equal(409, details.StatusCode);
+        Assert.Equal(AccountPreferencesAccountMismatch.Type, details.ProblemDetails!.Type);
+        Assert.Equal(AccountPreferencesAccountMismatch.Title, details.ProblemDetails.Title);
+        Assert.Equal(AccountPreferencesAccountMismatch.Category.ToString(), details.ProblemDetails.Extensions["failureCategory"]);
+        Assert.Equal(AccountPreferencesAccountMismatch.Detail, details.ProblemDetails.Detail);
+        Assert.DoesNotContain("IG-ACCOUNT", details.ProblemDetails.Detail!, StringComparison.Ordinal);
+    }
+
+    /// <summary>Trace: DD-01. Verifies ordinary Save conflicts retain the generic conflict response.</summary>
+    [Fact]
+    public void ToSaveHttpResult_ShouldKeepGenericConflict_WhenConflictIsNotCategorized()
+    {
+        var result = new SaveAccountPreferencesResult(null, AccountPreferencesOperationPhase.Started, null, "The account preferences revision is stale.", Conflict: true).ToSaveHttpResult();
+        var details = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.ProblemHttpResult>(result);
+
+        Assert.Equal(409, details.StatusCode);
+        Assert.Equal("https://tools.ietf.org/html/rfc9110#section-15.5.10", details.ProblemDetails!.Type);
+        Assert.Equal("The account preferences revision is stale.", details.ProblemDetails.Title);
     }
 
     /// <summary>Trace: account-preferences load-performance mitigation Phase 2.3. Guards exhaustive mapping against accidental enum fall-through.</summary>
@@ -89,7 +116,7 @@ public sealed class AccountPreferencesEndpointMappingTests
             "operator", DateTimeOffset.UtcNow, true, "IG-ACCOUNT", DateTimeOffset.UtcNow, null, null,
             AccountPreferencesVerificationStatus.InSync, DateTimeOffset.UtcNow, null, 0, null, "correlation", []);
 
-        var json = JsonSerializer.Serialize(state.ToResponse());
+        var json = JsonSerializer.Serialize(state.ToResponse(), new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
         using var document = JsonDocument.Parse(json);
         Assert.True(document.RootElement.GetProperty("desiredTrailingStopsEnabled").GetBoolean());

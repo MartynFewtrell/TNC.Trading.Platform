@@ -17,7 +17,7 @@ internal sealed class CheckAccountPreferencesStatusHandler(
         var state = await stateStore.GetAsync(configuration.PlatformEnvironment, configuration.BrokerEnvironment, cancellationToken).ConfigureAwait(false);
         if (state?.DesiredRevision is null || state.AccountId is null) return new(state);
         var snapshot = await loginSnapshotStore.GetLatestSnapshotAsync(configuration.BrokerEnvironment, cancellationToken).ConfigureAwait(false);
-        if (snapshot is null || snapshot.CurrentAccountId != state.AccountId) return new(state, AccountPreferencesOperationPhase.VerificationFailed, AccountPreferencesFailureCategory.AccountMismatch, "IG session account did not match the configured target account.");
+        if (snapshot is null || snapshot.CurrentAccountId != state.AccountId) return new(state, AccountPreferencesOperationPhase.VerificationFailed, AccountPreferencesAccountMismatch.Category, AccountPreferencesAccountMismatch.Detail);
         await using var acquired = await lease.AcquireAsync(state.PlatformEnvironment, state.BrokerEnvironment, state.AccountId, cancellationToken).ConfigureAwait(false);
         if (acquired is null) return new(state, AccountPreferencesOperationPhase.Started, AccountPreferencesFailureCategory.Rejected, "Account preferences are busy.", true);
         var current = await stateStore.GetAsync(state.PlatformEnvironment, state.BrokerEnvironment, cancellationToken).ConfigureAwait(false);

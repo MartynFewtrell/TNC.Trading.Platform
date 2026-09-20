@@ -104,13 +104,87 @@ public sealed class AccountPreferencesFunctionalTests
         Assert.True(state.GetProperty("observedTrailingStopsEnabled").GetBoolean());
     }
 
-    private async Task<HttpResponseMessage> SendAsync(HttpClient client, HttpMethod method, string path, object? body = null, string? idempotencyKey = null)
+    /// <summary>Trace: account-preferences account binding safety. After a confirmed save for account A, Check must reject account B before preferences I/O and preserve the durable target.</summary>
+    [Fact]
+    public async Task CheckStatus_ShouldReturnSafeMismatchWithoutPreferencesIo_WhenAuthenticatedAccountChanges()
+    {
+        await fixture.ResetAccountPreferencesAsync();
+        fixture.Provider.Reset();
+        using var client = new HttpClient { BaseAddress = fixture.ApiBaseUri };
+        var targetState = await SaveEnabledPreferencesAsync(client);
+
+        await fixture.SwitchToDifferentAccountAsync();
+        fixture.Provider.ClearRequests();
+        using var response = await SendAsync(client, HttpMethod.Post, "/api/platform/account-preferences/check-status", beforeSend: fixture.ReassertAccountPreferencesTargetAsync);
+
+        await AssertMismatchResponseAsync(response, checkResponse: true);
+        Assert.DoesNotContain("GET /gateway/deal/accounts/preferences", fixture.Provider.Requests);
+        Assert.DoesNotContain("PUT /gateway/deal/accounts/preferences", fixture.Provider.Requests);
+        using var current = await SendAsync(client, HttpMethod.Get, "/api/platform/account-preferences");
+        var currentState = await current.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(targetState.GetProperty("accountId").GetString(), currentState.GetProperty("accountId").GetString());
+        Assert.Equal(targetState.GetProperty("desiredRevision").GetInt64(), currentState.GetProperty("desiredRevision").GetInt64());
+    }
+
+    /// <summary>Trace: account-preferences account binding safety. Save must return the same non-identifying mismatch contract as Check and leave durable desired state unchanged without provider preferences I/O.</summary>
+    [Fact]
+    public async Task Save_ShouldReturnSafeMismatchWithoutPreferencesIo_WhenAuthenticatedAccountChanges()
+    {
+        await fixture.ResetAccountPreferencesAsync();
+        fixture.Provider.Reset();
+        using var client = new HttpClient { BaseAddress = fixture.ApiBaseUri };
+        var targetState = await SaveEnabledPreferencesAsync(client);
+
+        await fixture.SwitchToDifferentAccountAsync();
+        fixture.Provider.ClearRequests();
+        using var response = await SendAsync(client, HttpMethod.Put, "/api/platform/account-preferences", new { trailingStopsEnabled = false, expectedRevision = targetState.GetProperty("desiredRevision").GetInt64() }, Guid.NewGuid().ToString("N"));
+
+        await AssertMismatchResponseAsync(response);
+        Assert.DoesNotContain("GET /gateway/deal/accounts/preferences", fixture.Provider.Requests);
+        Assert.DoesNotContain("PUT /gateway/deal/accounts/preferences", fixture.Provider.Requests);
+        using var current = await SendAsync(client, HttpMethod.Get, "/api/platform/account-preferences");
+        var currentState = await current.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(targetState.GetProperty("accountId").GetString(), currentState.GetProperty("accountId").GetString());
+        Assert.Equal(targetState.GetProperty("desiredRevision").GetInt64(), currentState.GetProperty("desiredRevision").GetInt64());
+    }
+
+    private async Task<JsonElement> SaveEnabledPreferencesAsync(HttpClient client)
+    {
+        using var current = await SendAsync(client, HttpMethod.Get, "/api/platform/account-preferences");
+        var currentState = await current.Content.ReadFromJsonAsync<JsonElement>();
+        currentState.TryGetProperty("desiredRevision", out var currentRevision);
+        using var response = await SendAsync(client, HttpMethod.Put, "/api/platform/account-preferences", new { trailingStopsEnabled = true, expectedRevision = currentRevision.GetInt64() }, Guid.NewGuid().ToString("N"));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return await response.Content.ReadFromJsonAsync<JsonElement>();
+    }
+
+    private static async Task AssertMismatchResponseAsync(HttpResponseMessage response, bool checkResponse = false)
+    {
+        Assert.Equal(checkResponse ? HttpStatusCode.OK : HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        const string detail = "The authenticated IG account has changed. Trailing-stops preferences remain bound to the previously configured account. Reauthenticate with the intended account, then check status. Contact an administrator to change the configured account.";
+        if (checkResponse)
+        {
+            Assert.Equal("VerificationFailed", body.GetProperty("verificationStatus").GetString());
+            Assert.Equal(detail, body.GetProperty("failureSummary").GetString());
+        }
+        else
+        {
+            Assert.Equal("/problems/account-preferences/account-mismatch", body.GetProperty("type").GetString());
+            Assert.Equal("AccountMismatch", body.GetProperty("failureCategory").GetString());
+            Assert.Equal(detail, body.GetProperty("detail").GetString());
+        }
+    }
+
+    private async Task<HttpResponseMessage> SendAsync(HttpClient client, HttpMethod method, string path, object? body = null, string? idempotencyKey = null, Func<CancellationToken, Task>? beforeSend = null)
     {
         using var request = await TNC.Trading.Platform.Api.IntegrationTests.Authentication.RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(fixture.TokenEndpoint, method, path, "local-operator", "platform.operator");
         if (idempotencyKey is not null)
             request.Headers.Add("Idempotency-Key", idempotencyKey);
         if (body is not null)
             request.Content = JsonContent.Create(body);
+        if (beforeSend is not null)
+            await beforeSend(CancellationToken.None);
         return await client.SendAsync(request);
     }
 }

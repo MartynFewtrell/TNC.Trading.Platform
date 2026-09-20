@@ -28,6 +28,7 @@ public sealed class IgAccountPreferencesGatewayTests
         var handler = new SequencedHandler(SessionResponse("cst", "token", "OTHER"));
         var result = await CreateGateway(handler).RemediateAsync(new AccountPreferencesRemediateRequest("TEST", true), CancellationToken.None);
         Assert.Equal(AccountPreferencesFailureCategory.AccountMismatch, result.FailureCategory);
+        Assert.Equal(AccountPreferencesAccountMismatch.Detail, result.SafeReason);
         Assert.False(result.WritePerformed);
         Assert.Single(handler.Requests);
     }

@@ -1,4 +1,4 @@
-﻿using Bunit;
+using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using TNC.Trading.Platform.Web.Authentication;
 using TNC.Trading.Platform.Web.Components.Pages;
@@ -48,7 +48,7 @@ public sealed class HomeTests
     {
         using var context = new PlatformComponentTestContext(userName: null);
 
-        var cut = context.RenderComponent<Home>();
+        var cut = context.Render<Home>();
 
         cut.WaitForAssertion(() =>
         {
@@ -68,7 +68,7 @@ public sealed class HomeTests
     {
         using var context = new PlatformComponentTestContext(userName: "local-norole");
 
-        _ = context.RenderComponent<Home>();
+        _ = context.Render<Home>();
 
         Assert.Equal("https://localhost/authentication/access-denied", context.NavigationManager.LastNavigationUri);
         var auditRequest = Assert.Single(context.AuditHandler.Requests);

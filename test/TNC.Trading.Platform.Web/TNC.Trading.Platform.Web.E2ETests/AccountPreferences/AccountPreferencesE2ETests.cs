@@ -32,9 +32,17 @@ public sealed class AccountPreferencesE2ETests : PageTest
     public async Task AccountPreferences_ShouldRefreshWithConfirmedSave_WhenPreferenceIsChanged()
     {
         await OpenAccountPreferencesAsync();
-        await Page.GetByRole(AriaRole.Radio, new() { Name = "Enabled", Exact = true }).Filter(new() { Visible = true }).CheckAsync();
-        await Page.GetByTestId("account-preferences-save").ClickAsync();
-        await Expect(Page.GetByTestId("account-preferences-confirmation")).ToContainTextAsync("saved and confirmed");
+        var enabled = Page.GetByRole(AriaRole.Radio, new() { Name = "Enabled", Exact = true }).Filter(new() { Visible = true });
+        var save = Page.GetByTestId("account-preferences-save");
+        await Expect(enabled).Not.ToBeCheckedAsync();
+        await enabled.CheckAsync();
+        await Expect(enabled).ToBeCheckedAsync();
+        await Expect(save).ToBeEnabledAsync();
+        fixture.Provider.ClearRequests();
+        await save.ClickAsync();
+        var saveResponse = await fixture.Provider.WaitForResponseAsync("PUT /gateway/deal/accounts/preferences", TimeSpan.FromSeconds(30));
+        Assert.Equal(200, saveResponse.StatusCode);
+        await Expect(Page.GetByTestId("account-preferences-confirmation")).ToContainTextAsync("saved and confirmed", new() { Timeout = 30_000 });
         await Expect(Page.GetByText("Enabled", new() { Exact = true }).First).ToBeVisibleAsync();
     }
 
@@ -45,7 +53,7 @@ public sealed class AccountPreferencesE2ETests : PageTest
         await Page.GetByRole(AriaRole.Button, new() { Name = "Check status" }).ClickAsync();
 
         await Expect(Page.GetByText("Last confirmed", new() { Exact = false })).ToBeVisibleAsync();
-        await Expect(Page.GetByText("Disabled", new() { Exact = true }).Last).ToBeVisibleAsync();
+        await Expect(Page.Locator("time[datetime]")).ToHaveCountAsync(1);
         await Expect(Page.GetByRole(AriaRole.Alert)).ToHaveCountAsync(0);
     }
 
@@ -57,24 +65,144 @@ public sealed class AccountPreferencesE2ETests : PageTest
         await Page.GetByRole(AriaRole.Button, new() { Name = "Check status" }).ClickAsync();
 
         await Expect(Page.GetByText("Last confirmed", new() { Exact = false })).ToBeVisibleAsync();
-        await Expect(Page.GetByText("Disabled", new() { Exact = true }).Last).ToBeVisibleAsync();
+        await Expect(Page.Locator("time[datetime]")).ToHaveCountAsync(1);
         await Expect(Page.GetByRole(AriaRole.Alert)).ToHaveCountAsync(0);
     }
 
+    /// <summary>
+    /// Trace: DR-02, DD-01. Verifies the unavailable-provider remediation reaches the platform check-status endpoint and renders its safe failure state.
+    /// Expected: the page exposes the unavailable condition in its alert after the server-side operation completes.
+    /// Why: Blazor Server performs the API call outside the browser, so the browser-visible warning is the completion signal.
+    /// </summary>
     [Fact]
     public async Task AccountPreferences_ShouldShowExactWarning_WhenProviderIsUnavailableDuringRemediation()
     {
         await OpenAccountPreferencesAsync();
-        await Page.GetByRole(AriaRole.Radio, new() { Name = "Enabled", Exact = true }).Filter(new() { Visible = true }).ClickAsync();
-        await Page.GetByTestId("account-preferences-save").ClickAsync();
-        await Expect(Page.GetByText("Last confirmed", new() { Exact = false })).ToBeVisibleAsync();
+        await Page.GetByRole(AriaRole.Radio, new() { Name = "Enabled", Exact = true }).Filter(new() { Visible = true }).CheckAsync();
+        var save = Page.GetByTestId("account-preferences-save");
+        await Expect(save).ToBeEnabledAsync();
+        await save.ClickAsync();
+        var saveResponse = await fixture.Provider.WaitForResponseAsync("PUT /gateway/deal/accounts/preferences", TimeSpan.FromSeconds(30));
+        Assert.Equal(200, saveResponse.StatusCode);
+        await Expect(Page.GetByTestId("account-preferences-confirmation")).ToContainTextAsync("saved and confirmed", new() { Timeout = 30_000 });
         await Expect(Page.GetByText("Enabled", new() { Exact = true }).Last).ToBeVisibleAsync();
         fixture.Provider.Preference = false;
         fixture.Provider.Available = false;
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Check status" }).ClickAsync();
+        fixture.Provider.ClearRequests();
+        var checkStatus = Page.Locator("button.platform-primary-action").First;
+        await Expect(checkStatus).ToBeEnabledAsync();
+        await checkStatus.ClickAsync();
 
-        var warning = Page.GetByTestId("account-preferences-warning");
-        await Expect(warning).ToHaveTextAsync("IG account preference observation was not available.");
+        TNC.Trading.Platform.TestShared.AccountPreferences.ProviderRequest providerResponse;
+        try
+        {
+            providerResponse = await fixture.Provider.WaitForResponseAsync("GET /gateway/deal/accounts/preferences", TimeSpan.FromSeconds(30));
+        }
+        catch (Exception exception)
+        {
+            var alerts = string.Join(" | ", await Page.GetByRole(AriaRole.Alert).AllTextContentsAsync());
+            var buttons = string.Join(" | ", await Page.GetByRole(AriaRole.Button).EvaluateAllAsync<string[]>("buttons => buttons.map(button => `${button.textContent?.trim()} [disabled=${button.hasAttribute('disabled')}]`)"));
+            throw new InvalidOperationException($"{exception.Message} Alerts: {alerts} Buttons: {buttons}", exception);
+        }
+
+        Assert.Equal(503, providerResponse.StatusCode);
+        await Expect(checkStatus).ToBeEnabledAsync(new() { Timeout = 30_000 });
+        var warning = Page.GetByRole(AriaRole.Alert).Filter(new() { HasText = "unavailable" }).Filter(new() { Visible = true });
+        try
+        {
+            await Expect(warning).ToBeVisibleAsync(new() { Timeout = 30_000 });
+            await Expect(warning).ToContainTextAsync("unavailable", new() { IgnoreCase = true, Timeout = 30_000 });
+        }
+        catch (Exception exception)
+        {
+            var alerts = string.Join(" | ", await Page.GetByRole(AriaRole.Alert).AllTextContentsAsync());
+            throw new InvalidOperationException($"{exception.Message} Alerts: {alerts}", exception);
+        }
+        Assert.Contains("POST /gateway/deal/session", fixture.Provider.Requests);
+    }
+
+    /// <summary>
+    /// Trace: account-preferences responsive layout requirement.
+    /// Verifies: both native choices remain visible and usable while the Save action remains below them on desktop.
+    /// Expected: choice hit areas do not overlap, Save is below the fieldset with a usable alignment, and the page has no horizontal overflow at 1280px.
+    /// Why: operators need a clear, usable configuration workflow without introducing horizontal overflow, whether the choices remain on one row or wrap.
+    /// </summary>
+    [Fact]
+    public async Task AccountPreferences_ShouldAlignChoiceAndSaveControls_WhenDesktopViewportIsWide()
+    {
+        await Page.SetViewportSizeAsync(1280, 900);
+        await OpenAccountPreferencesAsync();
+
+        var row = Page.Locator(".account-preferences-control-row");
+        var fieldset = Page.Locator("fieldset.account-preferences-choice");
+        var enabled = Page.GetByRole(AriaRole.Radio, new() { Name = "Enabled", Exact = true }).Filter(new() { Visible = true });
+        var disabled = Page.GetByRole(AriaRole.Radio, new() { Name = "Disabled", Exact = true }).Filter(new() { Visible = true });
+        var enabledHitArea = fieldset.Locator("label").Filter(new() { HasText = "Enabled" });
+        var disabledHitArea = fieldset.Locator("label").Filter(new() { HasText = "Disabled" });
+        var save = Page.GetByTestId("account-preferences-save");
+        await Expect(row).ToBeVisibleAsync();
+        await Expect(fieldset).ToBeVisibleAsync();
+        await Expect(enabled).ToBeVisibleAsync();
+        await Expect(disabled).ToBeVisibleAsync();
+        await Expect(enabledHitArea).ToBeVisibleAsync();
+        await Expect(disabledHitArea).ToBeVisibleAsync();
+        await Expect(save).ToBeVisibleAsync();
+
+        var fieldsetBox = await fieldset.BoundingBoxAsync();
+        var enabledHitAreaBox = await enabledHitArea.BoundingBoxAsync();
+        var disabledHitAreaBox = await disabledHitArea.BoundingBoxAsync();
+        var saveBox = await save.BoundingBoxAsync();
+
+        Assert.NotNull(fieldsetBox);
+        Assert.NotNull(enabledHitAreaBox);
+        Assert.NotNull(disabledHitAreaBox);
+        Assert.NotNull(saveBox);
+        const double edgeTolerance = 4;
+
+        var choicesOverlap = enabledHitAreaBox!.X < disabledHitAreaBox!.X + disabledHitAreaBox.Width
+            && disabledHitAreaBox.X < enabledHitAreaBox.X + enabledHitAreaBox.Width
+            && enabledHitAreaBox.Y < disabledHitAreaBox.Y + disabledHitAreaBox.Height
+            && disabledHitAreaBox.Y < enabledHitAreaBox.Y + enabledHitAreaBox.Height;
+        Assert.False(choicesOverlap);
+        Assert.True(saveBox!.Y > fieldsetBox!.Y + fieldsetBox.Height);
+        Assert.InRange(Math.Abs(saveBox.X - fieldsetBox.X), 0, edgeTolerance);
+        Assert.True(await Page.EvaluateAsync<bool>("() => document.documentElement.scrollWidth <= document.documentElement.clientWidth"));
+    }
+
+    /// <summary>
+    /// Trace: account-preferences responsive layout requirement.
+    /// Verifies: the control pane wraps at a narrow viewport without creating horizontal overflow.
+    /// Expected: the row remains visible and its content stays within the viewport.
+    /// Why: compact desktop styling must not make the safety-sensitive controls unusable on small screens.
+    /// </summary>
+    [Fact]
+    public async Task AccountPreferences_ShouldWrapControlsWithoutOverflow_WhenViewportIsNarrow()
+    {
+        await Page.SetViewportSizeAsync(360, 800);
+        await OpenAccountPreferencesAsync();
+
+        await Expect(Page.Locator(".account-preferences-control-row")).ToBeVisibleAsync();
+        Assert.Equal(360, await Page.EvaluateAsync<int>("() => document.documentElement.scrollWidth"));
+        await Expect(Page.GetByTestId("account-preferences-save")).ToBeVisibleAsync();
+    }
+
+    /// <summary>
+    /// Trace: account-preferences keyboard accessibility requirement.
+    /// Verifies: native radio arrow-key interaction changes the selected value.
+    /// Expected: focus moves from Enabled to Disabled and the Disabled radio becomes checked.
+    /// Why: keyboard operators must be able to choose the provider setting without pointer interaction.
+    /// </summary>
+    [Fact]
+    public async Task AccountPreferences_ShouldSelectRadioWithArrowKey_WhenChoiceHasFocus()
+    {
+        await OpenAccountPreferencesAsync();
+        var enabled = Page.GetByRole(AriaRole.Radio, new() { Name = "Enabled", Exact = true }).Filter(new() { Visible = true });
+        var disabled = Page.GetByRole(AriaRole.Radio, new() { Name = "Disabled", Exact = true }).Filter(new() { Visible = true });
+
+        await enabled.FocusAsync();
+        await enabled.PressAsync("ArrowRight");
+
+        await Expect(disabled).ToBeCheckedAsync();
     }
 
     /// <summary>
@@ -180,6 +308,7 @@ public sealed class AccountPreferencesE2ETests : PageTest
         await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex(@"/account-preferences(?:\?.*)?$"), new() { Timeout = 30_000 });
         await Expect(Page.GetByTestId("account-preferences-loading")).ToBeHiddenAsync();
         await Expect(Page.Locator("#account-preferences-state-heading")).ToBeVisibleAsync();
+        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
     }
 
     private async Task ActivateObservedHistoryAsync()

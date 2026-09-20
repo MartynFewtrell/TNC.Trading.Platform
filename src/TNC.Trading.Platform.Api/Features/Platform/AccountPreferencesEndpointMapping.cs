@@ -33,10 +33,10 @@ internal static class AccountPreferencesEndpointMapping
     {
         if (result.OutcomeUnknown)
             return ToProblemResult(AccountPreferencesFailureCategory.Unavailable, result.SafeReason ?? "Save outcome unknown.");
-        if (result.Conflict)
-            return TypedResults.Problem(statusCode: 409, title: result.SafeReason ?? "Account preferences save was not completed.");
         if (result.FailureCategory is { } category)
             return ToProblemResult(category, result.SafeReason);
+        if (result.Conflict)
+            return TypedResults.Problem(statusCode: 409, title: result.SafeReason ?? "Account preferences save was not completed.");
         return result.State is { } state
             ? TypedResults.Ok(state.ToResponse())
             : TypedResults.Problem(statusCode: 503, title: "Account preferences save was not completed.");
@@ -48,7 +48,7 @@ internal static class AccountPreferencesEndpointMapping
     private static IResult ToProblem(this AccountPreferencesGatewayOutcome.Indeterminate failure)
         => ToProblemResult(failure.Category);
 
-    internal static IResult ToProblemResult(AccountPreferencesFailureCategory category, string? safeReason = null) => TypedResults.Problem(statusCode: StatusCode(category), type: $"/problems/account-preferences/{TypeSuffix(category)}", title: Title(category), detail: safeReason ?? Detail(category), extensions: new Dictionary<string, object?> { ["failureCategory"] = category.ToString() });
+    internal static IResult ToProblemResult(AccountPreferencesFailureCategory category, string? safeReason = null) => TypedResults.Problem(statusCode: StatusCode(category), type: category == AccountPreferencesAccountMismatch.Category ? AccountPreferencesAccountMismatch.Type : $"/problems/account-preferences/{TypeSuffix(category)}", title: Title(category), detail: safeReason ?? Detail(category), extensions: new Dictionary<string, object?> { ["failureCategory"] = category.ToString() });
 
     private static IResult ToProblem(this AccountPreferencesGatewayOutcome.NotApplied notApplied)
         => TypedResults.Problem(statusCode: 409, title: "Account preferences update was not applied.", detail: $"Requested trailing-stops state was {notApplied.RequestedTrailingStopsEnabled}, but the provider observed {notApplied.ObservedPreferences.TrailingStopsEnabled}.", extensions: new Dictionary<string, object?> { ["requestedTrailingStopsEnabled"] = notApplied.RequestedTrailingStopsEnabled, ["observedTrailingStopsEnabled"] = notApplied.ObservedPreferences.TrailingStopsEnabled });
@@ -78,7 +78,7 @@ internal static class AccountPreferencesEndpointMapping
         AccountPreferencesFailureCategory.Unavailable => "Account preferences provider is unavailable.",
         AccountPreferencesFailureCategory.Timeout => "Account preferences provider timed out.",
         AccountPreferencesFailureCategory.Unsupported => "Account preferences provider response was unsupported.",
-        AccountPreferencesFailureCategory.AccountMismatch => "IG session account does not match the configured account.",
+        AccountPreferencesFailureCategory.AccountMismatch => AccountPreferencesAccountMismatch.Title,
         AccountPreferencesFailureCategory.Transient => "Account preferences provider failed temporarily.",
         _ => throw new ArgumentOutOfRangeException(nameof(category), category, "Unknown account preferences failure category.")
     };
@@ -98,7 +98,7 @@ internal static class AccountPreferencesEndpointMapping
         _ => throw new ArgumentOutOfRangeException(nameof(category), category, "Unknown account preferences failure category.")
     };
 
-    private static string Detail(AccountPreferencesFailureCategory category) => Title(category);
+    private static string Detail(AccountPreferencesFailureCategory category) => category == AccountPreferencesAccountMismatch.Category ? AccountPreferencesAccountMismatch.Detail : Title(category);
 }
 
 internal sealed record AccountPreferencesResponse(

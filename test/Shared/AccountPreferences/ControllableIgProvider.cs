@@ -8,10 +8,11 @@ public sealed class ControllableIgProvider : IAsyncDisposable
     private readonly HttpListener listener;
     private readonly CancellationTokenSource cancellationTokenSource = new();
     private readonly List<string> requests = [];
+    private readonly List<ProviderRequest> requestResults = [];
     private readonly object sync = new();
     private readonly Task serverTask;
     private readonly Uri baseUri;
-    private readonly string accountId;
+    private string accountId;
     private bool available = true;
     private bool preference;
     private int delayMilliseconds;
@@ -30,10 +31,39 @@ public sealed class ControllableIgProvider : IAsyncDisposable
     public bool Available { get { lock (sync) return available; } set { lock (sync) available = value; } }
     public int DelayMilliseconds { get { lock (sync) return delayMilliseconds; } set { lock (sync) delayMilliseconds = value; } }
     public IReadOnlyList<string> Requests { get { lock (sync) return requests.ToArray(); } }
+    public IReadOnlyList<ProviderRequest> RequestResults { get { lock (sync) return requestResults.ToArray(); } }
 
     public void ClearRequests()
     {
-        lock (sync) requests.Clear();
+        lock (sync)
+        {
+            requests.Clear();
+            requestResults.Clear();
+        }
+    }
+
+    public async Task<ProviderRequest> WaitForResponseAsync(string requestName, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            lock (sync)
+            {
+                var result = requestResults.LastOrDefault(request => request.Name == requestName);
+                if (result is not null)
+                    return result;
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new InvalidOperationException($"Timed out waiting for controllable IG response '{requestName}'. Requests: {string.Join(", ", Requests)}");
+    }
+
+    public void SetAccountId(string accountId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(accountId);
+        lock (sync) this.accountId = accountId;
     }
 
     public void Reset()
@@ -44,6 +74,7 @@ public sealed class ControllableIgProvider : IAsyncDisposable
             preference = false;
             delayMilliseconds = 0;
             requests.Clear();
+            requestResults.Clear();
         }
     }
 
@@ -113,6 +144,7 @@ public sealed class ControllableIgProvider : IAsyncDisposable
         }
 
         var response = GetResponse(requestName, body);
+        lock (sync) requestResults.Add(new ProviderRequest(requestName, response.StatusCode));
         if (response.DelayMilliseconds > 0)
         {
             await Task.Delay(response.DelayMilliseconds, cancellationToken);
@@ -136,6 +168,11 @@ public sealed class ControllableIgProvider : IAsyncDisposable
         lock (sync)
         {
             requests.Add(requestName);
+            if (requestName == "POST /gateway/deal/session")
+            {
+                return SessionResponse();
+            }
+
             if (!available)
             {
                 return new ProviderResponse(503, "{\"errorCode\":\"SERVICE_UNAVAILABLE\"}", delayMilliseconds);
@@ -143,7 +180,6 @@ public sealed class ControllableIgProvider : IAsyncDisposable
 
             return requestName switch
             {
-                "POST /gateway/deal/session" => SessionResponse(),
                 "GET /gateway/deal/accounts/preferences" => new ProviderResponse(200, PreferenceBody(), delayMilliseconds),
                 "PUT /gateway/deal/accounts/preferences" => UpdatePreference(requestBody),
                 _ => new ProviderResponse(404, "{}", delayMilliseconds)
@@ -171,3 +207,5 @@ public sealed class ControllableIgProvider : IAsyncDisposable
 
     private sealed record ProviderResponse(int StatusCode, string Body, int DelayMilliseconds, IReadOnlyDictionary<string, string>? Headers = null);
 }
+
+public sealed record ProviderRequest(string Name, int StatusCode);

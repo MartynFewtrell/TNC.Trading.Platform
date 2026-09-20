@@ -76,7 +76,14 @@ internal sealed class AccountPreferencesPagePresenter(PlatformApiClient platform
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
         {
-            SaveError = "Unable to save and confirm account preferences.";
+            SaveError = exception is PlatformApiException
+                {
+                    ProblemType: "/problems/account-preferences/account-mismatch",
+                    FailureCategory: "AccountMismatch",
+                    Detail: var detail
+                } && !string.IsNullOrWhiteSpace(detail)
+                ? detail
+                : "Unable to save and confirm account preferences.";
         }
         finally { IsSaving = false; }
     }

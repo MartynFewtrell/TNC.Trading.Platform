@@ -138,6 +138,10 @@ internal static class AppHostEnvironmentWiring
             configuredApi = configuredApi.WithEnvironment("Ig__AccountPreferencesBaseUrl", settings.AccountPreferencesBaseUrl);
         }
 
+        configuredApi = configuredApi.WithEnvironment(
+            "AccountPreferences__Reconciliation__Enabled",
+            settings.AccountPreferencesReconciliationEnabled.ToString());
+
         return configuredApi;
     }
 

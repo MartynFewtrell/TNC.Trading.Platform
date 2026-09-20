@@ -22,7 +22,7 @@ public sealed class CheckAccountPreferencesStatusHandlerTests
     {
         var fixture = new Fixture(fixtureState: Fixture.State("TARGET"), snapshotAccount: "OTHER");
         var result = await fixture.Handler.HandleAsync(new(), "correlation", CancellationToken.None);
-        Assert.Equal("IG session account did not match the configured target account.", result.SafeReason);
+        Assert.Equal(AccountPreferencesAccountMismatch.Detail, result.SafeReason);
         Assert.Equal(0, fixture.Gateway.ObserveCallCount);
     }
 

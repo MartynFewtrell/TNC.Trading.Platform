@@ -28,6 +28,23 @@ public sealed class SaveAccountPreferencesHandlerTests
         Assert.Equal(0, fixture.Gateway.RemediateCallCount);
     }
 
+    /// <summary>Trace: FR5. Verifies a durable-target mismatch returns the safe typed reason without changing state or contacting IG.</summary>
+    [Fact]
+    public async Task HandleAsync_ShouldReturnAccountMismatchWithoutPreferenceIo_WhenDurableTargetDiffers()
+    {
+        var fixture = new Fixture();
+        fixture.Store.State = fixture.Store.State! with { AccountId = "OTHER" };
+
+        var result = await fixture.Handler.HandleAsync(new(true, 4, "key-1"), "operator", "correlation", CancellationToken.None);
+
+        Assert.Equal(AccountPreferencesAccountMismatch.Category, result.FailureCategory);
+        Assert.Equal(AccountPreferencesAccountMismatch.Detail, result.SafeReason);
+        Assert.True(result.Conflict);
+        Assert.Equal("OTHER", result.State!.AccountId);
+        Assert.Equal(0, fixture.Gateway.RemediateCallCount);
+        Assert.Equal(0, fixture.Store.FinalizeCallCount);
+    }
+
     /// <summary>Trace: FR2. Verifies incompatible idempotency reuse conflicts before gateway I/O.</summary>
     [Fact]
     public async Task HandleAsync_ShouldReturnConflictBeforeGatewayIo_WhenIdempotencyKeyIsIncompatible()

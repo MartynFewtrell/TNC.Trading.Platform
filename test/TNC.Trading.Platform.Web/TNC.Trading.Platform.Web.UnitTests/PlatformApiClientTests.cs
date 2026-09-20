@@ -273,6 +273,51 @@ public sealed class PlatformApiClientTests
         await Assert.ThrowsAsync<HttpRequestException>(() => client.TriggerManualRetryAsync(CancellationToken.None));
     }
 
+    /// <summary>Trace: Account Preferences Phase 2. Verifies Problem Details identity and safe descriptive fields survive the Web client boundary.</summary>
+    [Fact]
+    public async Task UpdateAccountPreferencesAsync_ShouldRetainProblemDetailsMetadata_WhenApiReturnsTypedFailure()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            userName: "local-operator",
+            apiResponses: _ => PlatformWebTestData.CreateProblemResponse(HttpStatusCode.Conflict, new
+            {
+                type = "/problems/account-preferences/account-mismatch",
+                failureCategory = "AccountMismatch",
+                title = "Account preferences are bound to another account.",
+                detail = "Reauthenticate with the intended account, then check status."
+            }));
+        var client = context.Services.GetRequiredService<PlatformApiClient>();
+
+        var exception = await Assert.ThrowsAsync<PlatformApiException>(() => client.UpdateAccountPreferencesAsync(true, 1, "idempotency", CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Conflict, exception.StatusCode);
+        Assert.Equal("/problems/account-preferences/account-mismatch", exception.ProblemType);
+        Assert.Equal("AccountMismatch", exception.FailureCategory);
+        Assert.Equal("Account preferences are bound to another account.", exception.Title);
+        Assert.Equal("Reauthenticate with the intended account, then check status.", exception.Detail);
+    }
+
+    /// <summary>Trace: Account Preferences Phase 2. Verifies malformed error payloads retain the HTTP failure while falling back to generic metadata.</summary>
+    [Fact]
+    public async Task UpdateAccountPreferencesAsync_ShouldUseSafeFallback_WhenErrorPayloadIsMalformed()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            userName: "local-operator",
+            apiResponses: _ => new HttpResponseMessage(HttpStatusCode.Conflict)
+            {
+                Content = new StringContent("not-json")
+            });
+        var client = context.Services.GetRequiredService<PlatformApiClient>();
+
+        var exception = await Assert.ThrowsAsync<PlatformApiException>(() => client.UpdateAccountPreferencesAsync(true, 1, "idempotency", CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Conflict, exception.StatusCode);
+        Assert.Equal("API request failed", exception.Title);
+        Assert.Equal(string.Empty, exception.ProblemType);
+        Assert.Equal(string.Empty, exception.FailureCategory);
+        Assert.DoesNotContain("configured", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Trace: FR3, NF2, OR1, TR1.
     /// Verifies: the Web-to-API client rejects an empty protected status payload even when the HTTP status code is successful.

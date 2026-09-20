@@ -20,7 +20,8 @@ public sealed class RealAuthenticationE2ETestFixture : IAsyncLifetime
             {
                 ["AppHost:UsePersistentKeycloakState"] = bool.FalseString,
                 ["Ig:AccountPreferencesBaseUrl"] = new Uri(provider.BaseUri, "gateway/deal/").ToString(),
-                ["Authentication:Test:EnableInteractiveSignIn"] = bool.FalseString
+                ["Authentication:Test:EnableInteractiveSignIn"] = bool.FalseString,
+                ["AccountPreferences:Reconciliation:Enabled"] = bool.FalseString
             });
             await managedFixture.InitializeAsync();
             WebBaseUri = managedFixture.WebEndpointUri;

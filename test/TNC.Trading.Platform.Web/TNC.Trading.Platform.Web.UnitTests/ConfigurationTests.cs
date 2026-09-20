@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using TNC.Trading.Platform.Web.Components.Pages;
@@ -55,7 +55,7 @@ public sealed class ConfigurationTests
             null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()));
 
-        var cut = context.RenderComponent<Configuration>();
+        var cut = context.Render<Configuration>();
 
         cut.WaitForAssertion(() =>
         {
@@ -88,7 +88,7 @@ public sealed class ConfigurationTests
                     }
                 }));
 
-        var cut = context.RenderComponent<Configuration>();
+        var cut = context.Render<Configuration>();
         cut.WaitForElement("[data-testid='configuration-save-button']");
         var changedByInput = cut.FindAll("input").Last();
         changedByInput.Change("updated-operator");
@@ -117,7 +117,7 @@ public sealed class ConfigurationTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration(restartRequired: true)));
 
-        var cut = context.RenderComponent<Configuration>();
+        var cut = context.Render<Configuration>();
         cut.WaitForElement("[data-testid='configuration-save-button']").Click();
 
         cut.WaitForAssertion(() =>
@@ -138,7 +138,7 @@ public sealed class ConfigurationTests
             null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration(requiresCredentialReentry: true)));
 
-        var cut = context.RenderComponent<Configuration>();
+        var cut = context.Render<Configuration>();
 
         cut.WaitForAssertion(() =>
         {
@@ -163,7 +163,7 @@ public sealed class ConfigurationTests
             null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()));
 
-        var cut = context.RenderComponent<Configuration>();
+        var cut = context.Render<Configuration>();
 
         cut.WaitForAssertion(() => Assert.Empty(cut.FindAll("[data-testid='configuration-credential-reentry-message']")));
     }

@@ -26,7 +26,10 @@ else
                     <h2 id="account-preferences-state-heading">Trailing stops</h2>
                     <dl class="account-preferences-state">
                         <div><dt>Trailing stops</dt><dd>@(Presenter.State.DesiredTrailingStopsEnabled is bool desired ? (desired ? "Enabled" : "Disabled") : "Unconfigured")</dd></div>
-                        @if (Presenter.State.ConfirmedTrailingStopsEnabled is bool confirmed) { <div><dt>Last confirmed</dt><dd>@(confirmed ? "Enabled" : "Disabled")</dd></div> }
+                        @if (Presenter.State.LastVerifiedAtUtc is { } lastVerifiedAtUtc)
+                        {
+                            <div><dt>Last confirmed</dt><dd><time datetime="@lastVerifiedAtUtc.ToString("O")">@lastVerifiedAtUtc.ToLocalTime().ToString("g")</time></dd></div>
+                        }
                     </dl>
                     @if (Presenter.State.VerificationStatus is "Pending") { <p role="status">Verification is pending.</p> }
                     <div class="account-preferences-actions" role="group" aria-label="Verification actions">
@@ -37,15 +40,17 @@ else
                 {
                     <section class="panel">
                         <h2>Trailing stops configuration</h2>
-                        <fieldset class="account-preferences-choice" disabled="@Presenter.IsSaving">
-                            <legend>Trailing stops</legend>
-                            <InputRadioGroup TValue="bool" Value="@Presenter.State.TrailingStopsEnabled" ValueChanged="Presenter.Select" ValueExpression="@(() => Presenter.State.TrailingStopsEnabled)">
-                                <label><InputRadio Value="true" /> Enabled</label>
-                                <label><InputRadio Value="false" /> Disabled</label>
-                            </InputRadioGroup>
-                        </fieldset>
-                        <div class="account-preferences-actions" role="group" aria-label="Preference actions">
-                            <button @ref="saveButton" class="platform-primary-action" type="button" data-testid="account-preferences-save" @onclick="SaveAsync" disabled="@(Presenter.IsSaving || Presenter.IsOperating || Presenter.IsLoading)">@(Presenter.IsSaving ? "Saving..." : "Save preferences")</button>
+                        <div class="account-preferences-control-row">
+                            <fieldset class="account-preferences-choice" disabled="@Presenter.IsSaving">
+                                <legend>Trailing stops</legend>
+                                <InputRadioGroup TValue="bool" Value="@Presenter.State.TrailingStopsEnabled" ValueChanged="Presenter.Select" ValueExpression="@(() => Presenter.State.TrailingStopsEnabled)">
+                                    <label><InputRadio Value="true" /> Enabled</label>
+                                    <label><InputRadio Value="false" /> Disabled</label>
+                                </InputRadioGroup>
+                            </fieldset>
+                            <div class="account-preferences-actions" role="group" aria-label="Preference actions">
+                                <button @ref="saveButton" class="platform-primary-action" type="button" data-testid="account-preferences-save" @onclick="SaveAsync" disabled="@(Presenter.IsSaving || Presenter.IsOperating || Presenter.IsLoading)">@(Presenter.IsSaving ? "Saving..." : "Save preferences")</button>
+                            </div>
                         </div>
                         @if (!string.IsNullOrWhiteSpace(Presenter.SaveError)) { <p class="error" role="alert">@Presenter.SaveError</p> }
                         @if (!string.IsNullOrWhiteSpace(Presenter.Message))

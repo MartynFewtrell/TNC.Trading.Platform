@@ -28,7 +28,7 @@ internal sealed class SaveAccountPreferencesHandler(
 
         var state = await stateStore.GetAsync(configuration.PlatformEnvironment, configuration.BrokerEnvironment, cancellationToken).ConfigureAwait(false);
         if (state?.AccountId is not null && state.AccountId != snapshot.CurrentAccountId)
-            return new(state, AccountPreferencesOperationPhase.VerificationFailed, AccountPreferencesFailureCategory.Rejected, "IG session account did not match the configured target account.", Conflict: true);
+            return new(state, AccountPreferencesOperationPhase.VerificationFailed, AccountPreferencesAccountMismatch.Category, AccountPreferencesAccountMismatch.Detail, Conflict: true);
         var baselineRevision = state?.DesiredRevision ?? 0;
         if (command.ExpectedRevision is not null && command.ExpectedRevision != state?.DesiredRevision)
             return new(state, AccountPreferencesOperationPhase.Started, AccountPreferencesFailureCategory.Rejected, "The account preferences revision is stale.", Conflict: true);

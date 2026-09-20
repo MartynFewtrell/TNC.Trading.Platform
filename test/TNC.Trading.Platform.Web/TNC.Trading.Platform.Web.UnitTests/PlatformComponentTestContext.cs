@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Security.Claims;
 using Bunit;
 using Microsoft.AspNetCore.Authentication;
@@ -19,7 +19,7 @@ using TNC.Trading.Platform.Web.Components.Layout;
 
 namespace TNC.Trading.Platform.Web.UnitTests;
 
-internal sealed class PlatformComponentTestContext : Bunit.TestContext
+internal sealed class PlatformComponentTestContext : Bunit.BunitContext
 {
     private readonly bool includeRenderingServices;
 

@@ -20,7 +20,7 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
             var credentials = await protectedCredentialService.GetCredentialsAsync(BrokerEnvironmentKind.Demo, cancellationToken).ConfigureAwait(false);
             var session = await CreateSessionAsync(credentials, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(session.CurrentAccountId, request.TargetAccountId, StringComparison.Ordinal))
-                return new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, null, AccountPreferencesFailureCategory.AccountMismatch, "IG session account did not match the configured target account.");
+                return new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, null, AccountPreferencesAccountMismatch.Category, AccountPreferencesAccountMismatch.Detail);
             var result = await SendAsync(HttpMethod.Get, null, credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);
             return result.Outcome is AccountPreferencesGatewayOutcome.Succeeded success
                 ? new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, success.Preferences.TrailingStopsEnabled)
@@ -40,7 +40,7 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
             var credentials = await protectedCredentialService.GetCredentialsAsync(BrokerEnvironmentKind.Demo, cancellationToken).ConfigureAwait(false);
             var session = await CreateSessionAsync(credentials, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(session.CurrentAccountId, request.TargetAccountId, StringComparison.Ordinal))
-                return new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, null, false, AccountPreferencesFailureCategory.AccountMismatch, "IG session account did not match the configured target account.");
+                return new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, null, false, AccountPreferencesAccountMismatch.Category, AccountPreferencesAccountMismatch.Detail);
             var current = await ReadAsync(credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);
             if (current == request.TrailingStopsEnabled) return new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, current, false);
             var update = await SendAsync(HttpMethod.Put, new IgPreferencesRequest(request.TrailingStopsEnabled), credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);

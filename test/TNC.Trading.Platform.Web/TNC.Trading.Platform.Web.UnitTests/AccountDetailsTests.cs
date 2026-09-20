@@ -12,7 +12,7 @@ public sealed class AccountDetailsTests
     {
         using var context = new PlatformComponentTestContext("local-viewer", null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new { Retrieval = (object?)null, OlderCursor = (string?)null, NewerCursor = (string?)null }));
-        var cut = context.RenderComponent<AccountDetails>();
+        var cut = context.Render<AccountDetails>();
         cut.WaitForAssertion(() => Assert.Contains("No saved account details are available yet", cut.Markup, StringComparison.Ordinal));
     }
 
@@ -23,7 +23,7 @@ public sealed class AccountDetailsTests
         var retrieval = CreateRetrieval(Account("CFD-1", "Primary", "Main", "Enabled", "CFD", 100m), Account("CFD-2", "Secondary", "Second", "Disabled", "CFD", 200m), Account("SB-1", "Spreadbet account", "Spread", "Enabled", "Spreadbet", 300m));
         using var context = new PlatformComponentTestContext("local-viewer", null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new { Retrieval = retrieval, OlderCursor = "older-token", NewerCursor = (string?)null }));
-        var cut = context.RenderComponent<AccountDetails>();
+        var cut = context.Render<AccountDetails>();
         cut.WaitForAssertion(() =>
         {
             Assert.Contains("Primary", cut.Markup, StringComparison.Ordinal);
@@ -53,7 +53,7 @@ public sealed class AccountDetailsTests
     {
         using var context = new PlatformComponentTestContext("local-viewer", null,
             _ => Response(CreateRetrieval(Account("CFD-1", "Primary", "Main", "Enabled", "CFD", 100m))));
-        var cut = context.RenderComponent<AccountDetails>();
+        var cut = context.Render<AccountDetails>();
 
         cut.WaitForAssertion(() =>
         {
@@ -72,7 +72,7 @@ public sealed class AccountDetailsTests
     {
         var retrieval = CreateRetrieval(Account("CFD-1", "Primary", "Main", "Enabled", "CFD", 100m), Account("SB-1", "Spreadbet account", "Spread", "Enabled", "Spreadbet", 300m));
         using var context = new PlatformComponentTestContext("local-viewer", null, _ => Response(retrieval, "older-token"));
-        var cut = context.RenderComponent<AccountDetails>();
+        var cut = context.Render<AccountDetails>();
         cut.WaitForAssertion(() => cut.FindAll("[role='tab']").Single(tab => tab.TextContent.Trim() == "Spreadbet").Click());
         var panel = cut.Find("[data-testid='account-details-panel']");
         Assert.DoesNotContain("Primary", panel.TextContent, StringComparison.Ordinal);
@@ -88,7 +88,7 @@ public sealed class AccountDetailsTests
         var initial = CreateRetrieval(Account("CFD-1", "Initial CFD", "One", "Enabled", "cfd", 1m), Account("SB-1", "Initial Spreadbet", "Spread", "Enabled", "SpreadBet", 2m));
         var refreshed = CreateRetrieval(Account("CFD-2", "Refreshed CFD", "Two", "Enabled", "CFD", 3m), Account("SB-2", "Refreshed Spreadbet", "Spread", "Enabled", "spreadbet", 4m));
         using var context = new PlatformComponentTestContext("local-operator", null, _ => Response(initial), _ => RefreshResponse(refreshed));
-        var cut = context.RenderComponent<AccountDetails>();
+        var cut = context.Render<AccountDetails>();
         cut.WaitForAssertion(() => cut.FindAll("[role='tab']").Single(tab => tab.TextContent.Trim() == "SpreadBet").Click());
         cut.Find("button.platform-button").Click();
         cut.WaitForAssertion(() => Assert.Contains("Refreshed Spreadbet", cut.Find("[data-testid='account-details-panel']").TextContent, StringComparison.Ordinal));
@@ -102,7 +102,7 @@ public sealed class AccountDetailsTests
         var older = CreateRetrieval(Account("CFD-2", "Older CFD", "Two", "Enabled", "CFD", 3m), Account("SB-2", "Older Spreadbet", "Spread", "Enabled", "spreadbet", 4m));
         var newer = CreateRetrieval(Account("CFD-3", "Newer CFD", "Three", "Enabled", "CFD", 5m), Account("SB-3", "Newer Spreadbet", "Spread", "Enabled", "SPREADBET", 6m));
         using var context = new PlatformComponentTestContext("local-viewer", null, _ => Response(initial, "older-token", "newer-token"), _ => Response(older, null, "newer-token"), _ => Response(newer, "older-token"));
-        var cut = context.RenderComponent<AccountDetails>();
+        var cut = context.Render<AccountDetails>();
         cut.WaitForAssertion(() => cut.FindAll("[role='tab']").Single(tab => tab.TextContent.Trim() == "Spreadbet").Click());
         cut.Find("button[aria-label='View older account details']").Click();
         cut.WaitForAssertion(() => Assert.Contains("Older Spreadbet", cut.Find("[data-testid='account-details-panel']").TextContent, StringComparison.Ordinal));
@@ -117,7 +117,7 @@ public sealed class AccountDetailsTests
         var initial = CreateRetrieval(Account("CFD-1", "Initial CFD", "One", "Enabled", "CFD", 1m), Account("SB-1", "Initial Spreadbet", "Spread", "Enabled", "Spreadbet", 2m));
         var replacement = CreateRetrieval(Account("CFD-2", "Replacement CFD", "Two", "Enabled", "CFD", 3m));
         using var context = new PlatformComponentTestContext("local-operator", null, _ => Response(initial), _ => RefreshResponse(replacement));
-        var cut = context.RenderComponent<AccountDetails>();
+        var cut = context.Render<AccountDetails>();
         cut.WaitForAssertion(() => cut.FindAll("[role='tab']").Single(tab => tab.TextContent.Trim() == "Spreadbet").Click());
         cut.Find("button.platform-button").Click();
         cut.WaitForAssertion(() => Assert.Contains("Replacement CFD", cut.Find("[data-testid='account-details-panel']").TextContent, StringComparison.Ordinal));
@@ -132,7 +132,7 @@ public sealed class AccountDetailsTests
         using var context = new PlatformComponentTestContext("local-operator", null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new { Retrieval = retrieval, OlderCursor = (string?)null, NewerCursor = (string?)null }),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.BadGateway, new { }));
-        var cut = context.RenderComponent<AccountDetails>();
+        var cut = context.Render<AccountDetails>();
         cut.WaitForAssertion(() => Assert.Contains("Saved account", cut.Markup, StringComparison.Ordinal));
         cut.Find("button.platform-button").Click();
         cut.WaitForAssertion(() =>

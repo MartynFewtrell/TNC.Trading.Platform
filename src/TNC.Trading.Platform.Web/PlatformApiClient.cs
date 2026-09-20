@@ -197,6 +197,8 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
 
         var title = "API request failed";
         var detail = string.Empty;
+        var type = string.Empty;
+        var failureCategory = string.Empty;
         try
         {
             using var document = await response.Content.ReadFromJsonAsync<JsonDocument>(JsonOptions, cancellationToken);
@@ -204,12 +206,14 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
             {
                 if (document.RootElement.TryGetProperty("title", out var titleProperty)) title = titleProperty.GetString() ?? title;
                 if (document.RootElement.TryGetProperty("detail", out var detailProperty)) detail = detailProperty.GetString() ?? string.Empty;
+                if (document.RootElement.TryGetProperty("type", out var typeProperty)) type = typeProperty.GetString() ?? string.Empty;
+                if (document.RootElement.TryGetProperty("failureCategory", out var categoryProperty)) failureCategory = categoryProperty.GetString() ?? string.Empty;
             }
         }
         catch (JsonException) { }
 
         var message = string.IsNullOrWhiteSpace(detail) ? title : $"{title}: {detail}";
-        throw new HttpRequestException(message, null, response.StatusCode);
+        throw new PlatformApiException(message, response.StatusCode, type, failureCategory, title, detail);
     }
 
     private sealed record IgLoginHistoryResponse(IReadOnlyList<IgLoginHistorySnapshotViewModel> RetainedSnapshots);

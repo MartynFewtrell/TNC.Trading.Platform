@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using TNC.Trading.Platform.Application.Features.AccountPreferences;
@@ -7,10 +8,16 @@ namespace TNC.Trading.Platform.Api.Hosting;
 
 internal sealed class AccountPreferencesReconciliationSupervisor(
     IServiceScopeFactory serviceScopeFactory,
+    IConfiguration configuration,
     ILogger<AccountPreferencesReconciliationSupervisor> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!configuration.GetValue("AccountPreferences:Reconciliation:Enabled", true))
+        {
+            return;
+        }
+
         await Task.Yield();
         while (!stoppingToken.IsCancellationRequested)
         {

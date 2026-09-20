@@ -1,6 +1,6 @@
 namespace TNC.Trading.Platform.Application.Features.AccountPreferences;
 
-internal enum AccountPreferencesFailureCategory
+public enum AccountPreferencesFailureCategory
 {
     UnsupportedEnvironment,
     Unauthorized,
