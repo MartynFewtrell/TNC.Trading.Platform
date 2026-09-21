@@ -28,8 +28,8 @@ The implemented application is focused on:
 - Minimal API backend through `src/TNC.Trading.Platform.Api`
 - shared observability and health defaults through `src/TNC.Trading.Platform.ServiceDefaults`
 - application feature handlers for platform configuration, schedule gating, runtime state, explicit authentication reconciliation, and auth supervision
-- SQL Server persistence when a `platformdb` connection string is available
-- in-memory persistence fallback when no SQL connection string is available
+- SQL Server persistence for the supported runtime; in-memory persistence is
+  reserved for isolated automated tests
 - protected credential storage using ASP.NET Core Data Protection
 - operational event recording and notification recording
 - secret-safe latest IG login snapshot persistence plus one retained first-successful snapshot per trading day
@@ -78,7 +78,7 @@ flowchart LR
     Web --> Api[Platform API]
     Api --> App[Application services]
     App --> Infra[Infrastructure services]
-    Infra --> Db[(SQL Server or in-memory store)]
+    Infra --> Db[(SQL Server)]
     Infra --> Notify[Notification providers]
     AppHost[Aspire AppHost] --> Web
     AppHost --> Api
@@ -90,18 +90,31 @@ flowchart LR
 
 ### Platform environment
 
-The platform environment is either `Test` or `Live`.
+`Platform:Environment` is deployment-owned and immutable for the lifetime of a
+process. The allow-listed values are `Desktop`, `Development`, `Test`, and
+`Live`; an absent or unknown value fails startup closed. Each platform
+environment has its own database. The local AppHost supplies `Desktop`.
 
-It influences whether the broker `Live` option is actually available. In the current implementation:
+### Broker environments
 
-- the `Live` broker option is always visible
-- the `Live` broker option is blocked when the platform environment is `Test`
+Broker environments are named SQL catalog records, not a second application
+environment. A catalog ID partitions broker-scoped credentials, profiles,
+runtime projections, and current account data within the platform environment's
+database. `IG Demo` is the bootstrap record. Administrators can create
+additional named records, but a record is selectable or usable only when its
+provider adapter reports it capable; unavailable records fail closed before
+credential access or network I/O.
 
-### Broker environment
+Selection stores separate selected and applied catalog IDs. Operators and
+administrators can request a selection from `/configuration`, but it applies
+only after a successful restart. The current process continues using the
+applied environment until then, and the header shows the pending state.
 
-The broker environment is either `Demo` or `Live`.
-
-The current implementation is intentionally foundation-only. It records and validates this choice, but does not yet connect to real IG services.
+Normal administrator retirement is a server-bound, confirmed **retire and
+purge** operation. Credentials, profiles, current projections, and
+broker-scoped mutable state are purged; audit, event, notification, account
+retrieval, and other historical evidence remains under ordinary retention.
+The catalog identity is marked `Retired` for diagnostics and history.
 
 ### Trading schedule
 
@@ -178,7 +191,7 @@ See [Architecture](architecture.md) and [Runtime behavior](runtime-behavior.md) 
 
 The following capabilities are planned at the product level but are not implemented in the application today:
 
-- real IG session establishment
+- additional broker-provider capabilities beyond the supported IG Demo adapter
 - market-data acquisition and freshness enforcement
 - tracked instruments
 - strategy execution

@@ -11,11 +11,6 @@ internal sealed class UpdatePlatformConfigurationValidator
 
         var errors = new Dictionary<string, string[]>();
 
-        if (!Enum.TryParse<PlatformEnvironmentKind>(request.PlatformEnvironment, ignoreCase: true, out var platformEnvironment))
-        {
-            errors[nameof(request.PlatformEnvironment)] = ["Platform environment must be Test or Live."];
-        }
-
         if (!Enum.TryParse<BrokerEnvironmentKind>(request.BrokerEnvironment, ignoreCase: true, out var brokerEnvironment))
         {
             errors[nameof(request.BrokerEnvironment)] = ["Broker environment must be Demo or Live."];

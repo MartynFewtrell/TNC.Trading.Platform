@@ -26,13 +26,29 @@ public sealed class PlatformStartupInitializerTests
         var now = new DateTimeOffset(2026, 7, 27, 12, 0, 0, TimeSpan.Zero);
         await using var dbContext = InfrastructureReflection.CreateDbContext();
         var configurationStore = new RecordingConfigurationStore(dbContext, now);
-        var initializer = CreateInitializer(dbContext, configurationStore, now);
+        var initializer = CreateInitializer(dbContext, configurationStore, now, PlatformEnvironmentKind.Desktop);
 
         await initializer.InitializeAsync(CancellationToken.None);
 
         Assert.True(configurationStore.SchemaWasAvailable);
         Assert.Equal(1, configurationStore.ApplyStartupConfigurationCallCount);
         Assert.Empty(dbContext.OperationalEvents);
+    }
+
+    /// <summary>
+    /// Trace: Environment Model Rationalisation Phase 6.1.
+    /// Verifies: deployment environments do not let every application replica apply EF migrations.
+    /// Expected: Test and Live use the one-shot release migration path while Desktop and Development retain local startup migration.
+    /// Why: concurrent replica migration can race schema ownership and leave deployment readiness ambiguous.
+    /// </summary>
+    [Theory]
+    [InlineData(PlatformEnvironmentKind.Desktop, true)]
+    [InlineData(PlatformEnvironmentKind.Development, true)]
+    [InlineData(PlatformEnvironmentKind.Test, false)]
+    [InlineData(PlatformEnvironmentKind.Live, false)]
+    public void ShouldApplyMigrations_ShouldMatchEnvironmentOwnership(PlatformEnvironmentKind environment, bool expected)
+    {
+        Assert.Equal(expected, PlatformStartupInitializer.ShouldApplyMigrations(environment));
     }
 
     /// <summary>
@@ -47,7 +63,7 @@ public sealed class PlatformStartupInitializerTests
         var options = new DbContextOptionsBuilder<PlatformDbContext>().Options;
         await using var dbContext = new PlatformDbContext(options);
         var configurationStore = new RecordingConfigurationStore(dbContext, DateTimeOffset.UtcNow);
-        var initializer = CreateInitializer(dbContext, configurationStore, DateTimeOffset.UtcNow);
+        var initializer = CreateInitializer(dbContext, configurationStore, DateTimeOffset.UtcNow, PlatformEnvironmentKind.Desktop);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => initializer.InitializeAsync(CancellationToken.None));
@@ -71,7 +87,7 @@ public sealed class PlatformStartupInitializerTests
         {
             CancellationSource = cancellationSource
         };
-        var initializer = CreateInitializer(dbContext, configurationStore, DateTimeOffset.UtcNow);
+        var initializer = CreateInitializer(dbContext, configurationStore, DateTimeOffset.UtcNow, PlatformEnvironmentKind.Desktop);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => initializer.InitializeAsync(cancellationSource.Token));
@@ -96,7 +112,8 @@ public sealed class PlatformStartupInitializerTests
     private static PlatformStartupInitializer CreateInitializer(
         PlatformDbContext dbContext,
         RecordingConfigurationStore configurationStore,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        PlatformEnvironmentKind environment = PlatformEnvironmentKind.Test)
     {
         var configurationService = new PlatformConfigurationService(configurationStore);
         var retentionConfiguration = new ConfigurationBuilder()
@@ -115,6 +132,7 @@ public sealed class PlatformStartupInitializerTests
             dbContext,
             configurationService,
             retentionProcessor,
+            new PlatformEnvironmentContext(environment),
             new TestHostEnvironment(),
             NullLogger<PlatformStartupInitializer>.Instance);
     }

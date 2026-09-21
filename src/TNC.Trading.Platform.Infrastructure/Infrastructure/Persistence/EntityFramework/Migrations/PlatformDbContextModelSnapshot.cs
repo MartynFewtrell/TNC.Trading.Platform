@@ -126,6 +126,9 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("RetrievedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -148,6 +151,8 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         .HasFilter("[TriggerSource] = 'Automatic'");
 
                     b.HasIndex("BrokerEnvironment", "RetrievedAtUtc", "AccountDetailsRetrievalId");
+
+                    b.HasIndex("BrokerEnvironmentId", "RetrievedAtUtc", "AccountDetailsRetrievalId");
 
                     b.ToTable("AccountDetailsRetrievals");
                 });
@@ -172,6 +177,9 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<byte[]>("ConcurrencyToken")
                         .IsConcurrencyToken()
@@ -230,9 +238,15 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
 
                     b.HasKey("AccountPreferencesCurrentStateId");
 
+                    b.HasIndex("BrokerEnvironmentId");
+
                     b.HasIndex("PlatformEnvironment", "BrokerEnvironment", "AccountId")
                         .IsUnique()
                         .HasFilter("[AccountId] IS NOT NULL");
+
+                    b.HasIndex("PlatformEnvironment", "BrokerEnvironmentId", "AccountId")
+                        .IsUnique()
+                        .HasFilter("[BrokerEnvironmentId] IS NOT NULL");
 
                     b.ToTable("AccountPreferencesCurrentStates");
                 });
@@ -260,6 +274,9 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("ChangeType")
                         .IsRequired()
@@ -293,10 +310,14 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
 
                     b.HasKey("AccountPreferencesDesiredStateAuditId");
 
+                    b.HasIndex("BrokerEnvironmentId");
+
                     b.HasIndex("AccountPreferencesCurrentStateId", "NewRevision")
                         .IsUnique();
 
                     b.HasIndex("PlatformEnvironment", "BrokerEnvironment", "AccountId", "NewRevision");
+
+                    b.HasIndex("PlatformEnvironment", "BrokerEnvironmentId", "AccountId", "NewRevision");
 
                     b.ToTable("AccountPreferencesDesiredStateAudits");
                 });
@@ -324,6 +345,9 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("CorrelationId")
                         .IsRequired()
@@ -356,8 +380,14 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
 
                     b.HasKey("AccountPreferencesOperationId");
 
+                    b.HasIndex("BrokerEnvironmentId");
+
                     b.HasIndex("PlatformEnvironment", "BrokerEnvironment", "IdempotencyKey")
                         .IsUnique();
+
+                    b.HasIndex("PlatformEnvironment", "BrokerEnvironmentId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("[BrokerEnvironmentId] IS NOT NULL");
 
                     b.ToTable("AccountPreferencesOperations");
                 });
@@ -375,6 +405,9 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("CycleType")
                         .IsRequired()
@@ -417,6 +450,8 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
 
                     b.HasKey("RetryCycleId");
 
+                    b.HasIndex("BrokerEnvironmentId");
+
                     b.ToTable("AuthRetryCycles");
                 });
 
@@ -439,6 +474,9 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("CurrentRetryCycleId")
                         .HasColumnType("uniqueidentifier");
@@ -499,7 +537,352 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
 
                     b.HasKey("AuthRuntimeStateId");
 
+                    b.HasIndex("BrokerEnvironmentId");
+
                     b.ToTable("AuthRuntimeStates");
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentDefaultsEntity", b =>
+                {
+                    b.Property<Guid>("BrokerEnvironmentDefaultsId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BankHolidayExclusionsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("NotificationEmailTo")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("NotificationProvider")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("RetryInitialDelaySeconds")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RetryMaxAutomaticRetries")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RetryMaxDelaySeconds")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RetryMultiplier")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RetryPeriodicDelayMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TimeZone")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("TradingDaysCsv")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<TimeOnly>("TradingHoursEnd")
+                        .HasColumnType("time");
+
+                    b.Property<TimeOnly>("TradingHoursStart")
+                        .HasColumnType("time");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.Property<string>("WeekendBehavior")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("BrokerEnvironmentDefaultsId");
+
+                    b.HasIndex("Version")
+                        .IsUnique();
+
+                    b.ToTable("BrokerEnvironmentDefaults");
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", b =>
+                {
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Availability")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("AvailabilityReason")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<byte[]>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("EndpointProfile")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Lifecycle")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("BrokerEnvironmentId");
+
+                    b.HasIndex("NormalizedName")
+                        .IsUnique();
+
+                    b.ToTable("BrokerEnvironments");
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentNotificationProfileEntity", b =>
+                {
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("DefaultsVersion")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EmailTo")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("BrokerEnvironmentId");
+
+                    b.ToTable("BrokerEnvironmentNotificationProfiles");
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentRetirementAuditEntity", b =>
+                {
+                    b.Property<long>("BrokerEnvironmentRetirementAuditId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("BrokerEnvironmentRetirementAuditId"));
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PurgeCountsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RetainedCountsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("BrokerEnvironmentRetirementAuditId");
+
+                    b.HasIndex("BrokerEnvironmentId");
+
+                    b.ToTable("BrokerEnvironmentRetirementAudits");
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentRetirementTokenEntity", b =>
+                {
+                    b.Property<Guid>("TokenId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsUsed")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("PreviewHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("TokenId");
+
+                    b.HasIndex("BrokerEnvironmentId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("BrokerEnvironmentRetirementTokens");
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentRetryProfileEntity", b =>
+                {
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("DefaultsVersion")
+                        .HasColumnType("int");
+
+                    b.Property<int>("InitialDelaySeconds")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MaxAutomaticRetries")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MaxDelaySeconds")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Multiplier")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PeriodicDelayMinutes")
+                        .HasColumnType("int");
+
+                    b.HasKey("BrokerEnvironmentId");
+
+                    b.ToTable("BrokerEnvironmentRetryProfiles");
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentScheduleProfileEntity", b =>
+                {
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BankHolidayExclusionsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("DefaultsVersion")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TimeZone")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("TradingDaysCsv")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<TimeOnly>("TradingHoursEnd")
+                        .HasColumnType("time");
+
+                    b.Property<TimeOnly>("TradingHoursStart")
+                        .HasColumnType("time");
+
+                    b.Property<string>("WeekendBehavior")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("BrokerEnvironmentId");
+
+                    b.ToTable("BrokerEnvironmentScheduleProfiles");
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentSelectionEntity", b =>
+                {
+                    b.Property<int>("SelectionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("SelectionId"));
+
+                    b.Property<Guid?>("AppliedBrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("RestartRequired")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("SelectedBrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("SelectionId");
+
+                    b.HasIndex("AppliedBrokerEnvironmentId");
+
+                    b.HasIndex("SelectedBrokerEnvironmentId");
+
+                    b.HasIndex("SelectionId")
+                        .IsUnique();
+
+                    b.ToTable("BrokerEnvironmentSelections");
                 });
 
             modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.ConfigurationAuditEntity", b =>
@@ -565,6 +948,9 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("CapturedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -600,6 +986,8 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
 
                     b.HasIndex("BrokerEnvironment", "SnapshotKind", "TradingDay");
 
+                    b.HasIndex("BrokerEnvironmentId", "SnapshotKind", "TradingDay");
+
                     b.ToTable("IgLoginSnapshots");
                 });
 
@@ -619,6 +1007,9 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int>("OpenPositionCount")
                         .HasColumnType("int");
 
@@ -637,6 +1028,10 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
 
                     b.HasIndex("BrokerEnvironment")
                         .IsUnique();
+
+                    b.HasIndex("BrokerEnvironmentId")
+                        .IsUnique()
+                        .HasFilter("[BrokerEnvironmentId] IS NOT NULL");
 
                     b.ToTable("IgProofData");
                 });
@@ -851,6 +1246,9 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("CredentialType")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -877,6 +1275,10 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                     b.HasIndex("BrokerEnvironment", "CredentialType")
                         .IsUnique();
 
+                    b.HasIndex("BrokerEnvironmentId", "CredentialType")
+                        .IsUnique()
+                        .HasFilter("[BrokerEnvironmentId] IS NOT NULL");
+
                     b.ToTable("ProtectedCredentials");
                 });
 
@@ -898,6 +1300,9 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("CorrelationId")
                         .IsRequired()
@@ -932,6 +1337,9 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
 
                     b.HasIndex("BrokerEnvironment", "PlatformEnvironment", "ObservedAtUtc", "TrailingStopsPreferenceObservationId");
 
+                    b.HasIndex("BrokerEnvironmentId", "PlatformEnvironment", "ObservedAtUtc", "TrailingStopsPreferenceObservationId")
+                        .HasDatabaseName("IX_TrailingStops_Catalog_Platform_Observed");
+
                     b.ToTable("TrailingStopsPreferenceObservations");
                 });
 
@@ -944,6 +1352,154 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         .IsRequired();
 
                     b.Navigation("Retrieval");
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.AccountDetailsRetrievalEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.AccountPreferencesCurrentStateEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.AccountPreferencesDesiredStateAuditEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.AccountPreferencesOperationEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.AuthRetryCycleEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.AuthRuntimeStateEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentNotificationProfileEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentRetirementAuditEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentRetirementTokenEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentRetryProfileEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentScheduleProfileEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentSelectionEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("AppliedBrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("SelectedBrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.IgLoginSnapshotEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.IgProofDataEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.ProtectedCredentialEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.TrailingStopsPreferenceObservationEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.AccountDetailsRetrievalEntity", b =>

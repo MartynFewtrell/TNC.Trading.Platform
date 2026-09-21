@@ -6,11 +6,31 @@ using TNC.Trading.Platform.Api.Features.Platform;
 using TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration;
 using TNC.Trading.Platform.Api.Hosting;
 using TNC.Trading.Platform.Application.Features.ReconcilePlatformAuthentication;
+using TNC.Trading.Platform.Application.Configuration;
+using Microsoft.Extensions.Options;
 using TNC.Trading.Platform.Infrastructure.DependencyInjection;
 using TNC.Trading.Platform.Infrastructure.Startup;
 using TNC.Trading.Platform.Infrastructure.Time;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddOptions<PlatformEnvironmentOptions>()
+    .Bind(builder.Configuration.GetSection("Platform"))
+    .Validate(options =>
+    {
+        try
+        {
+            options.GetValidatedEnvironment();
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }, "Platform:Environment must be one of Desktop, Development, Test, or Live.")
+    .ValidateOnStart();
+builder.Services.AddSingleton<IPlatformEnvironmentContext>(serviceProvider =>
+    new PlatformEnvironmentContext(serviceProvider.GetRequiredService<IOptions<PlatformEnvironmentOptions>>().Value.GetValidatedEnvironment()));
 
 builder.Services.AddOpenApi();
 builder.AddServiceDefaults();

@@ -61,6 +61,8 @@ The output MUST follow `.github/templates/delivery-plan.template.md`.
 - MUST: Include wiki maintenance in the plan.
   - When a work item changes the implemented solution, it MUST include the required updates to the relevant pages under `./docs/wiki/`.
   - The final work item or completion path MUST verify that affected wiki links still resolve after documentation updates.
+  - For work involving environment, authentication, configuration, accounts, topology, operator workflow, local development, or testing, Wiki impact is a mandatory planning input and assessment: identify relevant pages and record a change/no-change decision for every work item.
+  - For lifecycle work, the Wiki assessment MUST explicitly cover retention and audit documentation.
 
 - MUST: Include the execution gates exactly as required by the template.
   - Ensure the build/test commands are filled in (do not leave placeholders).
@@ -99,6 +101,7 @@ When the user invokes this prompt, treat their first message as the initial idea
    - safe defaults (for example: `Status: draft`)
    - an incremental work breakdown where each work item delivers a usable, testable improvement
    - explicit wiki-update tasks for any work that changes behavior, architecture, API, runtime behavior, local development guidance, operator guidance, or testing guidance
+   - a Wiki-impact assessment whenever the scope involves environment, authentication, configuration, accounts, topology, operator workflow, local development, or testing, including a per-work-item change/no-change decision and lifecycle retention/audit coverage
    - default cross-cutting validation commands to `dotnet build` and `dotnet test` (run at repo root) unless the input docs explicitly require different commands
 7. Identify the first missing or ambiguous field by walking the delivery plan template from top to bottom.
 8. Ask exactly one clarifying question to resolve that missing/ambiguous field.

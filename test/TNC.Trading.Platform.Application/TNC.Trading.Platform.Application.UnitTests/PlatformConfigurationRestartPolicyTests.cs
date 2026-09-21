@@ -6,9 +6,9 @@ public class PlatformConfigurationRestartPolicyTests
 {
     /// <summary>
     /// Trace: FR20, OR7.
-    /// Verifies: changing the startup-fixed platform environment requires a restart.
-    /// Expected: the policy returns true when the proposed platform environment differs from the current value.
-    /// Why: operators must be told that a persisted environment change is deferred until the next platform start.
+    /// Verifies: changing the deployment-owned platform value cannot request a restart through mutable configuration.
+    /// Expected: the policy returns false because platform input is absent from the update contract.
+    /// Why: operator configuration must not alter the immutable platform safety classification.
     /// </summary>
     [Fact]
     public void IsRestartRequired_ShouldReturnTrue_WhenStartupFixedEnvironmentChanges()
@@ -22,7 +22,7 @@ public class PlatformConfigurationRestartPolicyTests
 
         var restartRequired = PlatformConfigurationRestartPolicy.IsRestartRequired(current, update);
 
-        Assert.True(restartRequired);
+        Assert.False(restartRequired);
     }
 
     /// <summary>
@@ -89,7 +89,6 @@ public class PlatformConfigurationRestartPolicyTests
         PlatformEnvironmentKind platformEnvironment,
         BrokerEnvironmentKind brokerEnvironment) =>
         new(
-            platformEnvironment,
             brokerEnvironment,
             new TradingScheduleConfiguration(
                 new TimeOnly(9, 0),

@@ -16,6 +16,24 @@ namespace TNC.Trading.Platform.AppHost;
 public sealed class AppHostEnvironmentWiringTests
 {
     /// <summary>
+    /// Trace: Environment Model Rationalisation Phase 6.2.
+    /// Verifies: the local contract fixes the platform classification while leaving SQL and secrets to resource references.
+    /// Expected outcome: both project contracts provide Desktop and neither embeds a deployment connection or secret reference.
+    /// Why this matters: the same container inputs must remain portable without baking host credentials into AppHost wiring.
+    /// </summary>
+    [Fact]
+    public void GetEnvironmentValues_ShouldExposePortablePlatformContract_WhenLocalProjectsAreConfigured()
+    {
+        var apiValues = AppHostEnvironmentWiring.GetApiEnvironmentValues();
+        var webValues = AppHostEnvironmentWiring.GetWebEnvironmentValues();
+
+        Assert.Equal("Desktop", apiValues["Platform__Environment"]);
+        Assert.Equal("Desktop", webValues["Platform__Environment"]);
+        Assert.DoesNotContain("ConnectionStrings__platformdb", apiValues.Keys);
+        Assert.DoesNotContain("ConnectionStrings__platformdb", webValues.Keys);
+    }
+
+    /// <summary>
     /// Verifies that the API base environment values include the required authentication and display-name keys.
     /// </summary>
     /// <remarks>
@@ -28,6 +46,7 @@ public sealed class AppHostEnvironmentWiringTests
     {
         var environmentValues = AppHostEnvironmentWiring.GetApiEnvironmentValues();
 
+        Assert.Equal("Desktop", environmentValues["Platform__Environment"]);
         Assert.Equal(AppHostCompositionConstants.ApiAudience, environmentValues["Authentication__ApiAudience"]);
         Assert.Equal(AppHostCompositionConstants.KeycloakRealmName, environmentValues["Authentication__Keycloak__Realm"]);
         Assert.Equal(AppHostCompositionConstants.ApiAudience, environmentValues["Authentication__Keycloak__ApiClientId"]);
@@ -48,6 +67,7 @@ public sealed class AppHostEnvironmentWiringTests
     {
         var environmentValues = AppHostEnvironmentWiring.GetWebEnvironmentValues();
 
+        Assert.Equal("Desktop", environmentValues["Platform__Environment"]);
         Assert.Equal("/signin-oidc", environmentValues["Authentication__CallbackPath"]);
         Assert.Equal("/", environmentValues["Authentication__SignedOutRedirectPath"]);
         Assert.Equal(AppHostCompositionConstants.ApiAudience, environmentValues["Authentication__ApiAudience"]);

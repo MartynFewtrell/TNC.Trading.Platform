@@ -1,7 +1,6 @@
 ﻿namespace TNC.Trading.Platform.Application.Configuration;
 
 internal sealed record PlatformConfigurationUpdate(
-    PlatformEnvironmentKind PlatformEnvironment,
     BrokerEnvironmentKind BrokerEnvironment,
     TradingScheduleConfiguration TradingSchedule,
     RetryPolicyConfiguration RetryPolicy,

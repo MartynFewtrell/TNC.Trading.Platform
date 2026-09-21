@@ -17,7 +17,21 @@ public sealed class ManagedAppHostFixture : IAsyncLifetime
 
     public ManagedAppHostFixture(IReadOnlyDictionary<string, string?>? configuration = null)
     {
-        this.configuration = configuration ?? new Dictionary<string, string?>();
+        var fixtureConfiguration = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["AppHost:UsePersistentKeycloakState"] = bool.FalseString,
+            ["AppHost:UsePersistentSqlState"] = bool.FalseString
+        };
+
+        if (configuration is not null)
+        {
+            foreach (var setting in configuration)
+            {
+                fixtureConfiguration[setting.Key] = setting.Value;
+            }
+        }
+
+        this.configuration = fixtureConfiguration;
     }
 
     public Uri WebEndpointUri { get; private set; } = null!;
@@ -76,19 +90,21 @@ public sealed class ManagedAppHostFixture : IAsyncLifetime
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
+            DECLARE @demoBrokerEnvironmentId UNIQUEIDENTIFIER;
+            SELECT @demoBrokerEnvironmentId = [BrokerEnvironmentId] FROM [BrokerEnvironments] WHERE [NormalizedName] = 'IG DEMO';
             UPDATE [IgLoginSnapshots]
             SET [CurrentAccountId] = @sessionAccountId,
                 [CapturedAtUtc] = DATEADD(second, 1, SYSUTCDATETIME())
             WHERE [BrokerEnvironment] = 'Demo';
             DELETE FROM [TrailingStopsPreferenceObservations]
-            WHERE [PlatformEnvironment] = 'Test' AND [BrokerEnvironment] = 'Demo';
+            WHERE [BrokerEnvironmentId] = @demoBrokerEnvironmentId;
             DELETE audit
             FROM [AccountPreferencesDesiredStateAudits] AS audit
             INNER JOIN [AccountPreferencesCurrentStates] AS state
                 ON state.[AccountPreferencesCurrentStateId] = audit.[AccountPreferencesCurrentStateId]
-            WHERE state.[PlatformEnvironment] = 'Test' AND state.[BrokerEnvironment] = 'Demo';
+            WHERE state.[BrokerEnvironmentId] = @demoBrokerEnvironmentId;
             DELETE FROM [AccountPreferencesOperations]
-            WHERE [PlatformEnvironment] = 'Test' AND [BrokerEnvironment] = 'Demo';
+            WHERE [BrokerEnvironmentId] = @demoBrokerEnvironmentId;
             UPDATE [AccountPreferencesCurrentStates]
             SET [AccountId] = @sessionAccountId,
                 [DesiredTrailingStopsEnabled] = 0,
@@ -106,12 +122,12 @@ public sealed class ManagedAppHostFixture : IAsyncLifetime
                 [RetryCount] = 0,
                 [FailureSummary] = NULL,
                 [CorrelationId] = NULL
-            WHERE [PlatformEnvironment] = 'Test' AND [BrokerEnvironment] = 'Demo';
+            WHERE [BrokerEnvironmentId] = @demoBrokerEnvironmentId;
             IF @@ROWCOUNT = 0
             BEGIN
                 INSERT INTO [AccountPreferencesCurrentStates]
-                ([AccountPreferencesCurrentStateId], [PlatformEnvironment], [BrokerEnvironment], [AccountId], [DesiredTrailingStopsEnabled], [DesiredRevision], [DesiredActor], [DesiredChangedAtUtc], [ObservedTrailingStopsEnabled], [ObservedAccountId], [ObservedAtUtc], [VerificationStatus], [LastVerifiedAtUtc], [RetryCount])
-                VALUES (NEWID(), 'Test', 'Demo', @sessionAccountId, 0, 1, 'test-fixture', SYSUTCDATETIME(), 0, @sessionAccountId, SYSUTCDATETIME(), 'InSync', SYSUTCDATETIME(), 0);
+                ([AccountPreferencesCurrentStateId], [PlatformEnvironment], [BrokerEnvironment], [BrokerEnvironmentId], [AccountId], [DesiredTrailingStopsEnabled], [DesiredRevision], [DesiredActor], [DesiredChangedAtUtc], [ObservedTrailingStopsEnabled], [ObservedAccountId], [ObservedAtUtc], [VerificationStatus], [LastVerifiedAtUtc], [RetryCount])
+                VALUES (NEWID(), 'Test', 'Demo', @demoBrokerEnvironmentId, @sessionAccountId, 0, 1, 'test-fixture', SYSUTCDATETIME(), 0, @sessionAccountId, SYSUTCDATETIME(), 'InSync', SYSUTCDATETIME(), 0);
             END;
             """;
         command.Parameters.AddWithValue("@sessionAccountId", sessionAccountId);

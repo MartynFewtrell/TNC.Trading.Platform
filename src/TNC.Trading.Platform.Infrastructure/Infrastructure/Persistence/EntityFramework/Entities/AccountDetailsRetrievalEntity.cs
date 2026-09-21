@@ -3,6 +3,7 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entiti
 internal sealed class AccountDetailsRetrievalEntity
 {
     public Guid AccountDetailsRetrievalId { get; set; }
+    public Guid BrokerEnvironmentId { get; set; }
     public string BrokerEnvironment { get; set; } = string.Empty;
     public DateTimeOffset RetrievedAtUtc { get; set; }
     public DateOnly TradingDay { get; set; }

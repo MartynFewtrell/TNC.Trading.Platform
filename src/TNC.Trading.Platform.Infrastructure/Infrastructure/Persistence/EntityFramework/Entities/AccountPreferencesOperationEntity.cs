@@ -3,6 +3,7 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entiti
 internal sealed class AccountPreferencesOperationEntity
 {
     public Guid AccountPreferencesOperationId { get; set; }
+    public Guid BrokerEnvironmentId { get; set; }
     public string IdempotencyKey { get; set; } = null!;
     public string PlatformEnvironment { get; set; } = null!;
     public string BrokerEnvironment { get; set; } = null!;

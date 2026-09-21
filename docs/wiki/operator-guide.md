@@ -254,12 +254,10 @@ This table can now show both broker-auth supervision events and operator-session
 
 ## Configuration page
 
-The configuration page groups startup-fixed runtime choices under an **Environment** section.
-
-This section currently allows operators to change:
-
-- platform environment
-- broker environment
+The configuration page shows the immutable platform environment and provides
+broker selection under an **Environment** section. The platform value is
+deployment-owned and cannot be changed in the UI. Operators and
+administrators can request a different available broker catalog record.
 
 The configuration page is the main operator-edit surface.
 
@@ -299,17 +297,24 @@ The current release does not manage users or roles in-app, so this page is infor
 
 ### Environments
 
-The environments section lets the operator review or change:
+The environments section displays the immutable platform value (`Desktop`,
+`Development`, `Test`, or `Live`) and the selected/applied broker catalog
+records. A broker request requires the server-provided warning acknowledgement,
+expected selection revision, and an available/capable record. The request is
+persisted but applies only after a successful restart; the current process
+continues using the applied account and endpoint until then. Viewers cannot
+change selection.
 
-- platform environment
-- broker environment
+Administrators additionally manage named broker records and write-only
+credentials. They can create uniquely normalized names, preview retirement,
+and retire a record using the server-bound confirmation token, concurrency
+token, and exact typed name. Retirement purges mutable broker state and
+credentials but retains audit and historical evidence under ordinary
+retention. Retired or unavailable records cannot be selected.
 
-Important behavior:
-
-- the `Live` broker option is shown but disabled when the platform environment is `Test`
-- changing startup-fixed values can set `RestartRequired`
-- changing only schedule, retry, notification, or credentials does not require restart when both environment selections remain unchanged
-- the page explains that startup-fixed changes apply on the next platform start
+Schedule, retry, notification, and credential edits remain separate from
+platform identity. New broker records receive the server-owned defaults
+snapshot, with notifications disabled.
 - UI theme switching is provided from the shared header control rather than from the configuration form
 
 ### Trading schedule
@@ -592,4 +597,3 @@ Test-only; Live requires a
 separate safety delivery for credentials, authorization, allowance handling,
 and monetary-risk controls. Online history retention uses
 `Retention:OperationalRecordsDays`; archive/export is deferred.
-

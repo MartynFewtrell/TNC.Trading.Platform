@@ -4,6 +4,8 @@ internal sealed class AuthRetryCycleEntity
 {
     public Guid RetryCycleId { get; set; }
 
+    public Guid BrokerEnvironmentId { get; set; }
+
     public string CycleType { get; set; } = string.Empty;
 
     public string PlatformEnvironment { get; set; } = string.Empty;

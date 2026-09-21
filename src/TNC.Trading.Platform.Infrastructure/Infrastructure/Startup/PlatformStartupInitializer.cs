@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Services;
 using TNC.Trading.Platform.Infrastructure.Operations.Retention;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
@@ -11,6 +12,7 @@ internal sealed class PlatformStartupInitializer(
     PlatformDbContext dbContext,
     PlatformConfigurationService configurationService,
     OperationalRecordRetentionProcessor retentionProcessor,
+    IPlatformEnvironmentContext platformEnvironmentContext,
     IHostEnvironment hostEnvironment,
     ILogger<PlatformStartupInitializer> logger)
 {
@@ -43,6 +45,14 @@ internal sealed class PlatformStartupInitializer(
     {
         try
         {
+            if (!ShouldApplyMigrations(platformEnvironmentContext.Environment))
+            {
+                logger.LogInformation(
+                    "Skipping application-owned schema migration for {PlatformEnvironment}; schema deployment is owned by the release process.",
+                    platformEnvironmentContext.Environment);
+                return;
+            }
+
             if (dbContext.Database.IsSqlServer())
             {
                 await EstablishLegacyBaselineIfRequiredAsync(cancellationToken).ConfigureAwait(false);
@@ -64,6 +74,9 @@ internal sealed class PlatformStartupInitializer(
                 exception);
         }
     }
+
+    internal static bool ShouldApplyMigrations(PlatformEnvironmentKind environment) =>
+        environment is PlatformEnvironmentKind.Desktop or PlatformEnvironmentKind.Development;
 
     private async Task EstablishLegacyBaselineIfRequiredAsync(CancellationToken cancellationToken)
     {

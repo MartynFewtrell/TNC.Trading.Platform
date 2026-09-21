@@ -1,7 +1,9 @@
 ﻿namespace TNC.Trading.Platform.Application.Configuration;
 
-internal enum PlatformEnvironmentKind
+public enum PlatformEnvironmentKind
 {
+    Desktop,
+    Development,
     Test,
     Live
 }

@@ -10,4 +10,8 @@ internal sealed record PlatformStatusViewModel(
     AuthStateViewModel AuthState,
     RetryStateViewModel RetryState,
     DateTimeOffset UpdatedAtUtc,
-    IgLoginStatusViewModel IgLogin);
+    IgLoginStatusViewModel IgLogin,
+    BrokerEnvironmentViewModel? AppliedBrokerEnvironment = null,
+    BrokerEnvironmentViewModel? SelectedBrokerEnvironment = null,
+    bool RestartRequired = false,
+    long SelectionRevision = 0);

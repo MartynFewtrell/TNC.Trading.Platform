@@ -36,6 +36,21 @@ For refactoring-focused packages, this section should state whether the plan is 
   - `plans/NNN-work-package-refactoring-mitigation-plan.md`
   - `plans/NNN-work-package-refactoring-mitigation-plan-execution-log.md`
 
+## Wiki-impact assessment (mandatory when scope triggers)
+
+Complete this section when the plan involves environment, authentication, configuration, accounts, topology, operator workflow, local development, or testing. Do not repeat the global Wiki source-of-truth policy; record the scoped assessment for this plan.
+
+- **Scope trigger**: <triggering concern(s), or `None` with rationale>
+- **Relevant Wiki pages**: <paths or page titles, or `None` with rationale>
+- **Per-work-item decision**:
+
+  | Work item | Wiki pages affected | Change/no-change decision | Rationale |
+  | --- | --- | --- | --- |
+  | Work Item 1: <brief title> | <pages or `None`> | <Change or No change> | <reason> |
+
+- **Lifecycle retention/audit assessment**: <required for lifecycle work; describe retention and audit impact, or `Not applicable` with rationale>
+- **Validation**: <how Wiki updates and links will be validated, or how the no-change decision will be verified>
+
 ## Delivery Plan
 
 ### Execution gates (required)

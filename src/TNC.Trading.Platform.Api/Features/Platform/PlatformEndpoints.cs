@@ -22,6 +22,7 @@ using AppRecordAuthAuditEvent = TNC.Trading.Platform.Application.Features.Record
 using AppTriggerManualAuthRetry = TNC.Trading.Platform.Application.Features.TriggerManualAuthRetry;
 using AppUpdatePlatformConfiguration = TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration;
 using AppAccountPreferences = TNC.Trading.Platform.Application.Features.AccountPreferences;
+using AppBrokerEnvironments = TNC.Trading.Platform.Application.Features.BrokerEnvironments;
 
 namespace TNC.Trading.Platform.Api.Features.Platform;
 
@@ -36,6 +37,20 @@ internal static class PlatformEndpoints
 
         platform.MapGet("/status", GetPlatformStatusAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Viewer);
+        platform.MapGet("/broker-environments", ListBrokerEnvironmentsAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Viewer);
+        platform.MapGet("/broker-environments/status", GetBrokerEnvironmentStatusAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Viewer);
+        platform.MapPost("/broker-environments", CreateBrokerEnvironmentAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Administrator);
+        platform.MapPost("/broker-environments/{id:guid}/credentials", SaveBrokerEnvironmentCredentialsAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Administrator);
+        platform.MapPost("/broker-environments/{id:guid}/retirement-preview", PreviewBrokerEnvironmentRetirementAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Administrator);
+        platform.MapPost("/broker-environments/{id:guid}/retire", RetireBrokerEnvironmentAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Administrator);
+        platform.MapPost("/broker-environments/selection", SelectBrokerEnvironmentAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
         platform.MapGet("/ig-login/history", GetIgLoginHistoryAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Viewer);
         platform.MapGet("/configuration", GetPlatformConfigurationAsync)
@@ -75,6 +90,42 @@ internal static class PlatformEndpoints
         var result = await handler.HandleAsync(new AppGetPlatformStatus.GetPlatformStatusRequest(), cancellationToken);
 
         return TypedResults.Ok(result.ToResponse());
+    }
+
+    private static async Task<IResult> ListBrokerEnvironmentsAsync(AppBrokerEnvironments.IBrokerEnvironmentCatalogService service, CancellationToken cancellationToken)
+        => TypedResults.Ok(await service.ListAsync(cancellationToken));
+
+    private static async Task<IResult> GetBrokerEnvironmentStatusAsync(AppBrokerEnvironments.IBrokerEnvironmentCatalogService service, CancellationToken cancellationToken)
+        => TypedResults.Ok(await service.GetStatusAsync(cancellationToken));
+
+    private static async Task<IResult> CreateBrokerEnvironmentAsync(CreateBrokerEnvironmentRequest request, ClaimsPrincipal user, AppBrokerEnvironments.IBrokerEnvironmentCatalogService service, CancellationToken cancellationToken)
+    {
+        var result = await service.CreateAsync(new(request.Name, request.DisplayName, request.Provider, request.Kind, request.EndpointProfile, user.Identity?.Name ?? "administrator"), cancellationToken);
+        return result.Succeeded ? TypedResults.Ok(result.Item) : TypedResults.BadRequest(new { error = result.Error });
+    }
+
+    private static async Task<IResult> SaveBrokerEnvironmentCredentialsAsync(Guid id, SaveBrokerEnvironmentCredentialsRequest request, ClaimsPrincipal user, AppBrokerEnvironments.IBrokerEnvironmentCatalogService service, CancellationToken cancellationToken)
+    {
+        var result = await service.SaveCredentialsAsync(new(id, request.ApiKey, request.Identifier, request.Password, user.Identity?.Name ?? "administrator"), cancellationToken);
+        return result.Succeeded ? TypedResults.Ok(result.Item) : TypedResults.BadRequest(new { error = result.Error });
+    }
+
+    private static async Task<IResult> PreviewBrokerEnvironmentRetirementAsync(Guid id, ClaimsPrincipal user, AppBrokerEnvironments.IBrokerEnvironmentCatalogService service, CancellationToken cancellationToken)
+    {
+        var result = await service.PreviewRetirementAsync(id, user.Identity?.Name ?? "administrator", cancellationToken);
+        return result is null ? TypedResults.Conflict(new { error = "The environment is missing, selected, applied, or retired." }) : TypedResults.Ok(result);
+    }
+
+    private static async Task<IResult> RetireBrokerEnvironmentAsync(Guid id, RetireBrokerEnvironmentRequest request, ClaimsPrincipal user, AppBrokerEnvironments.IBrokerEnvironmentCatalogService service, CancellationToken cancellationToken)
+    {
+        var result = await service.RetireAsync(new(id, request.ConfirmationToken, request.ExpectedConcurrencyToken, request.TypedName, user.Identity?.Name ?? "administrator"), cancellationToken);
+        return result.Succeeded ? TypedResults.Ok(result) : TypedResults.Conflict(new { error = result.Error });
+    }
+
+    private static async Task<IResult> SelectBrokerEnvironmentAsync(SelectBrokerEnvironmentRequest request, ClaimsPrincipal user, AppBrokerEnvironments.IBrokerEnvironmentCatalogService service, CancellationToken cancellationToken)
+    {
+        var result = await service.SelectAsync(new(request.BrokerEnvironmentId, request.ExpectedRevision, request.Acknowledged, user.Identity?.Name ?? "operator"), cancellationToken);
+        return result.Succeeded ? TypedResults.Ok(result.Status) : TypedResults.Conflict(new { error = result.Error });
     }
 
     private static async Task<IResult> GetIgLoginHistoryAsync(AppGetIgLoginHistory.GetIgLoginHistoryHandler handler, CancellationToken cancellationToken)
@@ -195,3 +246,8 @@ internal static class PlatformEndpoints
             authenticationOptions.Value.Authorization.RoleClaimType,
             authenticationOptions.Value.ApiAudience));
 }
+
+internal sealed record CreateBrokerEnvironmentRequest(string Name, string DisplayName, string Provider, string Kind, string EndpointProfile);
+internal sealed record SaveBrokerEnvironmentCredentialsRequest(string? ApiKey, string? Identifier, string? Password);
+internal sealed record SelectBrokerEnvironmentRequest(Guid BrokerEnvironmentId, long ExpectedRevision, bool Acknowledged);
+internal sealed record RetireBrokerEnvironmentRequest(string ConfirmationToken, string ExpectedConcurrencyToken, string TypedName);

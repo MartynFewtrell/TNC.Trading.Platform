@@ -15,7 +15,7 @@ public class UpdatePlatformConfigurationValidatorTests
     public void Validate_ShouldAcceptBusinessRuleViolation_WhenPlatformIsTestAndBrokerIsLive()
     {
         var validator = new UpdatePlatformConfigurationValidator();
-        var request = CreateRequest("Test", "Live", new TimeOnly(8, 0), new TimeOnly(16, 30));
+        var request = CreateRequest("Live", new TimeOnly(8, 0), new TimeOnly(16, 30));
 
         validator.Validate(request);
     }
@@ -30,12 +30,12 @@ public class UpdatePlatformConfigurationValidatorTests
     public void Validate_ShouldAcceptBusinessRuleViolation_WhenTradingWindowIsInvalid()
     {
         var validator = new UpdatePlatformConfigurationValidator();
-        var request = CreateRequest("Live", "Demo", new TimeOnly(16, 30), new TimeOnly(8, 0));
+        var request = CreateRequest("Demo", new TimeOnly(16, 30), new TimeOnly(8, 0));
 
         validator.Validate(request);
     }
 
-    private static UpdatePlatformConfigurationRequest CreateRequest(string platformEnvironment, string brokerEnvironment, TimeOnly startOfDay, TimeOnly endOfDay)
+    private static UpdatePlatformConfigurationRequest CreateRequest(string brokerEnvironment, TimeOnly startOfDay, TimeOnly endOfDay)
     {
         var tradingSchedule = new UpdateTradingScheduleRequest(
             startOfDay,
@@ -62,7 +62,6 @@ public class UpdatePlatformConfigurationValidatorTests
             "password");
 
         return new UpdatePlatformConfigurationRequest(
-            platformEnvironment,
             brokerEnvironment,
             tradingSchedule,
             retryPolicy,

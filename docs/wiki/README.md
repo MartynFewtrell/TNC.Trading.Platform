@@ -24,13 +24,24 @@ At this stage the platform provides:
 - a Blazor Server operator UI with a public landing page plus protected status, configuration, and authentication-administration pages
 - sign-in, sign-out, and access-denied flows with shared role enforcement across the UI and API
 - delegated bearer-token propagation from the Blazor host to the protected API
-- SQL-backed operator-managed configuration in the supported local runtime
+- SQL-backed operator-managed configuration and named broker-environment
+  catalog in the supported local runtime
 - protected storage for IG credentials using ASP.NET Core Data Protection
 - auth-state supervision, retry scheduling, notification recording, and operational event history
-- synthetic authentication and in-memory persistence support for isolated automated tests
+- synthetic authentication and in-memory persistence support only for isolated
+  automated tests (not a supported application runtime)
 - health checks, OpenTelemetry wiring, and requirement-driven tests
 
 The platform does not yet execute real trading workflows, market-data ingestion, or live IG integration. The current implementation is the environment, configuration, and auth foundation that later work packages will build on.
+
+The platform environment is deployment-owned and immutable (`Desktop`,
+`Development`, `Test`, or `Live`). Broker environments are named SQL catalog
+records partitioned by catalog ID within each platform environment database.
+Selection is restart-applied; unavailable or retired records fail closed.
+Administrator retirement purges mutable broker state and credentials while
+retaining audit and historical evidence under ordinary retention. See the
+[architecture](architecture.md), [runtime behavior](runtime-behavior.md), and
+[API reference](api-reference.md) pages for the authoritative details.
 
 ## Documentation map
 

@@ -9,7 +9,8 @@ namespace TNC.Trading.Platform.Infrastructure.Integrations.Ig;
 
 internal sealed class IgBrokerAuthenticationGateway(
     HttpClient httpClient,
-    IProtectedCredentialService protectedCredentialService) : IBrokerAuthenticationGateway
+    IProtectedCredentialService protectedCredentialService,
+    IAppliedBrokerEnvironmentContextResolver? contextResolver = null) : IBrokerAuthenticationGateway
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -20,6 +21,23 @@ internal sealed class IgBrokerAuthenticationGateway(
         BrokerAuthenticationRequest request,
         CancellationToken cancellationToken)
     {
+        var context = contextResolver is null
+            ? null
+            : await contextResolver.ResolveAppliedAsync(cancellationToken).ConfigureAwait(false);
+        if (context is not null && !context.IsExecutable)
+        {
+            return BrokerAuthenticationOutcome.Failed(new BrokerAuthenticationFailure(
+                BrokerAuthenticationFailureKind.UnsupportedEnvironment,
+                "IG authentication failed: the applied broker environment is unavailable."));
+        }
+
+        if (context is not null && !string.Equals(context.Provider, "IG", StringComparison.OrdinalIgnoreCase))
+        {
+            return BrokerAuthenticationOutcome.Failed(new BrokerAuthenticationFailure(
+                BrokerAuthenticationFailureKind.UnsupportedEnvironment,
+                "IG authentication failed: the applied broker provider is unsupported."));
+        }
+
         if (request.Environment == BrokerEnvironmentKind.Live)
         {
             return BrokerAuthenticationOutcome.Failed(new BrokerAuthenticationFailure(
@@ -29,9 +47,9 @@ internal sealed class IgBrokerAuthenticationGateway(
 
         try
         {
-            var credentials = await protectedCredentialService
-                .GetCredentialsAsync(request.Environment, cancellationToken)
-                .ConfigureAwait(false);
+            var credentials = context is null
+                ? await protectedCredentialService.GetCredentialsAsync(request.Environment, cancellationToken).ConfigureAwait(false)
+                : await protectedCredentialService.GetCredentialsAsync(context.BrokerEnvironmentId, cancellationToken).ConfigureAwait(false);
             using var sessionRequest = new HttpRequestMessage(HttpMethod.Post, "session");
             sessionRequest.Headers.Add("X-IG-API-KEY", credentials.ApiKey);
             sessionRequest.Headers.Accept.ParseAdd("application/json; charset=UTF-8");

@@ -6,4 +6,6 @@
 public sealed record PlatformShellEnvironment(
     string PlatformEnvironment,
     string BrokerEnvironment,
-    bool LiveOptionAvailable);
+    bool LiveOptionAvailable,
+    bool RestartRequired = false,
+    string? PendingBrokerEnvironment = null);

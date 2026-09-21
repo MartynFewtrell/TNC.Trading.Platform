@@ -47,7 +47,6 @@ public sealed class UpdatePlatformConfigurationValidatorTests
         int initialDelaySeconds = 1,
         int maxDelaySeconds = 60)
         => new(
-            PlatformEnvironmentKind.Live,
             BrokerEnvironmentKind.Demo,
             new TradingScheduleConfiguration(new TimeOnly(8, 0), new TimeOnly(16, 30), tradingDays ?? [DayOfWeek.Monday], WeekendBehavior.ExcludeWeekends, [], timeZone),
             new RetryPolicyConfiguration(initialDelaySeconds, 5, 2, maxDelaySeconds, 5),

@@ -7,7 +7,6 @@ internal static class PlatformConfigurationRestartPolicy
         PlatformConfigurationUpdate update)
     {
         return current is not null
-            && (current.PlatformEnvironment != update.PlatformEnvironment
-                || current.BrokerEnvironment != update.BrokerEnvironment);
+            && current.BrokerEnvironment != update.BrokerEnvironment;
     }
 }

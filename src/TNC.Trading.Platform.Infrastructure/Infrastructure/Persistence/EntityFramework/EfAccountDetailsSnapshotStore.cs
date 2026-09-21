@@ -5,7 +5,7 @@ using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 
 namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 
-internal sealed class EfAccountDetailsSnapshotStore(PlatformDbContext dbContext) : IAccountDetailsSnapshotStore
+internal sealed class EfAccountDetailsSnapshotStore(PlatformDbContext dbContext, IAppliedBrokerEnvironmentContextResolver? contextResolver = null) : IAccountDetailsSnapshotStore
 {
     public Task<AccountDetailsSnapshot?> GetLatestAsync(BrokerEnvironmentKind environment, CancellationToken cancellationToken) =>
         ReadLatestAsync(environment, cancellationToken);
@@ -21,10 +21,11 @@ internal sealed class EfAccountDetailsSnapshotStore(PlatformDbContext dbContext)
 
     public async Task<AccountDetailsSnapshot> SaveAsync(AccountDetailsSnapshot snapshot, CancellationToken cancellationToken)
     {
+        var brokerEnvironmentId = await ResolveBrokerEnvironmentIdAsync(snapshot.BrokerEnvironment, cancellationToken).ConfigureAwait(false);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var entity = new AccountDetailsRetrievalEntity
         {
-            AccountDetailsRetrievalId = snapshot.RetrievalId, BrokerEnvironment = snapshot.BrokerEnvironment.ToString(), RetrievedAtUtc = snapshot.RetrievedAtUtc,
+            AccountDetailsRetrievalId = snapshot.RetrievalId, BrokerEnvironmentId = brokerEnvironmentId, BrokerEnvironment = snapshot.BrokerEnvironment.ToString(), RetrievedAtUtc = snapshot.RetrievedAtUtc,
             TradingDay = snapshot.TradingDay, AccountCount = snapshot.Accounts.Count, TriggerSource = snapshot.TriggerSource.ToString(),
             Accounts = snapshot.Accounts.Select(account => new AccountDetailsAccountEntity
             {
@@ -38,6 +39,13 @@ internal sealed class EfAccountDetailsSnapshotStore(PlatformDbContext dbContext)
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return snapshot;
+    }
+
+    private async Task<Guid> ResolveBrokerEnvironmentIdAsync(BrokerEnvironmentKind environment, CancellationToken cancellationToken)
+    {
+        var applied = contextResolver is null ? null : await contextResolver.ResolveAppliedAsync(cancellationToken).ConfigureAwait(false);
+        if (applied is not null && string.Equals(applied.Kind, environment.ToString(), StringComparison.OrdinalIgnoreCase)) return applied.BrokerEnvironmentId;
+        return await dbContext.BrokerEnvironments.Where(item => item.Kind == environment.ToString() && item.Availability == "Available").Select(item => (Guid?)item.BrokerEnvironmentId).SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false) ?? Guid.Empty;
     }
 
     private IQueryable<AccountDetailsRetrievalEntity> Query(BrokerEnvironmentKind environment) => dbContext.AccountDetailsRetrievals.Include(item => item.Accounts).Where(item => item.BrokerEnvironment == environment.ToString());

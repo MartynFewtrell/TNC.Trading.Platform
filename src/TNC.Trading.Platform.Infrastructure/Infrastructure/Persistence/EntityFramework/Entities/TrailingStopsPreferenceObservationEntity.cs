@@ -4,6 +4,8 @@ internal sealed class TrailingStopsPreferenceObservationEntity
 {
     public Guid TrailingStopsPreferenceObservationId { get; set; }
 
+    public Guid BrokerEnvironmentId { get; set; }
+
     public string BrokerEnvironment { get; set; } = null!;
 
     public string PlatformEnvironment { get; set; } = null!;

@@ -112,8 +112,7 @@ public class SqlPlatformConfigurationStoreTests
         _ = await store.GetCurrentAsync(CancellationToken.None);
 
         var update = CreateConfigurationUpdate(
-            platformEnvironment: "Live",
-            brokerEnvironment: "Demo",
+            brokerEnvironment: "Live",
             provider: "RecordedOnly",
             emailTo: "owner@example.com",
             apiKey: "rotated-api-key",
@@ -126,8 +125,8 @@ public class SqlPlatformConfigurationStoreTests
         var detailsJson = audit.DetailsJson;
 
         Assert.True(result.RestartRequired);
-        Assert.Equal("Live", audit.PlatformEnvironment);
-        Assert.Equal("Demo", audit.BrokerEnvironment);
+        Assert.Equal("Test", audit.PlatformEnvironment);
+        Assert.Equal("Live", audit.BrokerEnvironment);
         Assert.Equal("unit-test", audit.ChangedBy);
         Assert.Equal("PlatformConfigurationUpdated", audit.ChangeType);
         Assert.Equal(
@@ -164,7 +163,6 @@ public class SqlPlatformConfigurationStoreTests
 
         var result = await store.CommitAsync(
             CreateConfigurationUpdate(
-                platformEnvironment: "Test",
                 brokerEnvironment: "Demo",
                 provider: "RecordedOnly",
                 emailTo: "updated-owner@example.com",
@@ -202,7 +200,6 @@ public class SqlPlatformConfigurationStoreTests
 
         _ = await store.CommitAsync(
             CreateConfigurationUpdate(
-                platformEnvironment: "Live",
                 brokerEnvironment: "Demo",
                 provider: "RecordedOnly",
                 emailTo: "demo-owner@example.com",
@@ -214,7 +211,6 @@ public class SqlPlatformConfigurationStoreTests
 
         _ = await store.CommitAsync(
             CreateConfigurationUpdate(
-                platformEnvironment: "Live",
                 brokerEnvironment: "Live",
                 provider: "RecordedOnly",
                 emailTo: "live-owner@example.com",
@@ -260,7 +256,6 @@ public class SqlPlatformConfigurationStoreTests
 
         _ = await store.CommitAsync(
             CreateConfigurationUpdate(
-                platformEnvironment: "Live",
                 brokerEnvironment: "Live",
                 provider: "RecordedOnly",
                 emailTo: "owner@example.com",
@@ -281,7 +276,7 @@ public class SqlPlatformConfigurationStoreTests
         Assert.Equal(PlatformEnvironmentKind.Test, runtimeBeforeRestart.PlatformEnvironment);
         Assert.Equal(BrokerEnvironmentKind.Demo, runtimeBeforeRestart.BrokerEnvironment);
         Assert.False(startupApplied.RestartRequired);
-        Assert.Equal(PlatformEnvironmentKind.Live, startupApplied.PlatformEnvironment);
+        Assert.Equal(PlatformEnvironmentKind.Test, startupApplied.PlatformEnvironment);
         Assert.Equal(BrokerEnvironmentKind.Live, startupApplied.BrokerEnvironment);
     }
 
@@ -301,11 +296,11 @@ public class SqlPlatformConfigurationStoreTests
             dbContext,
             configuration,
             protectedCredentialService,
-            TimeProvider.System);
+            TimeProvider.System,
+            new PlatformEnvironmentContext(PlatformEnvironmentKind.Test));
     }
 
     private static PlatformConfigurationUpdate CreateConfigurationUpdate(
-        string platformEnvironment,
         string brokerEnvironment,
         string provider,
         string emailTo,
@@ -315,7 +310,6 @@ public class SqlPlatformConfigurationStoreTests
         string changedBy)
     {
         return new PlatformConfigurationUpdate(
-            Enum.Parse<PlatformEnvironmentKind>(platformEnvironment, ignoreCase: true),
             Enum.Parse<BrokerEnvironmentKind>(brokerEnvironment, ignoreCase: true),
             new TradingScheduleConfiguration(
                 new TimeOnly(8, 0),

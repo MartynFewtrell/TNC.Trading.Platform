@@ -10,6 +10,7 @@ using TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration;
 using TNC.Trading.Platform.Application.Features.GetPlatformEvents.Ports;
 using TNC.Trading.Platform.Application.Features.GetPlatformStatus.Ports;
 using TNC.Trading.Platform.Application.Features.AccountDetails;
+using TNC.Trading.Platform.Application.Features.BrokerEnvironments;
 using TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent.Ports;
 using TNC.Trading.Platform.Application.Services;
 using TNC.Trading.Platform.Infrastructure.Configuration.SqlServer;
@@ -59,6 +60,7 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         });
 
         services.AddScoped<ProtectedCredentialService>();
+        services.AddScoped<IBrokerEnvironmentCatalogService, SqlBrokerEnvironmentCatalogService>();
         services.AddScoped<IProtectedCredentialService>(serviceProvider => serviceProvider.GetRequiredService<ProtectedCredentialService>());
         services.AddScoped<SqlPlatformConfigurationStore>();
         services.AddScoped<IPlatformConfigurationStore>(serviceProvider =>

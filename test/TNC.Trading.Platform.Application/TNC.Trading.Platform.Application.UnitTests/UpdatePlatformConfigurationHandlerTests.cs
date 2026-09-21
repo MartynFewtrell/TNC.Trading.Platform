@@ -118,7 +118,6 @@ public sealed class UpdatePlatformConfigurationHandlerTests
         string? identifier = "identifier",
         string? password = "password")
         => new(
-            PlatformEnvironmentKind.Live,
             BrokerEnvironmentKind.Demo,
             new TradingScheduleConfiguration(new TimeOnly(8, 0), new TimeOnly(16, 30), tradingDays ?? [], WeekendBehavior.ExcludeWeekends, [], "UTC"),
             new RetryPolicyConfiguration(1, 5, 2, 60, 5),

@@ -7,6 +7,8 @@ namespace TNC.Trading.Platform.Web.UnitTests;
 
 public sealed class ConfigurationTests
 {
+    private static readonly Guid DemoBrokerId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
     [Fact]
     public async Task LoadAsync_ShouldReturnMappedForm_WhenConfigurationLoads()
     {
@@ -78,6 +80,8 @@ public sealed class ConfigurationTests
             "local-operator",
             null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerCatalog()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerStatus()),
             _ => PlatformWebTestData.CreateProblemResponse(
                 HttpStatusCode.BadRequest,
                 new
@@ -115,6 +119,8 @@ public sealed class ConfigurationTests
             "local-operator",
             null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerCatalog()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerStatus()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration(restartRequired: true)));
 
         var cut = context.Render<Configuration>();
@@ -166,5 +172,78 @@ public sealed class ConfigurationTests
         var cut = context.Render<Configuration>();
 
         cut.WaitForAssertion(() => Assert.Empty(cut.FindAll("[data-testid='configuration-credential-reentry-message']")));
+    }
+
+    /// <summary>
+    /// Trace: Phase 3 selection acknowledgement. Verifies the selection action remains disabled until the operator explicitly acknowledges restart semantics.
+    /// Expected: the available broker is selected from the applied status, but the action is disabled before acknowledgement.
+    /// Why: a broker change must not be submitted accidentally when it only takes effect after restart.
+    /// </summary>
+    [Fact]
+    public void BrokerSelection_ShouldRequireAcknowledgement_WhenAppliedBrokerIsLoaded()
+    {
+        using var context = new PlatformComponentTestContext(
+            "local-operator",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerCatalog()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerStatus()));
+
+        var cut = context.Render<Configuration>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var button = cut.Find("[data-testid='configuration-select-broker-button']");
+            Assert.True(button.HasAttribute("disabled"));
+            Assert.Equal("Applied broker: IG Demo", cut.Find("[data-testid='configuration-applied-broker']").TextContent);
+        });
+    }
+
+    /// <summary>
+    /// Trace: Phase 3 pending selection. Verifies the rendered status distinguishes an unapplied selected broker and exposes the restart warning.
+    /// Expected: applied and selected names differ and the pending indicator is rendered.
+    /// Why: operators need an unambiguous view of whether a selection is merely pending or already applied.
+    /// </summary>
+    [Fact]
+    public void BrokerSelection_ShouldShowPendingState_WhenSelectedBrokerDiffersFromAppliedBroker()
+    {
+        using var context = new PlatformComponentTestContext(
+            "local-operator",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerCatalog()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerStatus(restartRequired: true, selectedName: "IG Demo Next")));
+
+        var cut = context.Render<Configuration>();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Equal("Applied broker: IG Demo", cut.Find("[data-testid='configuration-applied-broker']").TextContent);
+            Assert.Equal("Selected broker: IG Demo Next", cut.Find("[data-testid='configuration-selected-broker']").TextContent);
+            Assert.Contains("Pending broker selection will apply", cut.Find("[data-testid='configuration-restart-required-indicator']").TextContent, StringComparison.Ordinal);
+        });
+    }
+
+    private static BrokerEnvironmentViewModel[] CreateBrokerCatalog() =>
+    [
+        new(
+            DemoBrokerId,
+            "IG Demo",
+            "IG",
+            "Demo",
+            "Active",
+            "Available",
+            null,
+            "Demo",
+            true,
+            true,
+            "catalog-token")
+    ];
+
+    private static BrokerEnvironmentStatusViewModel CreateBrokerStatus(bool restartRequired = false, string? selectedName = null)
+    {
+        var applied = CreateBrokerCatalog()[0];
+        var selected = selectedName is null ? applied : applied with { Name = selectedName };
+        return new("Test", applied, selected, restartRequired, 1);
     }
 }

@@ -64,6 +64,21 @@ public sealed class IgAccountPreferencesGatewayTests
         Assert.Contains("password-secret", handler.Bodies[0], StringComparison.Ordinal);
     }
 
+    /// <summary>Verifies an unavailable applied catalog is rejected before credentials or HTTP are accessed.</summary>
+    [Fact]
+    public async Task GetAsync_ShouldRejectUnavailableAppliedCatalogBeforeCredentialsOrHttp()
+    {
+        var handler = new SequencedHandler();
+        var credentials = new CountingProtectedCredentialService();
+        var resolver = new StubAppliedBrokerEnvironmentContextResolver(new AppliedBrokerEnvironmentContext(Guid.NewGuid(), "IG", "Demo", "Active", "Unavailable", "IgDemo", true));
+        var result = await new IgAccountPreferencesGateway(new HttpClient(handler), credentials, resolver).GetAsync(CancellationToken.None);
+
+        var failure = Assert.IsType<AccountPreferencesGatewayOutcome.Failed>(result);
+        Assert.Equal(AccountPreferencesFailureCategory.Unsupported, failure.Category);
+        Assert.Equal(0, credentials.CatalogCredentialCalls);
+        Assert.Empty(handler.Requests);
+    }
+
     /// <summary>Verifies incomplete or non-boolean provider JSON is rejected without exposing provider data.</summary>
     [Theory]
     [InlineData("{}")]
@@ -178,11 +193,28 @@ public sealed class IgAccountPreferencesGatewayTests
         return response;
     }
 
-    private sealed class FakeProtectedCredentialService : IProtectedCredentialService
+    private class FakeProtectedCredentialService : IProtectedCredentialService
     {
         public Task<CredentialPresence> GetPresenceAsync(BrokerEnvironmentKind environment, CancellationToken cancellationToken) => Task.FromResult(new CredentialPresence(true, true, true));
-        public Task<IgCredentials> GetCredentialsAsync(BrokerEnvironmentKind environment, CancellationToken cancellationToken) => Task.FromResult(new IgCredentials("api-key", "identifier", "password-secret"));
+        public virtual Task<IgCredentials> GetCredentialsAsync(BrokerEnvironmentKind environment, CancellationToken cancellationToken) => Task.FromResult(new IgCredentials("api-key", "identifier", "password-secret"));
+        public virtual Task<IgCredentials> GetCredentialsAsync(Guid brokerEnvironmentId, CancellationToken cancellationToken) => Task.FromResult(new IgCredentials("api-key", "identifier", "password-secret"));
         public Task UpdateAsync(BrokerEnvironmentKind environment, string? apiKey, string? identifier, string? password, string changedBy, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class CountingProtectedCredentialService : FakeProtectedCredentialService
+    {
+        public int CatalogCredentialCalls { get; private set; }
+        public override Task<IgCredentials> GetCredentialsAsync(Guid brokerEnvironmentId, CancellationToken cancellationToken)
+        {
+            CatalogCredentialCalls++;
+            return base.GetCredentialsAsync(brokerEnvironmentId, cancellationToken);
+        }
+    }
+
+    private sealed class StubAppliedBrokerEnvironmentContextResolver(AppliedBrokerEnvironmentContext context) : IAppliedBrokerEnvironmentContextResolver
+    {
+        public Task<AppliedBrokerEnvironmentContext?> ResolveAppliedAsync(CancellationToken cancellationToken) => Task.FromResult<AppliedBrokerEnvironmentContext?>(context);
+        public Task<AppliedBrokerEnvironmentContext?> ResolveAsync(Guid brokerEnvironmentId, CancellationToken cancellationToken) => Task.FromResult<AppliedBrokerEnvironmentContext?>(context);
     }
 
     private sealed class SequencedHandler(params HttpResponseMessage[] responses) : HttpMessageHandler

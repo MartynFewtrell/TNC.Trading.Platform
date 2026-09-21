@@ -54,6 +54,12 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
     internal string ConnectionString => databaseConnectionString;
     internal CancellationToken CancellationToken => fixtureCancellationTokenSource.Token;
 
+    internal static Task<Guid> GetIgDemoBrokerEnvironmentIdAsync(PlatformDbContext context, CancellationToken cancellationToken) =>
+        context.BrokerEnvironments
+            .Where(item => item.Name == "IG Demo")
+            .Select(item => item.BrokerEnvironmentId)
+            .SingleAsync(cancellationToken);
+
     internal async Task ResetDatabaseAsync()
     {
         await using var connection = new SqlConnection(databaseConnectionString);
@@ -77,6 +83,14 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
             DROP TABLE IF EXISTS [OperationalEvents];
             DROP TABLE IF EXISTS [PlatformConfigurations];
             DROP TABLE IF EXISTS [ProtectedCredentials];
+            DROP TABLE IF EXISTS [BrokerEnvironmentRetirementAudits];
+            DROP TABLE IF EXISTS [BrokerEnvironmentRetirementTokens];
+            DROP TABLE IF EXISTS [BrokerEnvironmentNotificationProfiles];
+            DROP TABLE IF EXISTS [BrokerEnvironmentRetryProfiles];
+            DROP TABLE IF EXISTS [BrokerEnvironmentScheduleProfiles];
+            DROP TABLE IF EXISTS [BrokerEnvironmentSelections];
+            DROP TABLE IF EXISTS [BrokerEnvironmentDefaults];
+            DROP TABLE IF EXISTS [BrokerEnvironments];
             """;
         command.CommandTimeout = (int)OperationTimeout.TotalSeconds;
         await command.ExecuteNonQueryAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);

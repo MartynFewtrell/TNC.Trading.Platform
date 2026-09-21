@@ -1038,7 +1038,8 @@ public class AuthRetryCycleTests
             dbContext,
             configuration,
             protectedCredentialService,
-            timeProvider);
+            timeProvider,
+            new PlatformEnvironmentContext(PlatformEnvironmentKind.Test));
     }
 
     private static PlatformAuthSimulationSettings CreateAuthSimulationSettings(IConfiguration configuration)

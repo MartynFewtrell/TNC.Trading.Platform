@@ -241,7 +241,12 @@ public class IgProofDataTests
         ProtectedCredentialService credentialService,
         TimeProvider timeProvider)
     {
-        return new SqlPlatformConfigurationStore(dbContext, configuration, credentialService, timeProvider);
+        return new SqlPlatformConfigurationStore(
+            dbContext,
+            configuration,
+            credentialService,
+            timeProvider,
+            new PlatformEnvironmentContext(PlatformEnvironmentKind.Test));
     }
 
     private static NotificationDispatcher CreateNotificationDispatcher(PlatformDbContext dbContext, TimeProvider timeProvider)

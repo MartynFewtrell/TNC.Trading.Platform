@@ -11,6 +11,8 @@ internal sealed class PlatformShellContextProvider(
     private PlatformShellEnvironment? environment;
     private bool environmentLoaded;
 
+    public event Action? EnvironmentChanged;
+
     public async Task<PlatformOperatorContext> GetOperatorContextAsync()
     {
         operatorContext ??= await operatorContextAccessor.GetCurrentAsync();
@@ -33,10 +35,13 @@ internal sealed class PlatformShellContextProvider(
         try
         {
             var status = await platformApiClient.GetStatusAsync(CancellationToken.None);
+            var brokerStatus = await platformApiClient.GetBrokerEnvironmentStatusAsync(CancellationToken.None);
             environment = new PlatformShellEnvironment(
                 status.PlatformEnvironment,
-                status.BrokerEnvironment,
-                status.LiveOptionAvailable);
+                brokerStatus.Applied?.Name ?? status.BrokerEnvironment,
+                status.LiveOptionAvailable,
+                brokerStatus.RestartRequired,
+                brokerStatus.Selected?.Name);
             environmentLoaded = true;
         }
         catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or PlatformScopeChallengeRequiredException)
@@ -45,5 +50,13 @@ internal sealed class PlatformShellContextProvider(
         }
 
         return environment;
+    }
+
+    public async Task RefreshEnvironmentAsync()
+    {
+        environmentLoaded = false;
+        environment = null;
+        EnvironmentChanged?.Invoke();
+        await GetEnvironmentAsync();
     }
 }

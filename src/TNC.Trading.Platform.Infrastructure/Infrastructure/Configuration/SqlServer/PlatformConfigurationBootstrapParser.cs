@@ -13,17 +13,12 @@ internal static class PlatformConfigurationBootstrapParser
             throw new InvalidOperationException("Bootstrap:BrokerEnvironment must be configured before the platform can seed SQL-backed configuration.");
         }
 
-        var bootstrapPlatformEnvironment = configuration["Bootstrap:PlatformEnvironment"];
-        var platformEnvironment = string.IsNullOrWhiteSpace(bootstrapPlatformEnvironment)
-            ? PlatformEnvironmentKind.Test
-            : Enum.Parse<PlatformEnvironmentKind>(bootstrapPlatformEnvironment, ignoreCase: true);
         var brokerEnvironment = Enum.Parse<BrokerEnvironmentKind>(bootstrapBrokerEnvironment, ignoreCase: true);
         var tradingDays = GetTradingDays(configuration);
         var bankHolidays = GetBankHolidayExclusions(configuration);
         var updatedBy = configuration["Bootstrap:UpdatedBy"] ?? "bootstrap";
 
         return new PlatformConfigurationBootstrap(
-            platformEnvironment,
             brokerEnvironment,
             new TradingScheduleConfiguration(
                 GetTimeOnly(configuration, "Bootstrap:TradingSchedule:StartOfDay", new TimeOnly(8, 0)),

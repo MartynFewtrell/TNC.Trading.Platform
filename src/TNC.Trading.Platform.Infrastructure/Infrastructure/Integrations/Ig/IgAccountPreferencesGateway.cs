@@ -8,7 +8,7 @@ using TNC.Trading.Platform.Application.Features.PlatformAuthentication.Ports;
 
 namespace TNC.Trading.Platform.Infrastructure.Integrations.Ig;
 
-internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtectedCredentialService protectedCredentialService) : IAccountPreferencesGateway
+internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtectedCredentialService protectedCredentialService, IAppliedBrokerEnvironmentContextResolver? contextResolver = null) : IAccountPreferencesGateway
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
@@ -17,7 +17,7 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
         var attemptId = Guid.NewGuid().ToString("N");
         try
         {
-            var credentials = await protectedCredentialService.GetCredentialsAsync(BrokerEnvironmentKind.Demo, cancellationToken).ConfigureAwait(false);
+            var credentials = await GetCredentialsAsync(cancellationToken).ConfigureAwait(false);
             var session = await CreateSessionAsync(credentials, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(session.CurrentAccountId, request.TargetAccountId, StringComparison.Ordinal))
                 return new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, null, AccountPreferencesAccountMismatch.Category, AccountPreferencesAccountMismatch.Detail);
@@ -30,6 +30,7 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
         catch (TaskCanceledException) { return new(request.TargetAccountId, attemptId, DateTimeOffset.UtcNow, null, AccountPreferencesFailureCategory.Transient, "IG account preferences observation timed out."); }
         catch (HttpRequestException) { return new(request.TargetAccountId, attemptId, DateTimeOffset.UtcNow, null, AccountPreferencesFailureCategory.Transient, "IG account preferences service is unavailable."); }
         catch (JsonException) { return new(request.TargetAccountId, attemptId, DateTimeOffset.UtcNow, null, AccountPreferencesFailureCategory.Unsupported, "IG account preferences response was unsupported."); }
+        catch (InvalidOperationException) { return new(request.TargetAccountId, attemptId, DateTimeOffset.UtcNow, null, AccountPreferencesFailureCategory.Unsupported, "The applied broker environment is unavailable."); }
     }
 
     public async Task<AccountPreferencesRemediationResult> RemediateAsync(AccountPreferencesRemediateRequest request, CancellationToken cancellationToken)
@@ -37,7 +38,7 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
         var attemptId = Guid.NewGuid().ToString("N");
         try
         {
-            var credentials = await protectedCredentialService.GetCredentialsAsync(BrokerEnvironmentKind.Demo, cancellationToken).ConfigureAwait(false);
+            var credentials = await GetCredentialsAsync(cancellationToken).ConfigureAwait(false);
             var session = await CreateSessionAsync(credentials, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(session.CurrentAccountId, request.TargetAccountId, StringComparison.Ordinal))
                 return new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, null, false, AccountPreferencesAccountMismatch.Category, AccountPreferencesAccountMismatch.Detail);
@@ -52,6 +53,7 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
         catch (TaskCanceledException) { return new(request.TargetAccountId, attemptId, DateTimeOffset.UtcNow, null, false, AccountPreferencesFailureCategory.Transient, "IG account preferences remediation timed out."); }
         catch (HttpRequestException) { return new(request.TargetAccountId, attemptId, DateTimeOffset.UtcNow, null, false, AccountPreferencesFailureCategory.Transient, "IG account preferences service is unavailable."); }
         catch (JsonException) { return new(request.TargetAccountId, attemptId, DateTimeOffset.UtcNow, null, false, AccountPreferencesFailureCategory.Unsupported, "IG account preferences response was unsupported."); }
+        catch (InvalidOperationException) { return new(request.TargetAccountId, attemptId, DateTimeOffset.UtcNow, null, false, AccountPreferencesFailureCategory.Unsupported, "The applied broker environment is unavailable."); }
     }
 
     private async Task<bool> ReadAsync(string apiKey, Session session, CancellationToken cancellationToken)
@@ -71,7 +73,7 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
     {
         try
         {
-            var credentials = await protectedCredentialService.GetCredentialsAsync(BrokerEnvironmentKind.Demo, cancellationToken).ConfigureAwait(false);
+            var credentials = await GetCredentialsAsync(cancellationToken).ConfigureAwait(false);
             var session = await CreateSessionAsync(credentials, cancellationToken).ConfigureAwait(false);
             var result = await SendAsync(method, body, credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);
             if (result.Unauthorized && method == HttpMethod.Get)
@@ -100,6 +102,20 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
                 ? new AccountPreferencesGatewayOutcome.Indeterminate(AccountPreferencesFailureCategory.MalformedProviderData, "IG account preferences acknowledgement was malformed.")
                 : new AccountPreferencesGatewayOutcome.Failed(AccountPreferencesFailureCategory.MalformedProviderData, "IG account preferences response was malformed.");
         }
+        catch (InvalidOperationException)
+        {
+            return new AccountPreferencesGatewayOutcome.Failed(AccountPreferencesFailureCategory.Unsupported, "The applied broker environment is unavailable.");
+        }
+    }
+
+    private async Task<IgCredentials> GetCredentialsAsync(CancellationToken cancellationToken)
+    {
+        var context = contextResolver is null ? null : await contextResolver.ResolveAppliedAsync(cancellationToken).ConfigureAwait(false);
+        if (context is not null && !context.IsExecutable)
+            throw new InvalidOperationException("The applied broker environment is unavailable.");
+        return context is null
+            ? await protectedCredentialService.GetCredentialsAsync(BrokerEnvironmentKind.Demo, cancellationToken).ConfigureAwait(false)
+            : await protectedCredentialService.GetCredentialsAsync(context.BrokerEnvironmentId, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<Session> CreateSessionAsync(IgCredentials credentials, CancellationToken cancellationToken)

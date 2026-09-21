@@ -224,12 +224,17 @@ platform does not claim recovery after database loss.
 ## Schema lifecycle boundary
 
 Infrastructure contains source-controlled EF Core migrations generated from the
-SQL Server `PlatformDbContext` model. The Infrastructure startup initializer
-applies those migrations before configuration and retention, and the API does not
-resolve the context or concrete retention processor. In-memory schema creation is
-reserved for isolated automated tests. A persistent database without compatible
-migration history is not silently deleted or guessed into compatibility; the
-initializer fails startup with an explicit operator transition message.
+SQL Server `PlatformDbContext` model. Desktop and Development retain local
+startup migration. Test and Live application replicas do not call
+`MigrateAsync`; the release process builds
+`infra/migrations/build-migration-bundle.ps1` and runs the resulting artifact
+once with `infra/migrations/run-migration-bundle.ps1` using an explicitly
+provided deployment-only SQL connection before replicas start. The run script
+does not read application configuration or invent credentials. In-memory schema
+creation is reserved for isolated automated tests. A persistent database without
+compatible migration history is not silently deleted or guessed into
+compatibility; the owning migration process fails with an explicit operator
+transition message.
 
 ### Migration failure and recovery
 
@@ -688,6 +693,58 @@ Two kinds of IG login snapshot are stored:
 
 The retained daily snapshots are accessible through `GET /api/platform/ig-login/history`. The latest snapshot is included directly in `GET /api/platform/status` so the UI can expand payload details without a second read call.
 
+## Normal broker-environment retirement policy
+
+Normal retirement is an administrator-approved **retire and purge** operation
+for one broker-environment catalog record. It is not a database reset and it
+does not use cascade deletes. The catalog row is marked `Retired` only after
+the scoped mutable rows have been removed successfully; the retired catalog
+identity remains available for audit and historical references.
+
+The approved table-by-table policy is:
+
+| Data family | Normal retirement decision | Boundary |
+| --- | --- | --- |
+| Protected credentials | **Purge** all protected credential rows for the broker environment. | Secret material and credential metadata are not retained as usable configuration. Credential rotation and retirement are separate from audit retention. |
+| Broker-scoped profiles | **Purge** schedule, retry, and notification profile snapshots copied for the broker environment. | The immutable defaults template is retained because it is server-owned configuration, not an environment instance. |
+| Runtime and retry state | **Purge** the current auth runtime projection and retry-cycle state. | These rows are recoverable execution state, not historical evidence. |
+| Proof/current projections | **Purge** the latest IG proof projection and the latest login snapshot for the broker environment. | Current projections must not continue to represent a retired environment. |
+| Account Preferences current/in-flight state | **Purge** the current confirmed projection, desired current state, and in-flight operation journal for the broker environment. | An incomplete remote operation must not remain resumable against a retired target. |
+| Login snapshot history | **Purge** retained daily first-successful login snapshots for the broker environment. | Login snapshots are broker-scoped operational payloads, not audit records. The current `Latest` row and `RetainedDailyFirstSuccessful` history therefore have the same retirement outcome, even though ordinary age-based retention treats them differently. |
+| Account retrieval records | **Retain** account retrieval history and child account rows under ordinary retention. | The newest successful retrieval is protected by ordinary retention today; retirement must preserve the historical record and its children rather than delete them as mutable environment state. |
+| Configuration audits | **Retain** under ordinary retention. | Audit evidence remains available and is never removed as a side effect of retiring its broker scope. |
+| Operational events | **Retain** under ordinary retention. | Events remain diagnostic evidence, including events referring to a retired environment. |
+| Notification records | **Retain** under ordinary retention. | Delivery attempts and outcomes remain operational evidence. |
+| Account Preferences desired-state audits | **Retain** under ordinary retention. | The audit explains operator intent even after the current desired state and operation journal are purged. |
+
+This policy deliberately distinguishes current or resumable state from
+historical evidence. A foreign-key relationship must therefore be handled by
+explicit, ordered deletion of approved mutable rows and by null-safe or
+restricted references where retained evidence points at a retired catalog
+record. No relationship may silently delete retained audit, event,
+notification, desired-state audit, account retrieval, or child-account rows.
+
+## Environment selection and lifecycle
+
+The platform environment is immutable process context. `Desktop`,
+`Development`, `Test`, and `Live` are the only accepted values; missing or
+unknown `Platform:Environment` fails startup closed. AppHost supplies
+`Desktop` locally, while deployment supplies the value for the isolated
+platform database.
+
+Broker selection is catalog-based. The selected catalog ID is persisted
+separately from the applied ID and becomes active only after restart. Until
+then, runtime status and broker work continue using the applied record and
+the UI reports `RestartRequired`. Catalog capability and lifecycle are
+validated before credentials or provider network calls; unavailable and
+retired records cannot be applied.
+
+Administrator retirement uses a server-bound preview token, concurrency token,
+and exact typed-name confirmation. It purges credentials, broker-scoped
+profiles, current projections, and resumable state, then marks the catalog
+record `Retired`. Audit, event, notification, account-retrieval, and
+desired-state history is retained and remains available to diagnostics.
+
 ## Local infrastructure behavior
 
 ### When SQL is available
@@ -698,9 +755,11 @@ The retained daily snapshots are accessible through `GET /api/platform/ig-login/
 
 ### When SQL is not available
 
-- the API falls back to the in-memory provider
-- behavior still works for local exploration and tests
-- persisted data does not survive process restart
+The supported application runtime does not fall back to in-memory persistence.
+The API fails startup and the operator should start the AppHost-managed SQL
+Server or provide an external `platformdb` connection. In-memory persistence
+is reserved for isolated automated tests; its data is intentionally
+process-scoped and does not survive restart.
 
 ## Runtime behavior in one diagram
 

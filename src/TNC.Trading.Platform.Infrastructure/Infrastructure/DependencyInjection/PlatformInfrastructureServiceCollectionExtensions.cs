@@ -60,6 +60,7 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         });
 
         services.AddScoped<ProtectedCredentialService>();
+        services.AddScoped<IAppliedBrokerEnvironmentContextResolver, SqlAppliedBrokerEnvironmentContextResolver>();
         services.AddScoped<IProtectedCredentialService>(serviceProvider => serviceProvider.GetRequiredService<ProtectedCredentialService>());
         services.AddScoped<SqlPlatformConfigurationStore>();
         services.AddScoped<IPlatformConfigurationStore>(serviceProvider =>

@@ -4,6 +4,8 @@ internal sealed class AuthRuntimeStateEntity
 {
     public int AuthRuntimeStateId { get; set; }
 
+    public Guid BrokerEnvironmentId { get; set; }
+
     public string PlatformEnvironment { get; set; } = string.Empty;
 
     public string BrokerEnvironment { get; set; } = string.Empty;

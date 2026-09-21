@@ -1,0 +1,5 @@
+namespace TNC.Trading.Platform.Application.Configuration;
+
+internal sealed record BrokerEnvironmentScheduleProfileContract(Guid BrokerEnvironmentId, int DefaultsVersion, TradingScheduleConfiguration TradingSchedule);
+internal sealed record BrokerEnvironmentRetryProfileContract(Guid BrokerEnvironmentId, int DefaultsVersion, RetryPolicyConfiguration RetryPolicy);
+internal sealed record BrokerEnvironmentNotificationProfileContract(Guid BrokerEnvironmentId, int DefaultsVersion, NotificationSettingsConfiguration NotificationSettings);
