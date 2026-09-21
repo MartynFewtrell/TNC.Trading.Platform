@@ -1,0 +1,3 @@
+namespace TNC.Trading.Platform.Application.Features.AccountPreferences;
+
+internal sealed record GetTrailingStopsPreferenceObservationsResponse(IReadOnlyList<TrailingStopsPreferenceObservation> Observations, string? NextCursor, bool HasInvalidCursor);

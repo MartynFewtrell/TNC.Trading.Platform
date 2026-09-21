@@ -1,0 +1,1 @@
+namespace TNC.Trading.Platform.Api.Features.Platform;

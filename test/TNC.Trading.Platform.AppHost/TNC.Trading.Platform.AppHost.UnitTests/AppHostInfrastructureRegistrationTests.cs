@@ -71,6 +71,44 @@ public sealed class AppHostInfrastructureRegistrationTests
         Assert.Equal(ContainerLifetime.Session, GetContainerLifetime(infrastructure.Keycloak.Resource));
     }
 
+    /// <summary>
+    /// Trace: NF2, TR1.
+    /// Verifies: the local AppHost default retains durable SQL state.
+    /// Expected: SQL uses a persistent lifetime and includes a data-volume annotation.
+    /// Why: local development must preserve operator configuration between AppHost runs.
+    /// </summary>
+    [Fact]
+    public void Create_ShouldPersistSqlState_WhenPersistenceIsNotConfigured()
+    {
+        var builder = CreateBuilder();
+        var infrastructure = AppHostInfrastructureRegistration.Create(builder);
+        var sqlResource = builder.Resources.Single(resource => resource.Name == "sql");
+
+        Assert.Equal(ContainerLifetime.Persistent, GetContainerLifetime(sqlResource));
+        Assert.NotEmpty(sqlResource.Annotations);
+    }
+
+    /// <summary>
+    /// Trace: NF2, TR1.
+    /// Verifies: test AppHost composition can use ephemeral SQL state.
+    /// Expected: SQL uses a session lifetime and has no data-volume annotation.
+    /// Why: closed-box fresh-state tests must not inherit rows from retained SQL volumes.
+    /// </summary>
+    [Fact]
+    public void Create_ShouldUseEphemeralSqlState_WhenPersistenceIsDisabled()
+    {
+        var builder = CreateBuilder();
+        builder.Configuration["AppHost:UsePersistentSqlState"] = bool.FalseString;
+        var infrastructure = AppHostInfrastructureRegistration.Create(builder);
+        var sqlResource = builder.Resources.Single(resource => resource.Name == "sql");
+        var persistentBuilder = CreateBuilder();
+        AppHostInfrastructureRegistration.Create(persistentBuilder);
+        var persistentSqlResource = persistentBuilder.Resources.Single(resource => resource.Name == "sql");
+
+        Assert.Equal(ContainerLifetime.Session, GetContainerLifetime(sqlResource));
+        Assert.True(persistentSqlResource.Annotations.Count > sqlResource.Annotations.Count);
+    }
+
     private static IDistributedApplicationBuilder CreateBuilder()
     {
         return DistributedApplication.CreateBuilder(new DistributedApplicationOptions
@@ -107,4 +145,5 @@ public sealed class AppHostInfrastructureRegistrationTests
 
         throw new InvalidOperationException($"No container lifetime metadata was found for resource '{resource.Name}'.");
     }
+
 }

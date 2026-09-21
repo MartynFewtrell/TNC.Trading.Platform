@@ -32,6 +32,7 @@ The left navigation still changes based on the signed-in operator role.
 | `/ig-login/history` | Retained daily first-successful non-secret IG login payloads within the 90-day retention window. Distinct from the current-state latest payload on `/status`. |
 | `/configuration` | Operator-managed configuration, notification settings, trading-schedule values, and write-only IG credential updates. |
 | `/administration/authentication` | Administrator-only summary of the configured auth provider, role claim type, and protected API audience. |
+| `/account-preferences` | Operator-only live Test-account trailing-stops control and read-only verified observations. The feature does not authorize real orders or monetary exposure. |
 | `/authentication/sign-in` | Starts sign-in. In automated local tests this also lists the seeded local test users. |
 | `/authentication/sign-out` | Requires an authenticated browser session, accepts an antiforgery-protected POST from the shared header, and ends the platform session before returning to the UI entry route, which prompts for sign-in again. |
 | `/authentication/access-denied` | Dedicated denied-access page for signed-in users who lack the required platform role. |
@@ -127,6 +128,8 @@ It shows:
 - latest failure summary when one exists
 
 The latest failure summary is classified into clear operator-facing messages such as invalid credentials, forbidden access, request timeout, rate limiting, broker unreachability, or an unexpected broker response. These messages remain secret-safe and never include the configured API key, identifier, password, `CST`, or `X-SECURITY-TOKEN` values.
+
+When the state is `OutOfSchedule`, the blocked reason shown in the status and IG login panels is the current governing inactive reason. A normal rollover from one inactive reason to another is non-fatal: the platform refreshes the persisted reason and validation timestamp without creating a retry, notification, or failure summary. Continued inactivity with the same reason follows the same no-side-effect path.
 
 When a successful IG login payload has been captured, the same panel also exposes an expandable **Latest successful IG login payload details** area.
 
@@ -520,6 +523,12 @@ recover after the owning replica is stopped, inspect SQL connectivity and
 connection-pool health before restarting the remaining API replica; the
 session-owned lock is released when its SQL connection ends.
 
+An `OutOfSchedule` reason change during normal reconciliation is not a startup
+failure and does not require a retry or notification investigation. Genuine
+startup migration, configuration, persistence, or policy failures remain
+fail-fast: startup does not become ready until the failing condition is
+corrected and initialization and reconciliation complete successfully.
+
 ### The configuration page says restart is required
 
 This means a startup-fixed setting changed. The new value is persisted, but the currently running runtime state continues using the prior startup-applied environment selection until the next application start.
@@ -545,11 +554,42 @@ This is expected when:
 - the environment has been freshly provisioned and no first-successful snapshot has been captured
 - all retained entries have aged outside the 90-day retention window
 
-To populate history, a successful IG login must occur during an active trading-schedule period. The retention processor removes entries older than 90 days automatically. Entries exactly 90 days old at the cleanup cutoff remain until a later run, and the current `Latest` snapshot is never removed by age-based cleanup. A missing, invalid, negative, or zero `Retention:OperationalRecordsDays` value uses the 90-day default rather than disabling retention.
+To populate history, a successful IG login must occur during an active trading-schedule period. The retention processor removes entries older than the configured `Retention:OperationalRecordsDays` automatically. Entries exactly at the cleanup cutoff remain until a later run, and the current `Latest` snapshot is never removed by age-based cleanup. A missing, invalid, negative, or zero value uses the 90-day default rather than disabling retention.
 
 ## Related documents
 
 - [Application overview](application-overview.md)
 - [API reference](api-reference.md)
 - [Runtime behavior](runtime-behavior.md)
+
+## Account Preferences page
+
+`/account-preferences` is available only to Operators and Administrators. It
+shows `Live trailing stops control for the configured account.` The page states
+that the control does not authorize real orders or monetary exposure.
+
+Initial load reads SQL state. The settings view is headed `Trailing stops`, shows
+the desired value and `Last confirmed`, and places durable warnings directly
+under the heading. `Check status` is the explicit command for comparing and
+converging IG with the persisted desired value. The configuration view is named
+`Trailing stops configuration` and presents the Enabled and Disabled choices
+with `Save preferences`.
+
+Save preferences changes IG before the local projection is confirmed. A
+successful response refreshes the returned projection without a page reload.
+The server owns the account and actor; the browser cannot nominate either.
+Indeterminate save outcomes show a safe error such as `Save outcome unknown`.
+Check status repairs detected drift when possible and otherwise preserves the
+desired value while showing a red durable warning. The separate `Observed
+history` view remains read-only evidence of successful checks, recoveries, and
+confirmed saves, never a cached live value.
+
+History is bounded and keyset-paged with an opaque cursor. Equal values remain
+separate observations, while failed or unknown provider outcomes are not shown
+as preference observations. Cursors are partition-bound and invalid membership
+is rejected rather than silently restarting from the first page. The feature is
+Test-only; Live requires a
+separate safety delivery for credentials, authorization, allowance handling,
+and monetary-risk controls. Online history retention uses
+`Retention:OperationalRecordsDays`; archive/export is deferred.
 

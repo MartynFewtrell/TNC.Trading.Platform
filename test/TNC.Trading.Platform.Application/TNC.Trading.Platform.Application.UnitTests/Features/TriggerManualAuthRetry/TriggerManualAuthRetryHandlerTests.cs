@@ -1,4 +1,5 @@
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.AccountDetails;
 using TNC.Trading.Platform.Application.Features.PlatformAuthentication.Ports;
 using TNC.Trading.Platform.Application.Features.TriggerManualAuthRetry;
 using TNC.Trading.Platform.Application.Features.TriggerManualAuthRetry.Ports;
@@ -83,6 +84,26 @@ public sealed class TriggerManualAuthRetryHandlerTests
     }
 
     /// <summary>
+    /// Trace: Step 1.3 Account Details capture integration.
+    /// Verifies automatic Account Details capture starts only after the recovered login intent is durably committed.
+    /// Expected: capture observes the recovered commit and the login remains accepted when capture fails.
+    /// Why: a best-effort account snapshot must never precede or invalidate durable authentication success.
+    /// </summary>
+    [Fact]
+    public async Task HandleAsync_ShouldCaptureAccountDetailsAfterRecoveredCommit_WhenManualRetrySucceeds()
+    {
+        var fixture = CreateFixture();
+        fixture.State.RetryLimitReached = true;
+        fixture.State.SessionStatus = PlatformSessionStatus.Degraded;
+        fixture.Capture.ThrowFailure = true;
+
+        var result = await fixture.Handler.HandleAsync(new TriggerManualAuthRetryRequest(), CancellationToken.None);
+
+        Assert.True(result.Outcome.IsAccepted);
+        Assert.Equal(["ManualRetryRequested", "Recovered", "Capture"], fixture.Workflow);
+    }
+
+    /// <summary>
     /// Trace: IG Login 403 Degraded Health Phase 2.3.
     /// Verifies an eligible manual retry with present but unusable credentials commits its intent and remediation without calling IG.
     /// Expected: the retry is accepted, the gateway call count is zero, and the failure event uses the fixed redacted reason.
@@ -134,8 +155,10 @@ public sealed class TriggerManualAuthRetryHandlerTests
         };
         var runtimeStore = new FakeRuntimeStateStore(state);
         var selectedConfiguration = configuration ?? CreateConfiguration(PlatformEnvironmentKind.Live, BrokerEnvironmentKind.Demo);
-        var committer = new FakeCommitter();
+        var workflow = new List<string>();
+        var committer = new FakeCommitter(workflow);
         var gateway = new FakeBrokerAuthenticationGateway();
+        var capture = new FakeAccountDetailsDailyCapture(workflow);
         var handler = new TriggerManualAuthRetryHandler(
             new PlatformConfigurationService(new FakeConfigurationStore(selectedConfiguration)),
             runtimeStore,
@@ -144,9 +167,10 @@ public sealed class TriggerManualAuthRetryHandlerTests
             gateway,
             new FakeNotificationDispatcher(),
             new PlatformAuthSimulationSettings(TimeSpan.FromMinutes(15)),
-            clock);
+            clock,
+            capture);
 
-        return new Fixture(handler, state, committer, gateway);
+        return new Fixture(handler, state, committer, gateway, capture, workflow);
     }
 
     private static PlatformConfigurationSnapshot CreateConfigurationWithCredentials(CredentialPresence credentials) =>
@@ -177,7 +201,9 @@ public sealed class TriggerManualAuthRetryHandlerTests
         TriggerManualAuthRetryHandler Handler,
         PlatformRuntimeState State,
         FakeCommitter Committer,
-        FakeBrokerAuthenticationGateway Gateway);
+        FakeBrokerAuthenticationGateway Gateway,
+        FakeAccountDetailsDailyCapture Capture,
+        List<string> Workflow);
 
     private sealed class FakeRuntimeStateStore(PlatformRuntimeState state) : IPlatformRuntimeStateStore
     {
@@ -194,13 +220,30 @@ public sealed class TriggerManualAuthRetryHandlerTests
         public Task<UpdatePlatformConfigurationResult> UpdateAsync(PlatformConfigurationUpdate update, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
-    private sealed class FakeCommitter : IManualAuthRetryCommitter
+    private sealed class FakeCommitter(List<string> workflow) : IManualAuthRetryCommitter
     {
         public List<ManualAuthRetryCommitIntent> Intents { get; } = [];
         public Task CommitAsync(ManualAuthRetryCommitIntent intent, CancellationToken cancellationToken)
         {
             Intents.Add(intent);
+            workflow.Add(intent.Event.EventType);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeAccountDetailsDailyCapture(List<string> workflow) : IAccountDetailsDailyCapture
+    {
+        public bool ThrowFailure { get; set; }
+
+        public Task<CaptureDailyAccountDetailsResponse> HandleAsync(CaptureDailyAccountDetailsRequest request, CancellationToken cancellationToken)
+        {
+            workflow.Add("Capture");
+            if (ThrowFailure)
+            {
+                throw new InvalidOperationException("capture failed");
+            }
+
+            return Task.FromResult(new CaptureDailyAccountDetailsResponse(new AccountDetailsRefreshOutcome.Deferred()));
         }
     }
 

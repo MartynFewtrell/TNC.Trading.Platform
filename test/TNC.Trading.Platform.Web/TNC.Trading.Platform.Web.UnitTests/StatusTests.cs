@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using TNC.Trading.Platform.Web.Components.Pages;
@@ -64,7 +64,7 @@ public sealed class StatusTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateStatus(isDegraded: true, blockedReason: "Retry limit reached")),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateEvents()));
 
-        var cut = context.RenderComponent<Status>();
+        var cut = context.Render<Status>();
 
         cut.WaitForAssertion(() =>
         {
@@ -88,7 +88,7 @@ public sealed class StatusTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateStatus()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateEvents()));
 
-        var cut = context.RenderComponent<Status>();
+        var cut = context.Render<Status>();
 
         cut.WaitForAssertion(() => Assert.Empty(cut.FindAll("[data-testid='manual-retry-button']")));
     }
@@ -108,7 +108,7 @@ public sealed class StatusTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateStatus(manualRetryAvailable: false)),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateEvents()));
 
-        var cut = context.RenderComponent<Status>();
+        var cut = context.Render<Status>();
 
         cut.WaitForAssertion(() => Assert.True(cut.Find("[data-testid='manual-retry-button']").HasAttribute("disabled")));
     }
@@ -132,7 +132,7 @@ public sealed class StatusTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateStatus()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateEvents()));
 
-        var cut = context.RenderComponent<Status>();
+        var cut = context.Render<Status>();
         cut.WaitForElement("[data-testid='manual-retry-button']").Click();
 
         cut.WaitForAssertion(() =>
@@ -155,7 +155,7 @@ public sealed class StatusTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateStatus(latestSnapshot: latestSnapshot)),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateEvents()));
 
-        var cut = context.RenderComponent<Status>();
+        var cut = context.Render<Status>();
 
         cut.WaitForAssertion(() =>
         {
@@ -181,7 +181,7 @@ public sealed class StatusTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateStatus(isDegraded: true, retryPhase: "InitialAutomatic")),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateEvents()));
 
-        var cut = context.RenderComponent<Status>();
+        var cut = context.Render<Status>();
 
         cut.WaitForAssertion(() =>
         {
@@ -205,7 +205,7 @@ public sealed class StatusTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateStatus(isScheduleActive: false, sessionStatus: "OutOfSchedule")),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateEvents()));
 
-        var cut = context.RenderComponent<Status>();
+        var cut = context.Render<Status>();
 
         cut.WaitForAssertion(() =>
         {

@@ -50,6 +50,12 @@ internal sealed class TradingScheduleGate
         return new TradingScheduleStatus(true, "Trading schedule is active.");
     }
 
+    public DateOnly GetTradingDay(TradingScheduleConfiguration tradingSchedule, DateTimeOffset utcNow)
+    {
+        var timeZone = ResolveTimeZone(tradingSchedule.TimeZone);
+        return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(utcNow, timeZone).DateTime);
+    }
+
     private static bool IsTradingDayActive(TradingScheduleConfiguration tradingSchedule, DayOfWeek currentDay)
     {
         if (tradingSchedule.TradingDays.Contains(currentDay))

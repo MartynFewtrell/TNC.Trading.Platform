@@ -49,7 +49,6 @@ internal static class AppHostEnvironmentWiring
 
         if (string.Equals(apiAuthenticationProvider, "Keycloak", StringComparison.Ordinal))
         {
-            environmentValues["Authentication__Keycloak__Authority"] = AppHostCompositionConstants.KeycloakAuthority;
         }
         else
         {
@@ -67,7 +66,6 @@ internal static class AppHostEnvironmentWiring
         var environmentValues = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["Authentication__Provider"] = "Keycloak",
-            ["Authentication__Keycloak__Authority"] = AppHostCompositionConstants.KeycloakAuthority,
             ["Authentication__Authorization__RoleClaimType"] = "role"
         };
 
@@ -135,6 +133,15 @@ internal static class AppHostEnvironmentWiring
                 .WithEnvironment(environmentValue.Key, environmentValue.Value);
         }
 
+        if (!string.IsNullOrWhiteSpace(settings.AccountPreferencesBaseUrl))
+        {
+            configuredApi = configuredApi.WithEnvironment("Ig__AccountPreferencesBaseUrl", settings.AccountPreferencesBaseUrl);
+        }
+
+        configuredApi = configuredApi.WithEnvironment(
+            "AccountPreferences__Reconciliation__Enabled",
+            settings.AccountPreferencesReconciliationEnabled.ToString());
+
         return configuredApi;
     }
 
@@ -174,7 +181,11 @@ internal static class AppHostEnvironmentWiring
 
         if (string.Equals(apiAuthenticationEnvironmentValues["Authentication__Provider"], "Keycloak", StringComparison.Ordinal))
         {
-            configuredApi = configuredApi.WaitFor(keycloak);
+            configuredApi = configuredApi
+                .WithEnvironment(
+                    "Authentication__Keycloak__Authority",
+                    ReferenceExpression.Create($"{keycloak.GetEndpoint("http")}/realms/{AppHostCompositionConstants.KeycloakRealmName}"))
+                .WaitFor(keycloak);
         }
 
         var configuredWeb = webProject.WaitFor(keycloak);
@@ -184,6 +195,10 @@ internal static class AppHostEnvironmentWiring
             configuredWeb = configuredWeb
                 .WithEnvironment(environmentValue.Key, environmentValue.Value);
         }
+
+        configuredWeb = configuredWeb.WithEnvironment(
+            "Authentication__Keycloak__Authority",
+            ReferenceExpression.Create($"{keycloak.GetEndpoint("http")}/realms/{AppHostCompositionConstants.KeycloakRealmName}"));
 
         return (configuredApi, configuredWeb);
     }

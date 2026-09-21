@@ -73,15 +73,20 @@ internal sealed class AppHostProcessHandle : IAsyncDisposable
 
     public Process? Process => process;
 
-    public async Task<Uri> WaitForApiBaseUriAsync(TimeSpan timeout)
+    public async Task<Uri> WaitForApiBaseUriAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
-        using var timeoutCancellationTokenSource = new CancellationTokenSource(timeout);
+        using var timeoutCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCancellationTokenSource.CancelAfter(timeout);
         using var httpClient = CreateHttpClient(allowAutoRedirect: true);
 
         while (!timeoutCancellationTokenSource.IsCancellationRequested)
         {
             foreach (var apiBaseUri in EnumerateCandidateBaseUris())
             {
+                if (process?.HasExited == true)
+                {
+                    throw new InvalidOperationException($"The AppHost process exited before API readiness. {GetProcessStatus()} Recent process output:{FormatRecentEntries(recentProcessOutput)}");
+                }
                 try
                 {
                     using var requestTimeoutCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(timeoutCancellationTokenSource.Token);

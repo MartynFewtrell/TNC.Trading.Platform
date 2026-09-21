@@ -1,6 +1,8 @@
 using System.Text.Json;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.PlatformAuthentication.Ports;
+using TNC.Trading.Platform.Application.Features.AccountDetails;
+using TNC.Trading.Platform.Application.Features.AccountPreferences;
 using TNC.Trading.Platform.Application.Features.TriggerManualAuthRetry.Ports;
 using TNC.Trading.Platform.Application.Services;
 
@@ -14,7 +16,9 @@ internal sealed class TriggerManualAuthRetryHandler(
     IBrokerAuthenticationGateway brokerAuthenticationGateway,
     INotificationDispatcher notificationDispatcher,
     PlatformAuthSimulationSettings authSimulationSettings,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IAccountDetailsDailyCapture? accountDetailsDailyCapture = null,
+    IAccountPreferencesVerificationNudge? accountPreferencesVerificationNudge = null)
 {
     public async Task<TriggerManualAuthRetryResponse> HandleAsync(TriggerManualAuthRetryRequest request, CancellationToken cancellationToken)
     {
@@ -119,6 +123,35 @@ internal sealed class TriggerManualAuthRetryHandler(
             null,
             snapshot,
             CreateProof(authentication.Proof)), cancellationToken).ConfigureAwait(false);
+
+        if (accountPreferencesVerificationNudge is not null)
+        {
+            try
+            {
+                await accountPreferencesVerificationNudge.HandleAsync(
+                    new TNC.Trading.Platform.Application.Features.AccountPreferences.NudgeAccountPreferencesVerificationRequest(
+                        configuration.PlatformEnvironment,
+                        configuration.BrokerEnvironment,
+                        authentication.Evidence!.AccountId,
+                        snapshot.Id.ToString(),
+                        snapshot.CapturedAtUtc), cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
+            {
+            }
+        }
+
+        if (accountDetailsDailyCapture is not null)
+        {
+            try
+            {
+                await accountDetailsDailyCapture.HandleAsync(new CaptureDailyAccountDetailsRequest(), cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Account Details is best-effort and must not invalidate durable login success.
+            }
+        }
 
         await notificationDispatcher.DispatchRecoveryAsync(
             configuration,

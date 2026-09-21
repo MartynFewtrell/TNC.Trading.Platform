@@ -346,8 +346,13 @@ Manual retry is deliberately excluded because its complete write slice now lives
 
 - reads current configuration and runtime state
 - invokes the Application-owned trading schedule policy and applies its typed decision
+- refreshes `BlockedReason` and `LastValidatedAtUtc` through the Application
+    reconciler when an existing `OutOfSchedule` state remains inactive, without
+    changing transition, retry, or session metadata
 - invokes the Application-owned retry timing policy when a retry cycle schedules its next attempt
-- submits authentication transition requests to the Application-owned transition policy and stops if the policy rejects a request
+- submits authentication transition requests to the Application-owned
+    `PlatformStateTransitionEngine`, which validates the strict state graph and
+    rejects invalid requests before mutation
 - reacts to missing credentials
 - captures a secret-safe IG login snapshot when a backend auth transition succeeds
 - invokes one provider-neutral authenticate-and-collect-proof capability and stores the returned secret-safe evidence and optional proof snapshot
@@ -433,9 +438,16 @@ The `TNC.Trading.Platform.Infrastructure` project contains:
 - runtime-state storage
 - retry-cycle storage
 - IG login snapshot storage for the latest successful payload and retained daily first-successful history
+- Account Details retrieval and account-child storage for immutable IG test-account snapshots
+    snapshots, composite-keyset history, automatic daily capture, and
+    environment-scoped refresh leases
 - the outbound `IgBrokerAuthenticationGateway` adapter for the IG Demo REST API
 - in-memory proof-data storage for the latest read-only IG Demo account snapshot
 - operational-event storage, including persisted operator auth audit history
+- typed trailing-stops provider request and response records using the
+    `trailingStopsEnabled` contract
+- partitioned trailing-stops observation persistence with strict cursor
+    membership checks
 - notification adapters are organized under `Infrastructure/Notifications/`: the shared dispatcher, dispatch policy, context, message, result, and inward provider contract remain at the boundary root; the deterministic adapter is under `Notifications/Recorded/`, SMTP delivery under `Notifications/Smtp/`, and Azure Communication Services email delivery under `Notifications/AzureCommunicationServices/`
 - EF and SQL retention queries and deletion execution for operational records under `Infrastructure/Operations/Retention/`
 - operational data masking, removal, JSON serialization, and text redaction mechanisms
@@ -461,6 +473,10 @@ The adapter rejects `Live` before entering the HTTP pipeline. No Live request is
 routed to the Demo host. HTTP status codes, JSON wire records, malformed
 responses, request timeouts, and transport exceptions are translated at this
 boundary; caller-requested cancellation continues to propagate normally.
+
+The account-preferences adapter treats a malformed successful PUT
+acknowledgement as indeterminate. Application reconciliation performs one
+authoritative GET and requires exact Boolean equality before reporting success.
 
 The `IgProofDataSnapshot` that is persisted to the in-memory store contains only safe read fields: account name, account ID, balance, open-position count, and the retrieval timestamp.
 
@@ -580,3 +596,31 @@ This keeps audit persistence on the server side and avoids exposing secrets or d
 - [Operator guide](operator-guide.md)
 - [Runtime behavior](runtime-behavior.md)
 - [API reference](api-reference.md)
+
+## Account Preferences boundary
+
+Application owns the Account Preferences operation contracts, Test-only guard,
+desired-state policy, comparison and convergence rules, typed provider
+outcomes, operation journal contract, and observation model. SQL owns the
+durable projection and journal; IG supplies the account-bound external fact.
+API and Web are inbound adapters; Infrastructure implements the current-state,
+audit, lease, journal, observation, login-snapshot, and account-bound IG ports.
+
+The SQL-only GET is a projection query. Save preferences resolves account and
+actor on the server, uses the account lease and revision guard, performs IG
+read/conditional-write/readback, and finalises desired state, audit, confirmed
+observation, projection, and journal in one SQL transaction. Check status uses
+the same lease and revision boundaries to compare and converge IG. A durable
+`RemoteApplied` journal phase supports recovery after remote confirmation but
+before SQL finalisation.
+
+Account mismatch, stale revision, and lease contention are rejected before
+provider I/O where applicable. Provider failures become typed safe warnings;
+blind remote-write retries are prohibited. Successful observations are stored
+in append-only history with the desired revision and correlation context.
+
+When order submission is implemented, its application boundary must fail
+closed unless verification is fresh, `InSync`, and bound to the same desired
+revision, target account, and session generation. Startup verification only
+primes persisted status. Authentication-active is not trade readiness, and this
+delivery adds no order gate or override.

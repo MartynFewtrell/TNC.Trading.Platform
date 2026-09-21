@@ -1,0 +1,123 @@
+@page "/account-details"
+@namespace TNC.Trading.Platform.Web.Components.Pages
+@attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Viewer)]
+@using TNC.Trading.Platform.Web.Authentication
+@inject AccountDetailsPagePresenter Presenter
+@inject PlatformNavigationAccessCoordinator NavigationAccessCoordinator
+
+<PageTitle>Account details</PageTitle>
+
+<section class="panel platform-page-header">
+    <div><h1>Account details</h1><p class="hint">Saved account snapshots from the configured IG environment.</p></div>
+    @if (canRefresh)
+    {
+        <button class="platform-button" type="button" @onclick="RefreshAsync" disabled="@Presenter.IsRefreshing">@(Presenter.IsRefreshing ? "Refreshing..." : "Refresh")</button>
+    }
+</section>
+
+@if (!hasRequiredScope) { <p data-testid="account-details-access">Redirecting...</p> }
+else if (Presenter.IsLoading && Presenter.State is null) { <p data-testid="account-details-loading">Loading account details...</p> }
+else if (Presenter.State?.Retrieval is null)
+{
+    <section class="panel" data-testid="account-details-empty"><p>No saved account details are available yet.</p></section>
+}
+else
+{
+    var retrieval = Presenter.State.Retrieval;
+    <section class="panel" data-testid="account-details-panel">
+        <dl class="platform-key-value-grid account-details-retrieval"><dt>Retrieved at</dt><dd>@retrieval.RetrievedAtUtc.ToLocalTime().ToString("g")</dd><dt>Trading day</dt><dd>@retrieval.TradingDay</dd><dt>Trigger</dt><dd>@retrieval.TriggerSource</dd></dl>
+        <div class="account-details-tabs">
+        <RadzenTabs @bind-SelectedIndex="selectedIndex" Change="OnTabChanged" AriaLabel="Account types">
+            <Tabs>
+                @foreach (var group in accountTypeGroups)
+                {
+                    <RadzenTabsItem @key="group.Key" Text="@group.DisplayName">
+                        @foreach (var account in group.Accounts)
+                        {
+                            <article class="panel" data-testid="account-details-account" @key="account.AccountId">
+                                <h2>@(account.AccountName ?? account.AccountId)</h2>
+                                <dl class="account-details-account-header">
+                                    <div><dt>Account ID</dt><dd>@account.AccountId</dd></div>
+                                    <div><dt>Alias</dt><dd>@(account.AccountAlias ?? "None")</dd></div>
+                                    <div><dt>Status</dt><dd><RadzenBadge Text="@account.Status" BadgeStyle="BadgeStyle.Info" /></dd></div>
+                                </dl>
+                                <RadzenRow>
+                                    <RadzenColumn Size="12" SizeMD="6">
+                                        <dl class="platform-key-value-grid">
+                                            <dt>Account type</dt><dd>@account.AccountType</dd><dt>Preferred</dt><dd>@account.IsPreferred</dd><dt>Transfer from</dt><dd>@account.CanTransferFrom</dd><dt>Transfer to</dt><dd>@account.CanTransferTo</dd>
+                                        </dl>
+                                    </RadzenColumn>
+                                    <RadzenColumn Size="12" SizeMD="6">
+                                        <dl class="platform-key-value-grid">
+                                            <dt>Currency</dt><dd>@account.Currency</dd><dt>Balance</dt><dd>@account.Balance</dd><dt>Deposit</dt><dd>@account.Deposit</dd><dt>Profit/loss</dt><dd>@account.ProfitLoss</dd><dt>Available</dt><dd>@account.Available</dd>
+                                        </dl>
+                                    </RadzenColumn>
+                                </RadzenRow>
+                            </article>
+                        }
+                    </RadzenTabsItem>
+                }
+            </Tabs>
+        </RadzenTabs>
+        </div>
+    </section>
+    @if (!string.IsNullOrWhiteSpace(Presenter.Error)) { <p class="error" data-testid="account-details-error">@Presenter.Error</p> }
+    <nav class="platform-pagination" aria-label="Account details history">
+        <button type="button" aria-label="View older account details" @onclick="LoadOlderAsync" disabled="@(Presenter.IsLoading || Presenter.State.OlderCursor is null)">Older</button>
+        <button type="button" aria-label="View newer account details" @onclick="LoadNewerAsync" disabled="@(Presenter.IsLoading || Presenter.State.NewerCursor is null)">Newer</button>
+    </nav>
+}
+
+@code {
+    private bool hasRequiredScope;
+    private bool canRefresh;
+    private string? selectedAccountTypeKey;
+    private int selectedIndex;
+
+    private IReadOnlyList<AccountTypeGroup> accountTypeGroups => (Presenter.State?.Retrieval?.Accounts ?? [])
+        .GroupBy(account => account.AccountType.Trim(), StringComparer.OrdinalIgnoreCase)
+        .Select(group => new AccountTypeGroup(group.Key, group.First().AccountType.Trim(), group.ToList()))
+        .ToList() ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        hasRequiredScope = await NavigationAccessCoordinator.EnsureRequiredScopesAsync("/account-details", PlatformAuthenticationDefaults.Scopes.Viewer);
+        canRefresh = hasRequiredScope && await NavigationAccessCoordinator.EnsureRequiredScopesAsync("/account-details", PlatformAuthenticationDefaults.Scopes.Operator);
+        if (hasRequiredScope)
+        {
+            await Presenter.LoadAsync();
+            ReconcileSelectedAccountType();
+        }
+    }
+
+    private async Task RefreshAsync() { await Presenter.RefreshAsync(); ReconcileSelectedAccountType(); }
+
+    private async Task LoadOlderAsync() { await Presenter.LoadOlderAsync(); ReconcileSelectedAccountType(); }
+
+    private async Task LoadNewerAsync() { await Presenter.LoadNewerAsync(); ReconcileSelectedAccountType(); }
+
+    private void OnTabChanged(int index)
+    {
+        selectedIndex = index;
+        selectedAccountTypeKey = index >= 0 && index < accountTypeGroups.Count ? accountTypeGroups[index].Key : null;
+    }
+
+    private void ReconcileSelectedAccountType()
+    {
+        var groups = accountTypeGroups;
+        var selectedGroup = groups.FirstOrDefault(group => string.Equals(group.Key, selectedAccountTypeKey, StringComparison.OrdinalIgnoreCase));
+        selectedGroup ??= groups.FirstOrDefault();
+        selectedAccountTypeKey = selectedGroup?.Key;
+        selectedIndex = 0;
+        for (var index = 0; selectedGroup is not null && index < groups.Count; index++)
+        {
+            if (ReferenceEquals(groups[index], selectedGroup))
+            {
+                selectedIndex = index;
+                break;
+            }
+        }
+    }
+
+    private sealed record AccountTypeGroup(string Key, string DisplayName, IReadOnlyList<AccountDetailsAccountViewModel> Accounts);
+}

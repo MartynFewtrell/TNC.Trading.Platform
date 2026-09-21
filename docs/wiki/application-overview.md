@@ -191,3 +191,26 @@ The following capabilities are planned at the product level but are not implemen
 - [Architecture](architecture.md)
 - [Operator guide](operator-guide.md)
 - [Runtime behavior](runtime-behavior.md)
+
+## Account Preferences feature
+
+The Account Preferences vertical slice separates durable operator intent from
+external observation. The current-state store owns the desired Boolean,
+configured account, revision, status, retry metadata, and last confirmed value.
+The SQL projection is read without contacting IG. Explicit application
+commands own IG-first save and body-free Check status compare-and-converge.
+The operation store owns recovery across the IG-to-SQL boundary.
+
+Application handlers depend on inward-owned state, gateway, lease, journal,
+and login-snapshot ports. Infrastructure supplies the SQL current-state,
+audit, journal, and observation stores, SQL lease, IG HTTP adapter, and login
+snapshot store. API translates the contracts to protected HTTP routes; Web
+renders the desired and last confirmed values independently and applies each
+returned projection.
+
+New and migrated installations begin `Unconfigured`; observations are never
+promoted into desired intent. Save preferences derives account and actor from
+server-side context, confirms the requested value through IG, then persists
+the complete local projection. Check status observes IG and converges it to
+the persisted desired value. Failures preserve desired intent and expose a
+bounded safe warning. No current workflow places trades.

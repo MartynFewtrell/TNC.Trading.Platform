@@ -24,6 +24,15 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
 
     internal DbSet<NotificationRecordEntity> NotificationRecords => Set<NotificationRecordEntity>();
 
+    internal DbSet<AccountDetailsRetrievalEntity> AccountDetailsRetrievals => Set<AccountDetailsRetrievalEntity>();
+
+    internal DbSet<AccountDetailsAccountEntity> AccountDetailsAccounts => Set<AccountDetailsAccountEntity>();
+
+    internal DbSet<TrailingStopsPreferenceObservationEntity> TrailingStopsPreferenceObservations => Set<TrailingStopsPreferenceObservationEntity>();
+    internal DbSet<AccountPreferencesCurrentStateEntity> AccountPreferencesCurrentStates => Set<AccountPreferencesCurrentStateEntity>();
+    internal DbSet<AccountPreferencesDesiredStateAuditEntity> AccountPreferencesDesiredStateAudits => Set<AccountPreferencesDesiredStateAuditEntity>();
+    internal DbSet<AccountPreferencesOperationEntity> AccountPreferencesOperations => Set<AccountPreferencesOperationEntity>();
+
     internal DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -124,5 +133,91 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.Property(item => item.Provider).HasMaxLength(128);
             entity.Property(item => item.CorrelationId).HasMaxLength(64);
         });
+
+        modelBuilder.Entity<AccountDetailsRetrievalEntity>(entity =>
+        {
+            entity.HasKey(item => item.AccountDetailsRetrievalId);
+            entity.Property(item => item.BrokerEnvironment).HasMaxLength(32).IsRequired();
+            entity.Property(item => item.TriggerSource).HasMaxLength(32).IsRequired();
+            entity.Property(item => item.TriggeredBy).HasMaxLength(128);
+            entity.HasIndex(item => new { item.BrokerEnvironment, item.RetrievedAtUtc, item.AccountDetailsRetrievalId });
+            entity.HasIndex(item => new { item.BrokerEnvironment, item.TradingDay })
+                .IsUnique()
+                .HasFilter("[TriggerSource] = 'Automatic'");
+            entity.HasMany(item => item.Accounts)
+                .WithOne(item => item.Retrieval)
+                .HasForeignKey(item => item.AccountDetailsRetrievalId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<TrailingStopsPreferenceObservationEntity>(entity =>
+        {
+            entity.HasKey(item => item.TrailingStopsPreferenceObservationId);
+            entity.Property(item => item.BrokerEnvironment).HasMaxLength(32).IsRequired();
+            entity.Property(item => item.PlatformEnvironment).HasMaxLength(32).IsRequired();
+            entity.Property(item => item.AccountId).HasMaxLength(64);
+            entity.Property(item => item.ObservationKind).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.Source).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.Actor).HasMaxLength(128);
+            entity.Property(item => item.CorrelationId).HasMaxLength(64).IsRequired();
+            entity.HasIndex(item => new { item.BrokerEnvironment, item.PlatformEnvironment, item.ObservedAtUtc, item.TrailingStopsPreferenceObservationId });
+        });
+
+        modelBuilder.Entity<AccountPreferencesCurrentStateEntity>(entity =>
+        {
+            entity.HasKey(item => item.AccountPreferencesCurrentStateId);
+            entity.HasIndex(item => new { item.PlatformEnvironment, item.BrokerEnvironment, item.AccountId }).IsUnique();
+            entity.Property(item => item.PlatformEnvironment).HasMaxLength(32).IsRequired();
+            entity.Property(item => item.BrokerEnvironment).HasMaxLength(32).IsRequired();
+            entity.Property(item => item.AccountId).HasMaxLength(64);
+            entity.Property(item => item.DesiredActor).HasMaxLength(128);
+            entity.Property(item => item.VerificationStatus).HasMaxLength(32).IsRequired();
+            entity.Property(item => item.FailureSummary).HasMaxLength(512);
+            entity.Property(item => item.CorrelationId).HasMaxLength(64);
+            entity.Property(item => item.ConcurrencyToken).IsRowVersion();
+        });
+
+        modelBuilder.Entity<AccountPreferencesDesiredStateAuditEntity>(entity =>
+        {
+            entity.HasKey(item => item.AccountPreferencesDesiredStateAuditId);
+            entity.HasIndex(item => new { item.AccountPreferencesCurrentStateId, item.NewRevision }).IsUnique();
+            entity.HasIndex(item => new { item.PlatformEnvironment, item.BrokerEnvironment, item.AccountId, item.NewRevision });
+            entity.Property(item => item.PlatformEnvironment).HasMaxLength(32).IsRequired();
+            entity.Property(item => item.BrokerEnvironment).HasMaxLength(32).IsRequired();
+            entity.Property(item => item.AccountId).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.Actor).HasMaxLength(128).IsRequired();
+            entity.Property(item => item.ChangeType).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.CorrelationId).HasMaxLength(64).IsRequired();
+        });
+
+        modelBuilder.Entity<AccountPreferencesOperationEntity>(entity =>
+        {
+            entity.HasKey(item => item.AccountPreferencesOperationId);
+            entity.HasIndex(item => new { item.PlatformEnvironment, item.BrokerEnvironment, item.IdempotencyKey }).IsUnique();
+            entity.Property(item => item.IdempotencyKey).HasMaxLength(128).IsRequired();
+            entity.Property(item => item.PlatformEnvironment).HasMaxLength(32).IsRequired();
+            entity.Property(item => item.BrokerEnvironment).HasMaxLength(32).IsRequired();
+            entity.Property(item => item.AccountId).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.Actor).HasMaxLength(128).IsRequired();
+            entity.Property(item => item.CorrelationId).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.Phase).HasMaxLength(32).IsRequired();
+        });
+
+        modelBuilder.Entity<AccountDetailsAccountEntity>(entity =>
+        {
+            entity.HasKey(item => item.AccountDetailsAccountId);
+            entity.Property(item => item.AccountId).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.AccountName).HasMaxLength(256).IsRequired();
+            entity.Property(item => item.AccountAlias).HasMaxLength(256);
+            entity.Property(item => item.Status).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.AccountType).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.Currency).HasMaxLength(16).IsRequired();
+            entity.Property(item => item.Balance).HasPrecision(19, 5);
+            entity.Property(item => item.Deposit).HasPrecision(19, 5);
+            entity.Property(item => item.ProfitLoss).HasPrecision(19, 5);
+            entity.Property(item => item.Available).HasPrecision(19, 5);
+            entity.HasIndex(item => new { item.AccountDetailsRetrievalId, item.AccountId }).IsUnique();
+        });
+
     }
 }

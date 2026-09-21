@@ -30,11 +30,22 @@ internal static class RealAuthenticationSessionFactory
             WaitUntil = WaitUntilState.DOMContentLoaded
         });
 
-        await page.Locator("#username").WaitForAsync(new LocatorWaitForOptions
+        try
         {
-            State = WaitForSelectorState.Visible,
-            Timeout = 30_000
-        });
+            await page.Locator("#username").WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 30_000
+            });
+        }
+        catch (TimeoutException exception)
+        {
+            var pageTitle = await page.TitleAsync();
+            var pageText = await page.Locator("body").InnerTextAsync();
+            throw new TimeoutException(
+                $"Keycloak login form did not appear. URL: {page.Url}; title: {pageTitle}; body: {pageText[..Math.Min(pageText.Length, 1000)]}",
+                exception);
+        }
         await page.Locator("#username").FillAsync(userName);
         await page.Locator("#password").FillAsync("LocalAuth!123");
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign In" }).ClickAsync();

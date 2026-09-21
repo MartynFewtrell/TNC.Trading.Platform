@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.AccountDetails;
+using TNC.Trading.Platform.Application.Features.AccountPreferences;
 using TNC.Trading.Platform.Application.Features.GetIgLoginHistory;
 using TNC.Trading.Platform.Application.Features.GetPlatformConfiguration;
 using TNC.Trading.Platform.Application.Features.GetPlatformEvents;
@@ -38,6 +40,17 @@ internal static class PlatformApplicationServiceCollectionExtensions
         services.AddScoped<TriggerManualAuthRetryHandler>();
         services.AddScoped<GetPlatformEventsHandler>();
         services.AddScoped<GetIgLoginHistoryHandler>();
+        services.AddScoped<GetAccountDetailsHandler>();
+        services.AddScoped<RefreshAccountDetailsHandler>();
+        services.AddScoped<GetAccountPreferencesHandler>();
+        services.AddScoped<UpdateAccountPreferencesValidator>();
+        services.AddScoped<UpdateAccountPreferencesHandler>();
+        services.AddScoped<SaveAccountPreferencesHandler>();
+        services.AddScoped<CheckAccountPreferencesStatusHandler>();
+        services.AddScoped<ReconcileAccountPreferencesHandler>();
+        services.AddScoped<IAccountPreferencesVerificationNudge, NudgeAccountPreferencesVerificationHandler>();
+        services.AddScoped<RemediateAccountPreferencesHandler>();
+        services.AddScoped<GetTrailingStopsPreferenceObservationsHandler>();
 
         return services;
     }

@@ -19,6 +19,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\Shared\Authentication\AppHostCleanup.cs" Link="Shared\Authentication\AppHostCleanup.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\..\src\TNC.Trading.Platform.Api\TNC.Trading.Platform.Api.csproj" />
   </ItemGroup>
 

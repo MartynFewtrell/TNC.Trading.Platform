@@ -5,7 +5,7 @@ namespace TNC.Trading.Platform.AppHost.UnitTests;
 
 public sealed class KeycloakAdminReadinessTests
 {
-    private static readonly Uri RequestUri = new("http://localhost:8080/admin/realms/tnc-trading-platform/clients");
+    private static readonly Uri RequestUri = new("https://localhost:8080/admin/realms/tnc-trading-platform/clients");
 
     /// <summary>
     /// Trace: Keycloak testing improvements Phase 2, Step 2.1, DD-02.

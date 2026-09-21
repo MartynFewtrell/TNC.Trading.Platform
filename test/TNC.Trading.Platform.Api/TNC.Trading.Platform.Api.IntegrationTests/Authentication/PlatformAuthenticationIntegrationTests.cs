@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http.Json;
 
 namespace TNC.Trading.Platform.Api.IntegrationTests.Authentication;
@@ -62,7 +62,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
     {
         using var httpClient = fixture.CreateApiClient();
         using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
-            HttpMethod.Get,
+            fixture.TokenEndpoint,
             "/api/platform/status",
             "local-viewer",
             ViewerScope);
@@ -83,6 +83,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
     {
         using var httpClient = fixture.CreateApiClient();
         using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
             HttpMethod.Get,
             "/api/platform/configuration",
             "local-viewer",
@@ -103,6 +104,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
     {
         using var httpClient = fixture.CreateApiClient();
         using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
             HttpMethod.Get,
             "/api/platform/auth/administration",
             "local-admin",
@@ -123,6 +125,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
     {
         using var httpClient = fixture.CreateApiClient();
         using var auditRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
             HttpMethod.Post,
             "/api/platform/auth/audit",
             "local-viewer",
@@ -139,6 +142,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
         Assert.Equal(HttpStatusCode.Accepted, auditResponse.StatusCode);
 
         using var eventsRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
             HttpMethod.Get,
             "/api/platform/events?category=auth",
             "local-viewer",
@@ -184,6 +188,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
     {
         using var httpClient = fixture.CreateApiClient();
         using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
             HttpMethod.Get,
             "/api/platform/status",
             "local-norole",
@@ -204,8 +209,8 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
     {
         using var httpClient = fixture.CreateApiClient();
         using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
-            HttpMethod.Put,
-            "/api/platform/configuration",
+                fixture.TokenEndpoint,
+                "/api/platform/configuration",
             "local-operator",
             OperatorScope);
         request.Content = JsonContent.Create(CreateConfigurationRequest());
@@ -226,6 +231,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
     {
         using var httpClient = fixture.CreateApiClient();
         using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
             HttpMethod.Post,
             "/api/platform/auth/manual-retry",
             "local-operator",
@@ -246,8 +252,8 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
     {
         using var httpClient = fixture.CreateApiClient();
         using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
-            HttpMethod.Get,
-            "/api/platform/events?category=auth",
+                fixture.TokenEndpoint,
+                "/api/platform/events?category=auth",
             "local-viewer",
             ViewerScope);
         using var response = await httpClient.SendAsync(request);
@@ -266,6 +272,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
     {
         using var httpClient = fixture.CreateApiClient();
         using var request = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
             HttpMethod.Get,
             "/api/platform/auth/administration",
             "local-operator",
@@ -286,6 +293,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
     {
         using var httpClient = fixture.CreateApiClient();
         using var auditRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
             HttpMethod.Post,
             "/api/platform/auth/audit",
             "local-viewer",
@@ -302,6 +310,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
         Assert.Equal(HttpStatusCode.Accepted, auditResponse.StatusCode);
 
         using var eventsRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
             HttpMethod.Get,
             "/api/platform/events?category=auth",
             "local-viewer",
@@ -326,6 +335,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
     {
         using var httpClient = fixture.CreateApiClient();
         using var auditRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
             HttpMethod.Post,
             "/api/platform/auth/audit",
             "local-viewer",
@@ -342,6 +352,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
         Assert.Equal(HttpStatusCode.Accepted, auditResponse.StatusCode);
 
         using var eventsRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
             HttpMethod.Get,
             "/api/platform/events?category=auth",
             "local-viewer",
@@ -366,6 +377,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
     {
         using var httpClient = fixture.CreateApiClient();
         using var auditRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
             HttpMethod.Post,
             "/api/platform/auth/audit",
             "local-operator",
@@ -382,6 +394,7 @@ public class PlatformAuthenticationIntegrationTests : IClassFixture<RealAuthenti
         Assert.Equal(HttpStatusCode.Accepted, auditResponse.StatusCode);
 
         using var eventsRequest = await RealKeycloakAccessTokenFactory.CreateAuthenticatedRequestAsync(
+            fixture.TokenEndpoint,
             HttpMethod.Get,
             "/api/platform/events?category=auth",
             "local-operator",

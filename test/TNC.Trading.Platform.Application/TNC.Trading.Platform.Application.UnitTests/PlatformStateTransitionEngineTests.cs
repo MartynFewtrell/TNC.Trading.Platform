@@ -115,4 +115,44 @@ public sealed class PlatformStateTransitionEngineTests
         Assert.Equal(transitionedAtUtc, state.LastValidatedAtUtc);
         Assert.Equal(establishedAtUtc, state.LastTransitionAtUtc);
     }
+
+    /// <summary>
+    /// Trace: Out-of-schedule authentication transition requirement.
+    /// Verifies: a self-transition from an already out-of-schedule state is rejected without changing runtime state.
+    /// Expected: the result identifies the invalid self-transition and status, reason, session interval, degraded flag, validation timestamp, and transition timestamp remain unchanged.
+    /// Why: repeated out-of-schedule reconciliation must not be mistaken for a state transition or overwrite durable authentication metadata.
+    /// </summary>
+    [Fact]
+    public void Apply_ShouldRejectSelfTransition_WhenCurrentStateIsOutOfSchedule()
+    {
+        var transitionedAtUtc = new DateTimeOffset(2026, 8, 31, 10, 0, 0, TimeSpan.Zero);
+        var lastTransitionAtUtc = transitionedAtUtc.AddMinutes(-5);
+        var blockedReason = "Trading schedule is inactive.";
+        var state = new PlatformRuntimeState
+        {
+            SessionStatus = PlatformSessionStatus.OutOfSchedule,
+            IsDegraded = true,
+            BlockedReason = blockedReason,
+            EstablishedAtUtc = null,
+            ExpiresAtUtc = null,
+            LastValidatedAtUtc = transitionedAtUtc,
+            LastTransitionAtUtc = lastTransitionAtUtc
+        };
+        var transition = new AuthenticationStateTransition(
+            PlatformSessionStatus.OutOfSchedule,
+            "Trading schedule remains inactive.",
+            transitionedAtUtc.AddMinutes(1));
+
+        var result = new PlatformStateTransitionEngine().Apply(state, transition);
+
+        Assert.False(result.IsApplied);
+        Assert.Equal("Authentication state cannot transition from 'OutOfSchedule' to 'OutOfSchedule'.", result.RejectionReason);
+        Assert.Equal(PlatformSessionStatus.OutOfSchedule, state.SessionStatus);
+        Assert.Equal(blockedReason, state.BlockedReason);
+        Assert.Null(state.EstablishedAtUtc);
+        Assert.Null(state.ExpiresAtUtc);
+        Assert.True(state.IsDegraded);
+        Assert.Equal(transitionedAtUtc, state.LastValidatedAtUtc);
+        Assert.Equal(lastTransitionAtUtc, state.LastTransitionAtUtc);
+    }
 }

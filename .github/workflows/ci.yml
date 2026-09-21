@@ -1,0 +1,168 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: 'true'
+  TEST_ARTIFACTS_DIRECTORY: ${{ github.workspace }}/artifacts/test-diagnostics
+
+jobs:
+  restore-build:
+    name: Restore and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.302
+      - name: Restore
+        run: dotnet restore TNC.Trading.Platform.slnx
+      - name: Build
+        run: dotnet build TNC.Trading.Platform.slnx --no-restore --configuration Release
+
+  fast-tests:
+    name: Fast project tests
+    needs: restore-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.302
+      - name: Restore
+        run: dotnet restore TNC.Trading.Platform.slnx
+      - name: Run fast tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_test() {
+            local project="$1"
+            local name="$2"
+            mkdir -p "artifacts/test-results/fast/$name"
+            dotnet test "$project" --configuration Release --no-restore --results-directory "artifacts/test-results/fast/$name" --logger "trx;LogFileName=$name.trx"
+          }
+          run_test test/TNC.Trading.Platform.Application/TNC.Trading.Platform.Application.UnitTests/TNC.Trading.Platform.Application.UnitTests.csproj application-unit
+          run_test test/TNC.Trading.Platform.Infrastructure/TNC.Trading.Platform.Infrastructure.UnitTests/TNC.Trading.Platform.Infrastructure.UnitTests.csproj infrastructure-unit
+          run_test test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.UnitTests/TNC.Trading.Platform.Api.UnitTests.csproj api-unit
+          run_test test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.UnitTests/TNC.Trading.Platform.Web.UnitTests.csproj web-unit
+          run_test test/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.UnitTests/TNC.Trading.Platform.AppHost.UnitTests.csproj apphost-unit
+          run_test test/TNC.Trading.Platform.Architecture/TNC.Trading.Platform.Architecture.IntegrationTests/TNC.Trading.Platform.Architecture.IntegrationTests.csproj architecture
+      - name: Upload TRX results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-fast
+          path: artifacts/test-results/fast
+          if-no-files-found: warn
+
+  aspire-integration:
+    name: Aspire and service integration tests
+    needs: fast-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.302
+      - name: Restore
+        run: dotnet restore TNC.Trading.Platform.slnx
+      - name: Run Docker-backed integration tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_test() {
+            local project="$1"
+            local name="$2"
+            mkdir -p "artifacts/test-results/aspire/$name"
+            dotnet test "$project" --configuration Release --no-restore --results-directory "artifacts/test-results/aspire/$name" --logger "trx;LogFileName=$name.trx"
+          }
+          run_test test/TNC.Trading.Platform.Infrastructure/TNC.Trading.Platform.Infrastructure.IntegrationTests/TNC.Trading.Platform.Infrastructure.IntegrationTests.csproj infrastructure-integration
+          run_test test/TNC.Trading.Platform.Api/TNC.Trading.Platform.Api.IntegrationTests/TNC.Trading.Platform.Api.IntegrationTests.csproj api-integration
+          run_test test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.FunctionalTests/TNC.Trading.Platform.Web.FunctionalTests.csproj web-functional
+      - name: Upload TRX results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-aspire
+          path: artifacts/test-results/aspire
+          if-no-files-found: warn
+      - name: Upload sanitized fixture diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixture-diagnostics-aspire
+          path: |
+            artifacts/test-diagnostics
+            artifacts/quality-gates
+          if-no-files-found: warn
+
+  browser-keycloak:
+    name: Browser and real-Keycloak tests
+    needs: aspire-integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.302
+      - name: Restore
+        run: dotnet restore TNC.Trading.Platform.slnx
+      - name: Build browser test project
+        run: dotnet build test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.E2ETests/TNC.Trading.Platform.Web.E2ETests.csproj --configuration Release --no-restore
+      - name: Install Playwright Chromium
+        run: pwsh test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.E2ETests/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
+      - name: Run browser tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/test-results/browser artifacts/playwright
+          dotnet test test/TNC.Trading.Platform.Web/TNC.Trading.Platform.Web.E2ETests/TNC.Trading.Platform.Web.E2ETests.csproj --configuration Release --no-restore --results-directory artifacts/test-results/browser/web-e2e --logger 'trx;LogFileName=web-e2e.trx'
+      - name: Upload TRX results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-browser
+          path: artifacts/test-results/browser
+          if-no-files-found: warn
+      - name: Upload browser and fixture diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-diagnostics
+          path: |
+            artifacts/playwright
+            artifacts/test-diagnostics
+          if-no-files-found: warn
+
+  solution-summary:
+    name: Solution test summary
+    needs: browser-keycloak
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.302
+      - name: Restore
+        run: dotnet restore TNC.Trading.Platform.slnx
+      - name: Run ordinary solution test command
+        run: dotnet test TNC.Trading.Platform.slnx --configuration Release --no-restore --results-directory artifacts/test-results/solution-summary --logger 'trx;LogFileName=solution-summary.trx'
+      - name: Upload summary TRX
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-solution-summary
+          path: artifacts/test-results/solution-summary
+          if-no-files-found: warn

@@ -8,6 +8,43 @@ ms.topic: concept
 
 This document explains how the current application behaves at startup and while it is running. It focuses on schedule evaluation, auth state, retry handling, notifications, and record retention.
 
+## Trailing-stops observation retention and environment guard
+
+Trailing-stops preference observations are retained online according to
+`Retention:OperationalRecordsDays`. The startup retention processor deletes
+observations strictly older than the configured cutoff from SQL Server and its
+in-memory test provider; observations at the cutoff are preserved. A missing,
+invalid, negative, or zero value uses the 90-day default. Archive/export is
+deferred from the initial delivery.
+
+The feature presents the legacy broker environment key `Demo` as `Test` without
+rewriting historical records. It supports the Test account only. This control
+does not authorize real orders or monetary exposure, and Live execution remains
+blocked until a separate Live safety delivery provides explicit authorization
+and risk controls.
+
+## Account Details capture
+
+After a durable successful IG Demo login, Application requests a best-effort
+automatic Account Details capture. The first successful capture for the
+configured trading day is stored using the existing trading-schedule time
+zone, rather than UTC midnight. A failed automatic capture does not invalidate
+login success and is eligible for another attempt after a later successful
+login. Once the daily snapshot exists, subsequent successful logins do not
+issue another automatic accounts request for that environment and trading day.
+
+An Operator can request a deliberate refresh through the API. Same-process
+requests coalesce, while the SQL Server application lock coordinates replicas
+per broker environment. Automatic contention yields so login remains
+successful; manual contention returns `409 Conflict` with the newest known
+timestamp. Each successful response is validated before one SQL transaction
+inserts an immutable retrieval header and all account children. The 90-day
+operational retention process removes expired retrievals and cascades their
+children while preserving the newest successful retrieval in each environment.
+The additive EF migration is applied before bootstrap configuration and
+retention; incompatible migration history remains fail-closed for operator
+correction.
+
 ## Runtime model summary
 
 The current runtime model is a supervised control loop.
@@ -354,6 +391,18 @@ stateDiagram-v2
     Blocked --> Degraded: blocked condition cleared and credentials incomplete
 ```
 
+When reconciliation finds that the trading schedule is still inactive, an
+existing `OutOfSchedule` state is refreshed in place. `BlockedReason` reflects
+the current governing inactive reason and may roll over without changing the
+status from `OutOfSchedule`. `LastValidatedAtUtc` is refreshed with the instant
+captured for that reconciliation. `LastTransitionAtUtc`, retry and session
+state, and other transition metadata remain unchanged.
+
+This same-state refresh does not request an `OutOfSchedule -> OutOfSchedule`
+transition. The strict state graph therefore continues to omit that self-edge.
+`TradingScheduleInactive` events and retry cleanup are entry-transition side
+effects only. Continued inactivity adds no event or notification.
+
 ## Blocked-live rule
 
 The most important safety rule currently implemented is the blocked-live rule.
@@ -675,3 +724,30 @@ flowchart TD
 - [Operator guide](operator-guide.md)
 - [API reference](api-reference.md)
 - [Architecture](architecture.md)
+
+## Account Preferences authority and failure behavior
+
+Account Preferences is separate from Account Details. SQL owns the desired
+trailing-stops value and IG supplies the account-bound confirmed value. The page
+and `GET /api/platform/account-preferences` read SQL only, so the projection
+remains available during IG failure.
+
+Save preferences is IG-first. The server resolves the account from the latest
+IG login snapshot and the actor from authenticated claims, then performs the IG
+read, conditional write, and readback. After confirmation, one SQL transaction
+writes the desired state, audit, confirmed observation, `InSync` projection,
+and completed operation journal. The journal records `Started` and
+`RemoteApplied` so a timeout or SQL finalisation failure does not cause a blind
+second remote write. Check status can observe IG and recover a `RemoteApplied`
+operation before converging the persisted desired value.
+
+Body-free Check status compares the persisted desired value with IG and repairs
+drift with one account-bound read, conditional write, and confirming readback.
+Successful checks return `InSync`; provider or account failures preserve local
+desired state and return a durable `VerificationFailed` warning with bounded
+retry metadata. The SQL lease prevents competing replicas, while the revision
+guard prevents late work overwriting newer intent. A future order boundary must
+recheck fresh `InSync` evidence, desired revision, target account, and session
+generation after reauthentication, account changes, schedule exit, or expiry.
+The current product has no order submission, so startup verification is not
+trade readiness.

@@ -18,6 +18,8 @@ The Blazor UI talks to the API over service discovery using the internal `https+
 | `GET` | `/health/ready` | Readiness endpoint. |
 | `GET` | `/api/platform/status` | Current runtime status, IG login state, and latest stored non-secret login payload for viewer-capable operators. |
 | `GET` | `/api/platform/ig-login/history` | Retained daily first-successful non-secret login payloads within the 90-day retention window for viewer-capable operators. |
+| `GET` | `/api/platform/account-details?cursor={opaque}` | Read the newest or adjacent historical saved account retrieval for Viewer-capable operators. |
+| `POST` | `/api/platform/account-details/refresh` | Request a fresh retrieval from the configured IG test account for Operator-capable users. |
 | `GET` | `/api/platform/configuration` | Current redacted configuration snapshot for operator-capable users. |
 | `PUT` | `/api/platform/configuration` | Update operator-managed configuration for operator-capable users. |
 | `POST` | `/api/platform/auth/manual-retry` | Trigger a manual retry cycle when allowed for operator-capable users. |
@@ -33,6 +35,30 @@ The Blazor UI talks to the API over service discovery using the internal `https+
 - Secret values are never returned by configuration or status endpoints.
 - Validation failures on configuration updates return a validation-problem payload with the existing field keys and `400` status.
 - Manual retry conflicts return `409 Conflict` when the current runtime state does not allow the action.
+
+## Account Details
+
+Account Details retrieves real account and balance data from the configured IG
+test account through the IG Demo endpoint (`demo-api.ig.com`). The hostname
+identifies the real IG test environment; the response is not synthetic test
+data. Live is deliberately unsupported. A future Live boundary must use an
+explicit environment selection, separate credentials and endpoint
+configuration, isolated snapshots, and independent operator guardrails.
+
+`GET /api/platform/account-details` returns the newest successful immutable
+retrieval. Passing the opaque `cursor` returned by a prior response reads the
+adjacent snapshot using `(RetrievedAtUtc, RetrievalId)` keyset ordering. The
+response contains only persisted account fields, retrieval time, trading day,
+and older/newer cursors. It never contains IG credentials, CST, or
+`X-SECURITY-TOKEN` values.
+
+`POST /api/platform/account-details/refresh` is Operator-only and starts a
+fresh session inside Infrastructure. It returns `200` with the saved
+retrieval, `409` for unsupported environment or cross-replica refresh
+contention, `429` for a recognized IG allowance response, `502` for malformed
+provider data, `503` for an unavailable upstream, and `504` for timeout.
+Existing saved data remains readable when a refresh fails. Viewer users can
+read history but cannot invoke the refresh route.
 
 ## GET /
 
@@ -521,3 +547,25 @@ In development, the API also exposes:
 - [Operator guide](operator-guide.md)
 - [Runtime behavior](runtime-behavior.md)
 - [Architecture](architecture.md)
+
+## Account Preferences
+
+Account Preferences is an Operator-only control for the configured IG Test account. SQL owns the durable projection and IG supplies the account-bound confirmed value. The feature does not authorize real orders or monetary exposure, and Live is rejected before provider I/O.
+
+`GET /api/platform/account-preferences` is a SQL-only projection. It returns desired and observed values, server-owned account identifiers, desired revision, verification status, last verification time, retry metadata, and a secret-safe failure summary. Statuses are `Unconfigured`, `Pending`, `InSync`, `VerificationFailed`, and `Unsupported`; `Drifted` is an intermediate condition during Check status. Legacy `trailingStopsEnabled` and `applicationStatus` aliases remain in the response.
+
+`PUT /api/platform/account-preferences` requires an `Idempotency-Key` header and accepts only `trailingStopsEnabled` and optional `expectedRevision` in the body. The server derives the target account from the latest IG login snapshot and the audit actor from authenticated claims. It performs an account-bound IG read, conditional write when needed, and confirming readback before atomically persisting the desired state, audit, confirmed observation, projection, and journal completion. A matching repeated key replays the operation; incompatible reuse returns `409`.
+
+`POST /api/platform/account-preferences/check-status` has no request body. It compares the persisted desired value with IG, updates IG when they differ, confirms the result, and returns the refreshed SQL projection. It can recover an earlier `RemoteApplied` save journal entry before comparing state. Stale revisions, account mismatch, and lease contention return `409`; an indeterminate save returns `503` with `Save outcome unknown`. A processed provider failure returns `200` with `VerificationFailed` and a safe warning in the projection.
+The live routes map invalid input to `400`, recognized IG allowance exhaustion
+to `429`, malformed provider data to `502`, provider rejection/unavailability
+to `503`, and timeout to `504`. History returns `400` for invalid page size or
+cursor. Provider diagnostics, credentials, session tokens, and raw responses
+are never returned.
+
+`GET /api/platform/account-preferences/observations?pageSize={size}&cursor={opaque}`
+reads SQL observations only, using deterministic keyset ordering and an
+adjacent cursor. The cursor is valid only for the same platform and broker
+environment partition and is rejected when its membership or shape is invalid.
+Observations use `Retention:OperationalRecordsDays`; archive/export is
+deferred.

@@ -1,6 +1,7 @@
-﻿using System.Net;
+using System.Net;
 using Bunit;
 using Microsoft.AspNetCore.Components;
+using TNC.Trading.Platform.Application.Authentication;
 using TNC.Trading.Platform.Web.Components.Layout;
 
 namespace TNC.Trading.Platform.Web.UnitTests;
@@ -18,7 +19,7 @@ public sealed class MainLayoutTests
     {
         using var context = new PlatformComponentTestContext(userName: null);
 
-        var cut = context.RenderComponent<MainLayout>(parameters =>
+        var cut = context.Render<MainLayout>(parameters =>
             parameters.Add(layout => layout.Body, CreateBody()));
 
         Assert.Contains("platform-app-shell__body--full-width", cut.Markup, StringComparison.Ordinal);
@@ -41,7 +42,7 @@ public sealed class MainLayoutTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateStatus()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateEvents()));
 
-        var cut = context.RenderComponent<MainLayout>(parameters =>
+        var cut = context.Render<MainLayout>(parameters =>
             parameters.Add(layout => layout.Body, CreateBody()));
 
         cut.WaitForAssertion(() =>
@@ -49,7 +50,45 @@ public sealed class MainLayoutTests
             Assert.Contains("Operator workspace", cut.Markup, StringComparison.Ordinal);
             Assert.Contains("Test / Demo", cut.Markup, StringComparison.Ordinal);
             Assert.Contains("Status", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Account details", cut.Markup, StringComparison.Ordinal);
         });
+    }
+
+    /// <summary>
+    /// Trace: account navigation alignment. Verifies Viewer-only and Operator-only principals retain only their authorized account links, while a combined principal places Account preferences immediately after Account details.
+    /// Expected: each role sees its permitted destination, and the combined navigation preserves the requested adjacent order.
+    /// Why: moving the navigation item must not widen either authorization boundary or regress the account workflow's discoverability.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldPreserveAccountNavigationVisibilityAndOrder_WhenRoleScopesVary()
+    {
+        using var viewerContext = new PlatformComponentTestContext(
+            "local-viewer",
+            [PlatformAuthenticationDefaults.Scopes.Viewer]);
+        var viewer = viewerContext.Render<MainLayout>(parameters =>
+            parameters.Add(layout => layout.Body, CreateBody()));
+
+        Assert.NotEmpty(viewer.FindAll("a[href='/account-details']"));
+        Assert.Empty(viewer.FindAll("a[href='/account-preferences']"));
+
+        using var operatorContext = new PlatformComponentTestContext(
+            "local-operator",
+            [PlatformAuthenticationDefaults.Scopes.Operator]);
+        var operatorLayout = operatorContext.Render<MainLayout>(parameters =>
+            parameters.Add(layout => layout.Body, CreateBody()));
+
+        Assert.NotEmpty(operatorLayout.FindAll("a[href='/account-preferences']"));
+
+        using var combinedContext = new PlatformComponentTestContext(
+            "local-operator",
+            [PlatformAuthenticationDefaults.Scopes.Viewer, PlatformAuthenticationDefaults.Scopes.Operator]);
+        var combined = combinedContext.Render<MainLayout>(parameters =>
+            parameters.Add(layout => layout.Body, CreateBody()));
+        var links = combined.FindAll("nav[aria-label='Primary'] a").ToList();
+        var accountDetailsIndex = links.FindIndex(link => link.GetAttribute("href") == "/account-details");
+        var accountPreferencesIndex = links.FindIndex(link => link.GetAttribute("href") == "/account-preferences");
+
+        Assert.Equal(accountDetailsIndex + 1, accountPreferencesIndex);
     }
 
     /// <summary>
@@ -67,7 +106,7 @@ public sealed class MainLayoutTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateStatus()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateEvents()));
 
-        var cut = context.RenderComponent<MainLayout>(parameters =>
+        var cut = context.Render<MainLayout>(parameters =>
             parameters.Add(layout => layout.Body, CreateBody()));
 
         cut.WaitForElement("button.platform-header__toggle").Click();

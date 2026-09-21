@@ -1,6 +1,4 @@
-﻿using Aspire.Hosting;
-using Aspire.Hosting.Testing;
-using TNC.Trading.Platform.TestShared.Authentication;
+﻿using TNC.Trading.Platform.TestShared.Authentication;
 
 namespace TNC.Trading.Platform.Api.IntegrationTests.Authentication;
 
@@ -11,64 +9,25 @@ namespace TNC.Trading.Platform.Api.IntegrationTests.Authentication;
 /// </summary>
 public sealed class SyntheticTokenIntegrationTestFixture : IAsyncLifetime
 {
-    private IDistributedApplicationTestingBuilder? appHostBuilder;
-    private DistributedApplication? appHost;
-    private KeycloakPortLease? appHostLease;
-    private TestEnvironmentVariableScope? apiProviderScope;
+    private readonly ManagedAppHostFixture managedFixture = new(new Dictionary<string, string?>
+    {
+        ["Authentication:ApiProvider"] = "Test"
+    });
 
     public async Task InitializeAsync()
     {
-        appHostLease = await KeycloakPortLease.AcquireAsync();
-        try
-        {
-            apiProviderScope = new TestEnvironmentVariableScope("Authentication__ApiProvider", "Test");
-
-            appHostBuilder = await DistributedApplicationTestingBuilder
-                .CreateAsync<Projects.TNC_Trading_Platform_AppHost>();
-            appHost = await appHostBuilder.BuildAsync();
-            await appHost.StartAsync();
-
-            using var apiReadinessClient = appHost.CreateHttpClient("api");
-            await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(apiReadinessClient);
-        }
-        catch
-        {
-            await DisposeAsync();
-            throw;
-        }
+        await managedFixture.InitializeAsync();
+        using var apiReadinessClient = managedFixture.CreateApiClient();
+        await PlatformAuthenticationIntegrationTestRuntime.WaitForApiReadinessAsync(apiReadinessClient);
     }
 
     public async Task DisposeAsync()
     {
-        if (appHost is not null)
-        {
-            await appHost.DisposeAsync();
-            appHost = null;
-        }
-
-        if (appHostBuilder is not null)
-        {
-            await appHostBuilder.DisposeAsync();
-            appHostBuilder = null;
-        }
-
-        apiProviderScope?.Dispose();
-        apiProviderScope = null;
-
-        if (appHostLease is not null)
-        {
-            await appHostLease.DisposeAsync();
-            appHostLease = null;
-        }
+        await managedFixture.DisposeAsync();
     }
 
     public HttpClient CreateApiClient()
     {
-        if (appHost is null)
-        {
-            throw new InvalidOperationException("The AppHost has not been started for the synthetic-token integration fixture.");
-        }
-
-        return appHost.CreateHttpClient("api");
+        return managedFixture.CreateApiClient();
     }
 }
