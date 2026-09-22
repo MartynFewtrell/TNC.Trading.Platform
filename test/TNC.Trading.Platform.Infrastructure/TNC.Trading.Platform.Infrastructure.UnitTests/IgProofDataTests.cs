@@ -175,7 +175,9 @@ public class IgProofDataTests
             configurationService,
             new EfPlatformRuntimeStateStore(dbContext),
             new EfPlatformIgLoginSnapshotStore(dbContext),
-            new EfPlatformRetryCycleStore(dbContext),
+            new EfPlatformRetryCycleStore(
+                dbContext,
+                new StaticAppliedBrokerEnvironmentContextResolver(Guid.NewGuid())),
             new EfPlatformEventStore(dbContext),
             CreateNotificationDispatcher(dbContext, timeProvider),
             new TradingScheduleGate(),
