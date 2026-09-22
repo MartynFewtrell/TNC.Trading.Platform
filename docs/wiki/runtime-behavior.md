@@ -763,6 +763,9 @@ and exact typed-name confirmation. It purges credentials, broker-scoped
 profiles, current projections, and resumable state, then marks the catalog
 record `Retired`. Audit, event, notification, account-retrieval, and
 desired-state history is retained and remains available to diagnostics.
+The administrator Broker environments catalog hides retired records by default;
+operators can select **Show retired environments** beside the Catalog heading
+to review them.
 
 ## Local infrastructure behavior
 

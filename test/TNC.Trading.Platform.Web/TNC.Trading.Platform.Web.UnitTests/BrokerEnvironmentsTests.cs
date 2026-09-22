@@ -59,6 +59,44 @@ public sealed class BrokerEnvironmentsTests
 
     /// <summary>
     /// Trace: broker environment catalog administration.
+    /// Verifies: retired broker environments are hidden by default and can be revealed from the Catalog header.
+    /// Expected: active entries remain visible, retired entries appear only after selecting Show retired environments.
+    /// Why: the catalog remains focused on usable environments without preventing administrators from reviewing retired records.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldHideRetiredEnvironmentsUntilRequested_WhenCatalogContainsActiveAndRetiredEntries()
+    {
+        var catalog = new[]
+        {
+            new BrokerEnvironmentViewModel(
+                Guid.NewGuid(), "IG Demo", "Ig", "Demo", "Active", "Available", null, "IgDemo", true, false, null),
+            new BrokerEnvironmentViewModel(
+                Guid.NewGuid(), "Retired IG Demo", "Ig", "Demo", "Retired", "Unavailable", null, "IgDemo", true, false, null)
+        };
+        using var context = new PlatformComponentTestContext(
+            "local-admin",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, catalog));
+
+        var cut = context.Render<BrokerEnvironments>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var catalogHeader = cut.Find("[data-testid='broker-environment-catalog-header']");
+            Assert.Contains("Catalog", catalogHeader.TextContent, StringComparison.Ordinal);
+            Assert.NotNull(catalogHeader.QuerySelector("#show-retired-environments"));
+            Assert.Contains("IG Demo", cut.Markup, StringComparison.Ordinal);
+            Assert.DoesNotContain("Retired IG Demo", cut.Markup, StringComparison.Ordinal);
+        });
+
+        cut.Find("#show-retired-environments").Change(true);
+
+        cut.WaitForAssertion(() =>
+            Assert.Contains("Retired IG Demo", cut.Markup, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Trace: broker environment catalog administration.
     /// Verifies: catalog entries use the shared accordion treatment and action buttons use the primary-action style.
     /// Expected: the IG Demo entry is initially collapsed, and both administrator actions have the same class as Create environment.
     /// Why: the catalog must remain easy to scan while preserving a consistent, recognizable action hierarchy.

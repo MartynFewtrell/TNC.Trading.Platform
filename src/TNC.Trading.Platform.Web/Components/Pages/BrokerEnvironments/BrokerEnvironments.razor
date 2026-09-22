@@ -42,14 +42,27 @@ else
     </section>
 
     <section class="panel">
-        <h2>Catalog</h2>
-        @if (environments.Count == 0)
+        <div class="platform-catalog-header" data-testid="broker-environment-catalog-header">
+            <h2>Catalog</h2>
+            <label>
+                <InputCheckbox id="show-retired-environments" @bind-Value="showRetiredEnvironments" />
+                Show retired environments
+            </label>
+        </div>
+        @if (VisibleEnvironments.Count == 0)
         {
-            <p class="warning" role="status" data-testid="broker-environments-empty-catalog">The broker environment catalog is empty. Restart the platform to restore the required IG Demo entry, then review the startup logs if the catalog remains empty.</p>
+            @if (environments.Count == 0)
+            {
+                <p class="warning" role="status" data-testid="broker-environments-empty-catalog">The broker environment catalog is empty. Restart the platform to restore the required IG Demo entry, then review the startup logs if the catalog remains empty.</p>
+            }
+            else
+            {
+                <p role="status" data-testid="broker-environments-no-active-catalog">No active broker environments are available. Select Show retired environments to view retired catalog entries.</p>
+            }
         }
         else
         {
-            @foreach (var environment in environments)
+            @foreach (var environment in VisibleEnvironments)
             {
                 var credential = CredentialFor(environment.Id);
                 <PlatformAccordionSection Title="@environment.Name" IsOpen="false" @key="environment.Id">
@@ -101,10 +114,16 @@ else
     private readonly Dictionary<Guid, CredentialForm> credentials = [];
     private bool hasRequiredScope;
     private bool busy;
+    private bool showRetiredEnvironments;
     private string? loadError;
     private string? message;
     private BrokerEnvironmentRetirementPreviewViewModel? retirement;
     private string typedRetirementName = string.Empty;
+
+    private IReadOnlyList<BrokerEnvironmentViewModel> VisibleEnvironments =>
+        showRetiredEnvironments
+            ? environments
+            : environments.Where(environment => environment.Lifecycle != "Retired").ToArray();
 
     protected override async Task OnInitializedAsync()
     {

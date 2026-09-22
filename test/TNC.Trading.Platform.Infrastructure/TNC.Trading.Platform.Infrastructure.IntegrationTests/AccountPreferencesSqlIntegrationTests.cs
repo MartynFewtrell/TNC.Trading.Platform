@@ -49,6 +49,38 @@ public sealed class AccountPreferencesSqlIntegrationTests(SqlServerDatabaseFixtu
         Assert.Equal(1, after);
     }
 
+    /// <summary>
+    /// Verifies: a new trailing-stops operation is associated with the available catalog environment before it is saved.
+    /// Expected: the persisted operation has the seeded IG Demo catalog key, satisfying the foreign-key constraint.
+    /// Why: preference saves must not fail when the operation journal is written after the catalog foreign key is introduced.
+    /// </summary>
+    [Fact]
+    public async Task StartAsync_ShouldUseAvailableCatalogEnvironment_WhenSavingOperation()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        await context.Database.MigrateAsync(fixture.CancellationToken);
+        var expectedBrokerEnvironmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(context, fixture.CancellationToken);
+        var operation = new AccountPreferencesOperation(
+            Guid.NewGuid(),
+            "operation-key",
+            PlatformEnvironmentKind.Test,
+            BrokerEnvironmentKind.Demo,
+            "account-1",
+            1,
+            true,
+            "operator",
+            "correlation",
+            AccountPreferencesOperationPhase.Started,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+
+        await new EfAccountPreferencesOperationStore(context).StartAsync(operation, fixture.CancellationToken);
+
+        var persistedOperation = await context.AccountPreferencesOperations.SingleAsync(fixture.CancellationToken);
+        Assert.Equal(expectedBrokerEnvironmentId, persistedOperation.BrokerEnvironmentId);
+    }
+
     /// <summary>Verifies observations remain readable after the writing SQL context is replaced.</summary>
     [Fact]
     public async Task ListAsync_ShouldReadObservationAfterContextRestart_WhenObservationWasSaved()

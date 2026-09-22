@@ -253,6 +253,24 @@ form {
     justify-content: space-between;
 }
 
+.platform-catalog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.platform-catalog-header h2 {
+    margin-bottom: 0;
+}
+
+.platform-catalog-header label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
 .platform-callout {
     display: flex;
     flex-direction: column;
