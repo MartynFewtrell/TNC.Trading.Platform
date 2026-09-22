@@ -265,8 +265,12 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
             {
                 if (document.RootElement.TryGetProperty("title", out var titleProperty)) title = titleProperty.GetString() ?? title;
                 if (document.RootElement.TryGetProperty("detail", out var detailProperty)) detail = detailProperty.GetString() ?? string.Empty;
-                if (document.RootElement.TryGetProperty("type", out var typeProperty)) type = typeProperty.GetString() ?? string.Empty;
-                if (document.RootElement.TryGetProperty("failureCategory", out var categoryProperty)) failureCategory = categoryProperty.GetString() ?? string.Empty;
+            if (document.RootElement.TryGetProperty("error", out var errorProperty))
+            {
+                detail = errorProperty.GetString() ?? detail;
+            }
+            if (document.RootElement.TryGetProperty("type", out var typeProperty)) type = typeProperty.GetString() ?? string.Empty;
+            if (document.RootElement.TryGetProperty("failureCategory", out var categoryProperty)) failureCategory = categoryProperty.GetString() ?? string.Empty;
             }
         }
         catch (JsonException) { }

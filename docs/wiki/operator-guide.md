@@ -31,11 +31,29 @@ The left navigation still changes based on the signed-in operator role.
 | `/status` | Runtime status, trading-schedule state, auth state, current IG login state, latest successful non-secret payload details, and recent auth events. |
 | `/ig-login/history` | Retained daily first-successful non-secret IG login payloads within the 90-day retention window. Distinct from the current-state latest payload on `/status`. |
 | `/configuration` | Operator-managed configuration, notification settings, trading-schedule values, and write-only IG credential updates. |
+| `/administration/broker-environments` | Administrator-only broker catalog. Shows each environment's lifecycle and availability, supports credential replacement, and provides recovery guidance when the required catalog is empty. |
 | `/administration/authentication` | Administrator-only summary of the configured auth provider, role claim type, and protected API audience. |
 | `/account-preferences` | Operator-only live Test-account trailing-stops control and read-only verified observations. The feature does not authorize real orders or monetary exposure. |
 | `/authentication/sign-in` | Starts sign-in. In automated local tests this also lists the seeded local test users. |
 | `/authentication/sign-out` | Requires an authenticated browser session, accepts an antiforgery-protected POST from the shared header, and ends the platform session before returning to the UI entry route, which prompts for sign-in again. |
 | `/authentication/access-denied` | Dedicated denied-access page for signed-in users who lack the required platform role. |
+
+## Broker environment catalog
+
+Administrators use `/administration/broker-environments` to inspect the broker
+catalog. The `IG Demo` entry normally has lifecycle `Active` and availability
+`Available`. These are separate values: lifecycle indicates that the catalog
+entry is in service, while availability indicates whether it can currently be
+used. The credential indicator changes to `Present` only when the complete
+persisted credential set can be read successfully; replacing credentials does
+not change the lifecycle or availability values.
+
+If the Catalog panel reports that it is empty, do not create a replacement
+environment. Restart the Desktop or Development platform first. Startup checks
+and restores the mandatory `IG Demo` catalog entry and its associated profiles
+without replacing existing credentials or operator-managed profile values. If
+the catalog remains empty after restart, review the API startup logs and verify
+that the API uses the intended SQL Server database.
 
 ## Sign-in and sign-out
 

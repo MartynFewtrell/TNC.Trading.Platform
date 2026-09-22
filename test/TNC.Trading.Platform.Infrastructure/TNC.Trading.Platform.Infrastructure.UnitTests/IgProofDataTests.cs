@@ -174,7 +174,9 @@ public class IgProofDataTests
             new PlatformAuthSimulationSettings(TimeSpan.FromMinutes(15)),
             configurationService,
             new EfPlatformRuntimeStateStore(dbContext),
-            new EfPlatformIgLoginSnapshotStore(dbContext),
+            new EfPlatformIgLoginSnapshotStore(
+                dbContext,
+                new StaticAppliedBrokerEnvironmentContextResolver(Guid.NewGuid())),
             new EfPlatformRetryCycleStore(
                 dbContext,
                 new StaticAppliedBrokerEnvironmentContextResolver(Guid.NewGuid())),

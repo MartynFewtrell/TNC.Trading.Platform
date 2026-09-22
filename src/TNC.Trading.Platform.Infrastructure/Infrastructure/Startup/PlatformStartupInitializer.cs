@@ -14,7 +14,8 @@ internal sealed class PlatformStartupInitializer(
     OperationalRecordRetentionProcessor retentionProcessor,
     IPlatformEnvironmentContext platformEnvironmentContext,
     IHostEnvironment hostEnvironment,
-    ILogger<PlatformStartupInitializer> logger)
+    ILogger<PlatformStartupInitializer> logger,
+    BrokerEnvironmentCatalogIntegrityService? catalogIntegrityService = null)
 {
     private const string InitialMigrationId = "20260727202238_InitialPlatformSchema";
     private const string EfProductVersion = "10.0.5";
@@ -33,6 +34,13 @@ internal sealed class PlatformStartupInitializer(
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         await ApplySchemaAsync(cancellationToken).ConfigureAwait(false);
+        if (ShouldApplyMigrations(platformEnvironmentContext.Environment))
+        {
+            if (catalogIntegrityService is not null)
+            {
+                await catalogIntegrityService.EnsureRequiredCatalogAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
         await configurationService.ApplyStartupConfigurationAsync(cancellationToken).ConfigureAwait(false);
         await retentionProcessor.ApplyAsync(cancellationToken).ConfigureAwait(false);
 

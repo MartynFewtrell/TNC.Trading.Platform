@@ -139,7 +139,7 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.HasIndex(item => new { item.BrokerEnvironment, item.CredentialType }).IsUnique();
             entity.HasIndex(item => new { item.BrokerEnvironmentId, item.CredentialType }).IsUnique().HasFilter("[BrokerEnvironmentId] IS NOT NULL");
             entity.HasOne<BrokerEnvironmentEntity>().WithMany().HasForeignKey(item => item.BrokerEnvironmentId).OnDelete(DeleteBehavior.Restrict);
-            entity.Property(item => item.BrokerEnvironment).HasMaxLength(32);
+            entity.Property(item => item.BrokerEnvironment).HasMaxLength(64);
             entity.Property(item => item.CredentialType).HasMaxLength(64);
             entity.Property(item => item.ProtectionKind).HasMaxLength(64);
         });

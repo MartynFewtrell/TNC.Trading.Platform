@@ -118,6 +118,44 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
     }
 
     /// <summary>
+    /// Trace: catalog integrity remediation.
+    /// Verifies: Desktop startup restores the mandatory IG Demo catalog record and its profiles after the catalog data has been removed.
+    /// Expected: recovery restores exactly one canonical active and available IG Demo entry without requiring an administrator-created replacement.
+    /// Why: migration history can exist while its required seed data is absent, leaving the catalog UI empty and broker operations blocked.
+    /// </summary>
+    [Fact]
+    public async Task InitializeAsync_ShouldRestoreIgDemoCatalog_WhenMigrationIsAppliedButCatalogDataIsMissing()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var dbContext = fixture.CreateDbContext();
+        await dbContext.Database.MigrateAsync();
+
+        var demoId = BrokerEnvironmentCatalogIntegrityService.DemoBrokerEnvironmentId;
+        dbContext.BrokerEnvironmentSelections.RemoveRange(dbContext.BrokerEnvironmentSelections);
+        dbContext.BrokerEnvironmentScheduleProfiles.RemoveRange(dbContext.BrokerEnvironmentScheduleProfiles);
+        dbContext.BrokerEnvironmentRetryProfiles.RemoveRange(dbContext.BrokerEnvironmentRetryProfiles);
+        dbContext.BrokerEnvironmentNotificationProfiles.RemoveRange(dbContext.BrokerEnvironmentNotificationProfiles);
+        await dbContext.SaveChangesAsync();
+        dbContext.BrokerEnvironments.Remove(await dbContext.BrokerEnvironments.SingleAsync(item => item.BrokerEnvironmentId == demoId));
+        await dbContext.SaveChangesAsync();
+
+        var initializer = CreateStartupInitializer(dbContext, CreateConfigurationStore(dbContext, CreateConfiguration()), restoreCatalog: true);
+
+        await initializer.InitializeAsync(CancellationToken.None);
+
+        var demo = await dbContext.BrokerEnvironments.SingleAsync(item => item.BrokerEnvironmentId == demoId);
+        Assert.Equal("IG Demo", demo.Name);
+        Assert.Equal("Active", demo.Lifecycle);
+        Assert.Equal("Available", demo.Availability);
+        Assert.True(await dbContext.BrokerEnvironmentScheduleProfiles.AnyAsync(item => item.BrokerEnvironmentId == demoId));
+        Assert.True(await dbContext.BrokerEnvironmentRetryProfiles.AnyAsync(item => item.BrokerEnvironmentId == demoId));
+        Assert.True(await dbContext.BrokerEnvironmentNotificationProfiles.AnyAsync(item => item.BrokerEnvironmentId == demoId));
+        var selection = await dbContext.BrokerEnvironmentSelections.SingleAsync();
+        Assert.Equal(demoId, selection.AppliedBrokerEnvironmentId);
+        Assert.Equal(demoId, selection.SelectedBrokerEnvironmentId);
+    }
+
+    /// <summary>
     /// Verifies the catalog normalized-name index rejects duplicate names without creating dependent profile rows.
     /// Expected: the duplicate insert fails and the existing catalog remains the only catalog/profile owner.
     /// Why: named environments are the operator boundary for same-kind isolation and must not produce orphan snapshots.
@@ -785,7 +823,8 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
 
     private static PlatformStartupInitializer CreateStartupInitializer(
         PlatformDbContext dbContext,
-        SqlPlatformConfigurationStore configurationStore)
+        SqlPlatformConfigurationStore configurationStore,
+        bool restoreCatalog = false)
     {
         var retentionConfiguration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -799,13 +838,20 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
             TimeProvider.System,
             NullLogger<OperationalRecordRetentionProcessor>.Instance);
 
+        var catalogIntegrityService = restoreCatalog
+            ? new BrokerEnvironmentCatalogIntegrityService(
+                dbContext,
+                TimeProvider.System,
+                NullLogger<BrokerEnvironmentCatalogIntegrityService>.Instance)
+            : null;
         return new PlatformStartupInitializer(
             dbContext,
             new PlatformConfigurationService(configurationStore),
             retentionProcessor,
             new PlatformEnvironmentContext(PlatformEnvironmentKind.Desktop),
             new IntegrationTestHostEnvironment(),
-            NullLogger<PlatformStartupInitializer>.Instance);
+            NullLogger<PlatformStartupInitializer>.Instance,
+            catalogIntegrityService);
     }
 
     private static PlatformConfigurationUpdate CreateConfigurationUpdate(

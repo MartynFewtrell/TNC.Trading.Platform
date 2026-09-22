@@ -37,7 +37,9 @@ public class AuthRetryCycleTests
             CreateAuthSimulationSettings(configuration),
             configurationService,
             new EfPlatformRuntimeStateStore(dbContext),
-            new EfPlatformIgLoginSnapshotStore(dbContext),
+            new EfPlatformIgLoginSnapshotStore(
+                dbContext,
+                new StaticAppliedBrokerEnvironmentContextResolver(brokerEnvironmentId)),
             new EfPlatformRetryCycleStore(dbContext, new StaticAppliedBrokerEnvironmentContextResolver(brokerEnvironmentId)),
             new EfPlatformEventStore(dbContext),
             CreateNotificationDispatcher(dbContext, TimeProvider.System),
@@ -1088,7 +1090,9 @@ public class AuthRetryCycleTests
             CreateAuthSimulationSettings(configuration),
             configurationService,
             new EfPlatformRuntimeStateStore(dbContext),
-            new EfPlatformIgLoginSnapshotStore(dbContext),
+            new EfPlatformIgLoginSnapshotStore(
+                dbContext,
+                new StaticAppliedBrokerEnvironmentContextResolver(Guid.NewGuid())),
             new EfPlatformRetryCycleStore(
                 dbContext,
                 new StaticAppliedBrokerEnvironmentContextResolver(Guid.NewGuid())),

@@ -88,6 +88,7 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         services.AddScoped<INotificationProvider, AzureCommunicationServicesEmailNotificationProvider>();
         services.AddScoped<AppNotificationDispatcher, NotificationDispatcher>();
         services.AddScoped<OperationalRecordRetentionProcessor>();
+        services.AddScoped<BrokerEnvironmentCatalogIntegrityService>();
         services.AddScoped<PlatformStartupInitializer>();
         services.AddHostedService<OperationalRecordRetentionService>();
 

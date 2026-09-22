@@ -17,10 +17,21 @@ internal sealed class SqlBrokerEnvironmentCatalogService(
     TimeProvider timeProvider) : IBrokerEnvironmentCatalogService
 {
     public async Task<IReadOnlyList<BrokerEnvironmentCatalogItem>> ListAsync(CancellationToken cancellationToken)
-        => await dbContext.BrokerEnvironments.AsNoTracking().OrderBy(item => item.Name).Select(item => new BrokerEnvironmentCatalogItem(
-            item.BrokerEnvironmentId, item.Name, item.Provider, item.Kind, item.Lifecycle, item.Availability,
-            item.AvailabilityReason, item.EndpointProfile, item.Provider == "IG" && item.Kind == "Demo", false,
-            Convert.ToBase64String(item.ConcurrencyToken))).ToListAsync(cancellationToken).ConfigureAwait(false);
+    {
+        var environments = await dbContext.BrokerEnvironments
+            .AsNoTracking()
+            .OrderBy(item => item.Name)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var items = new List<BrokerEnvironmentCatalogItem>(environments.Count);
+        foreach (var environment in environments)
+        {
+            items.Add(await ToItemAsync(environment, cancellationToken).ConfigureAwait(false));
+        }
+
+        return items;
+    }
 
     public async Task<BrokerEnvironmentOperationResult> CreateAsync(CreateBrokerEnvironmentCommand command, CancellationToken cancellationToken)
     {
@@ -57,7 +68,7 @@ internal sealed class SqlBrokerEnvironmentCatalogService(
     {
         var entity = await dbContext.BrokerEnvironments.SingleOrDefaultAsync(item => item.BrokerEnvironmentId == command.BrokerEnvironmentId, cancellationToken).ConfigureAwait(false);
         if (entity is null) return new(false, "Broker environment was not found.");
-        if (entity.Lifecycle is "Retired" or "Unavailable" || entity.Provider != "IG" || entity.Kind != "Demo") return new(false, "This broker environment cannot authenticate.");
+        if (entity.Lifecycle is "Retired" or "Unavailable" || !IsIgDemoEnvironment(entity.Provider, entity.Kind)) return new(false, "This broker environment cannot authenticate.");
         if (string.IsNullOrWhiteSpace(command.ApiKey) && string.IsNullOrWhiteSpace(command.Identifier) && string.IsNullOrWhiteSpace(command.Password)) return new(false, "At least one credential must be supplied.");
 
         await credentialService.UpdateCatalogAsync(command.BrokerEnvironmentId, command.ApiKey, command.Identifier, command.Password, command.Actor, cancellationToken).ConfigureAwait(false);
@@ -85,7 +96,14 @@ internal sealed class SqlBrokerEnvironmentCatalogService(
         var selection = await dbContext.BrokerEnvironmentSelections.AsNoTracking().SingleAsync(cancellationToken).ConfigureAwait(false);
         var ids = new[] { selection.AppliedBrokerEnvironmentId, selection.SelectedBrokerEnvironmentId }.Where(item => item.HasValue).Select(item => item!.Value).Distinct().ToArray();
         var records = await dbContext.BrokerEnvironments.AsNoTracking().Where(item => ids.Contains(item.BrokerEnvironmentId)).ToDictionaryAsync(item => item.BrokerEnvironmentId, cancellationToken).ConfigureAwait(false);
-        return new(platformEnvironmentContext.Environment.ToString(), selection.AppliedBrokerEnvironmentId is { } applied && records.TryGetValue(applied, out var appliedRecord) ? ToItem(appliedRecord, false) : null, selection.SelectedBrokerEnvironmentId is { } selected && records.TryGetValue(selected, out var selectedRecord) ? ToItem(selectedRecord, false) : null, selection.RestartRequired, selection.Version);
+        var appliedItem = selection.AppliedBrokerEnvironmentId is { } applied && records.TryGetValue(applied, out var appliedRecord)
+            ? await ToItemAsync(appliedRecord, cancellationToken).ConfigureAwait(false)
+            : null;
+        var selectedItem = selection.SelectedBrokerEnvironmentId is { } selected && records.TryGetValue(selected, out var selectedRecord)
+            ? await ToItemAsync(selectedRecord, cancellationToken).ConfigureAwait(false)
+            : null;
+
+        return new(platformEnvironmentContext.Environment.ToString(), appliedItem, selectedItem, selection.RestartRequired, selection.Version);
     }
 
     public async Task<BrokerEnvironmentRetirementPreview?> PreviewRetirementAsync(Guid brokerEnvironmentId, string actor, CancellationToken cancellationToken)
@@ -189,5 +207,18 @@ internal sealed class SqlBrokerEnvironmentCatalogService(
     private static string BuildPreviewPayload(Guid id, string name, string normalizedName, string concurrencyToken, IReadOnlyDictionary<string, int> purge, IReadOnlyDictionary<string, int> retained)
         => JsonSerializer.Serialize(new { brokerEnvironmentId = id, name, normalizedName, concurrencyToken, purge, retained });
 
-    private static BrokerEnvironmentCatalogItem ToItem(BrokerEnvironmentEntity item, bool hasCredentials) => new(item.BrokerEnvironmentId, item.Name, item.Provider, item.Kind, item.Lifecycle, item.Availability, item.AvailabilityReason, item.EndpointProfile, item.Provider == "IG" && item.Kind == "Demo", hasCredentials, item.ConcurrencyToken.Length == 0 ? null : Convert.ToBase64String(item.ConcurrencyToken));
+    private static bool IsIgDemoEnvironment(string provider, string kind) =>
+        string.Equals(provider, "IG", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(kind, "Demo", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<BrokerEnvironmentCatalogItem> ToItemAsync(BrokerEnvironmentEntity item, CancellationToken cancellationToken)
+    {
+        var credentialPresence = await credentialService
+            .GetPresenceAsync(item.BrokerEnvironmentId, cancellationToken)
+            .ConfigureAwait(false);
+
+        return ToItem(item, credentialPresence.IsAuthenticationReady);
+    }
+
+    private static BrokerEnvironmentCatalogItem ToItem(BrokerEnvironmentEntity item, bool hasCredentials) => new(item.BrokerEnvironmentId, item.Name, item.Provider, item.Kind, item.Lifecycle, item.Availability, item.AvailabilityReason, item.EndpointProfile, IsIgDemoEnvironment(item.Provider, item.Kind), hasCredentials, item.ConcurrencyToken.Length == 0 ? null : Convert.ToBase64String(item.ConcurrencyToken));
 }

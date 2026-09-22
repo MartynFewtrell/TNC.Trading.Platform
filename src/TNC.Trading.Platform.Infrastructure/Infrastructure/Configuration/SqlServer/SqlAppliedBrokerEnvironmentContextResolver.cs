@@ -15,6 +15,14 @@ internal sealed class SqlAppliedBrokerEnvironmentContextResolver(PlatformDbConte
     public async Task<AppliedBrokerEnvironmentContext?> ResolveAsync(Guid brokerEnvironmentId, CancellationToken cancellationToken)
     {
         var item = await dbContext.BrokerEnvironments.AsNoTracking().SingleOrDefaultAsync(item => item.BrokerEnvironmentId == brokerEnvironmentId, cancellationToken).ConfigureAwait(false);
-        return item is null ? null : new(item.BrokerEnvironmentId, item.Provider, item.Kind, item.Lifecycle, item.Availability, item.EndpointProfile, item.Provider == "IG" && item.Kind == "Demo");
+        return item is null ? null : new(
+            item.BrokerEnvironmentId,
+            item.Provider,
+            item.Kind,
+            item.Lifecycle,
+            item.Availability,
+            item.EndpointProfile,
+            string.Equals(item.Provider, "IG", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(item.Kind, "Demo", StringComparison.OrdinalIgnoreCase));
     }
 }

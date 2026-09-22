@@ -60,6 +60,25 @@ Alongside the broker-auth supervision model, the platform now also applies a sep
 
 The refreshed UI defaults to dark theme when no browser preference exists. Theme selection is stored only as non-sensitive browser state and is applied immediately from the shared header.
 
+## Broker catalog integrity
+
+Desktop and Development startup applies pending EF Core migrations and then
+validates the mandatory broker catalog data. The canonical `IG Demo` record has
+lifecycle `Active`, availability `Available`, and the `IgDemo` endpoint
+profile. Its schedule, retry, notification, and selection records are also
+required.
+
+When that required catalog data is missing after its migration has already been
+recorded, startup restores the missing records in one database transaction. It
+does not replace existing protected credentials, broker profiles, or valid
+operator selections. A conflicting `IG Demo` record with an unexpected
+identifier remains a fail-closed startup error because automatic replacement
+could invalidate existing relationships.
+
+The executable broker check requires an active lifecycle, available
+availability, and an authenticatable provider. This deliberately treats
+lifecycle and availability as distinct state dimensions.
+
 At startup and during background execution, the application:
 
 1. loads configuration
