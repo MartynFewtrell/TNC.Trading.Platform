@@ -37,7 +37,7 @@ runtime APIs; Kubernetes can provide the same inputs.
 
 The distributed auth test suites use the real Aspire-managed AppHost and Keycloak runtime. There is no supported synthetic AppHost runtime path for local application startup or AppHost-backed distributed validation, although some lower-level unit tests still use dedicated test helpers that do not go through AppHost.
 
-Automated auth tests deliberately use a different lifecycle from normal local development. They set `AppHost:UsePersistentKeycloakState=false`, use a volume-free session-scoped Keycloak container, and import the checked-in realm into clean state. This prevents stale realms, users, sessions, and client mutations from crossing test sessions. It does not remove or change the persistent local-development mode described below.
+Automated auth tests deliberately use a different lifecycle from normal local development. They set `AppHost:UsePersistentKeycloakState=false` and `AppHost:UseStableKeycloakPort=false`, use a volume-free session-scoped Keycloak container with an Aspire-assigned host port, and import the checked-in realm into clean state. This prevents stale realms, users, sessions, client mutations, and host-port collisions from crossing test sessions. It does not remove or change the persistent local-development mode described below.
 
 ## Phase 0 migration decisions
 
@@ -280,7 +280,7 @@ Before any retained real-runtime assertion runs, the test harness waits for the 
 
 The Web sign-in smoke also proves the imported wildcard localhost callback and origin configuration works with the runtime-discovered Web listener. The fixture does not need to mutate the Keycloak client for each randomized callback, which keeps the session state isolated.
 
-Automated AppHost tests keep randomized resource endpoints enabled. Fixtures own their builder, application, controlled endpoints, and test-scoped configuration; they await asynchronous disposal and do not scan sockets or listeners, use fixed-port leases or dashboard endpoints, or mutate process-wide environment state. xUnit collections are used only where an intentional configuration or data-isolation boundary is shared.
+Automated AppHost tests keep randomized resource endpoints enabled. Their fixture disables the local-development stable Keycloak port through `AppHost:UseStableKeycloakPort=false`, so each test AppHost receives an Aspire-assigned Keycloak host port. Fixtures own their builder, application, controlled endpoints, and test-scoped configuration; they await asynchronous disposal and do not scan sockets or listeners, use fixed-port leases or dashboard endpoints, or mutate process-wide environment state. xUnit collections are used only where an intentional configuration or data-isolation boundary is shared.
 
 ### Manual validation
 

@@ -72,6 +72,26 @@ public sealed class AppHostInfrastructureRegistrationTests
 
     /// <summary>
     /// Trace: NF2, TR1.
+    /// Verifies: AppHost composition can opt out of the stable local Keycloak port for closed-box test instances.
+    /// Expected: the Keycloak endpoint has no fixed host port when the test configuration disables it.
+    /// Why: independently launched Aspire test applications must not collide with local development or other test instances.
+    /// </summary>
+    [Fact]
+    public void Create_ShouldUseDynamicKeycloakPort_WhenStablePortIsDisabled()
+    {
+        var builder = CreateBuilder();
+        builder.Configuration["AppHost:UseStableKeycloakPort"] = bool.FalseString;
+
+        var infrastructure = AppHostInfrastructureRegistration.Create(builder);
+        var endpoint = infrastructure.Keycloak.Resource.Annotations
+            .OfType<EndpointAnnotation>()
+            .Single(annotation => string.Equals(annotation.Name, "http", StringComparison.Ordinal));
+
+        Assert.Null(endpoint.Port);
+    }
+
+    /// <summary>
+    /// Trace: NF2, TR1.
     /// Verifies: the local AppHost default retains durable SQL state.
     /// Expected: SQL uses a persistent lifetime and includes a data-volume annotation.
     /// Why: local development must preserve operator configuration between AppHost runs.

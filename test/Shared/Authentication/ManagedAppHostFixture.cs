@@ -21,7 +21,8 @@ public sealed class ManagedAppHostFixture : IAsyncLifetime
         var fixtureConfiguration = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["AppHost:UsePersistentKeycloakState"] = bool.FalseString,
-            ["AppHost:UsePersistentSqlState"] = bool.FalseString
+            ["AppHost:UsePersistentSqlState"] = bool.FalseString,
+            ["AppHost:UseStableKeycloakPort"] = bool.FalseString
         };
 
         if (configuration is not null)
