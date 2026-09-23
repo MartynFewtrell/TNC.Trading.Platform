@@ -4,6 +4,7 @@ internal static class AppHostInfrastructureRegistration
 {
     private const string UsePersistentKeycloakStateConfigurationKey = "AppHost:UsePersistentKeycloakState";
     private const string UsePersistentSqlStateConfigurationKey = "AppHost:UsePersistentSqlState";
+    private const string UseStableKeycloakPortConfigurationKey = "AppHost:UseStableKeycloakPort";
 
     internal static AppHostInfrastructure Create(IDistributedApplicationBuilder builder)
     {
@@ -15,6 +16,10 @@ internal static class AppHostInfrastructureRegistration
             StringComparison.OrdinalIgnoreCase);
         var usePersistentSqlState = !string.Equals(
             builder.Configuration[UsePersistentSqlStateConfigurationKey],
+            bool.FalseString,
+            StringComparison.OrdinalIgnoreCase);
+        var useStableKeycloakPort = !string.Equals(
+            builder.Configuration[UseStableKeycloakPortConfigurationKey],
             bool.FalseString,
             StringComparison.OrdinalIgnoreCase);
 
@@ -43,7 +48,7 @@ internal static class AppHostInfrastructureRegistration
         var keycloakAdminUser = builder.AddParameter("keycloak-admin-user", AppHostCompositionConstants.KeycloakAdminUserName);
         var keycloak = builder.AddKeycloak(
             "keycloak",
-            port: 8080,
+            port: useStableKeycloakPort ? 8080 : null,
             adminUsername: keycloakAdminUser)
             .WithEndpointProxySupport(proxyEnabled: false)
             .WithLifetime(usePersistentKeycloakState ? ContainerLifetime.Persistent : ContainerLifetime.Session)

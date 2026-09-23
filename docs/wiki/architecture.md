@@ -89,6 +89,21 @@ owners may replace a provisional choice before the phase named below.
 
 ### Persistence and external-effect boundaries
 
+### Market Categories vertical slice
+
+Application owns the market-category records, query and refresh handlers, and
+the `IMarketCategoriesGateway` and `IMarketCategorySnapshotStore` ports.
+Infrastructure implements the IG gateway and EF current-snapshot store.
+Provider credentials, HTTP headers, wire DTOs, and response parsing remain
+Infrastructure-local. The API maps the inward result to protected Viewer GET
+and Operator POST endpoints, while Web consumes only the transport contract.
+
+SQL stores `MarketCategoryCatalogStates` and `MarketCategories` keyed by
+`BrokerEnvironmentId`; the composite `(BrokerEnvironmentId, Code)` key keeps
+catalogues isolated. Replacement of child rows and the successful-refresh
+timestamp occurs in one transaction. No page, read handler, or transport
+client calls IG directly.
+
 * Configuration, runtime-state, retry-cycle, login-snapshot, operational-event,
     audit, and notification-record writes are intended to commit as one local
     consistency unit for a single reconciliation outcome where the current data

@@ -23,6 +23,7 @@ using AppTriggerManualAuthRetry = TNC.Trading.Platform.Application.Features.Trig
 using AppUpdatePlatformConfiguration = TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration;
 using AppAccountPreferences = TNC.Trading.Platform.Application.Features.AccountPreferences;
 using AppBrokerEnvironments = TNC.Trading.Platform.Application.Features.BrokerEnvironments;
+using AppMarketCategories = TNC.Trading.Platform.Application.Features.MarketCategories;
 
 namespace TNC.Trading.Platform.Api.Features.Platform;
 
@@ -66,6 +67,10 @@ internal static class PlatformEndpoints
         platform.MapGet("/account-details", GetAccountDetailsAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Viewer);
         platform.MapPost("/account-details/refresh", RefreshAccountDetailsAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
+        platform.MapGet("/market-categories", GetMarketCategoriesAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Viewer);
+        platform.MapPost("/market-categories/refresh", RefreshMarketCategoriesAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
         platform.MapGet("/account-preferences", GetAccountPreferencesAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
@@ -178,6 +183,22 @@ internal static class PlatformEndpoints
         CancellationToken cancellationToken)
     {
         var result = await handler.HandleAsync(new AppAccountDetails.RefreshAccountDetailsRequest(), cancellationToken);
+        return result.ToHttpResult();
+    }
+
+    private static async Task<IResult> GetMarketCategoriesAsync(
+        AppMarketCategories.GetMarketCategoriesHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(new AppMarketCategories.GetMarketCategoriesRequest(), cancellationToken);
+        return TypedResults.Ok(result.ToResponse());
+    }
+
+    private static async Task<IResult> RefreshMarketCategoriesAsync(
+        AppMarketCategories.RefreshMarketCategoriesHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(new AppMarketCategories.RefreshMarketCategoriesRequest(), cancellationToken);
         return result.ToHttpResult();
     }
 

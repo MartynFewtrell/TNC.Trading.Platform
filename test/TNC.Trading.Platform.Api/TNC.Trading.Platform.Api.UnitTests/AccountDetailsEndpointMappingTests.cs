@@ -51,7 +51,7 @@ public class AccountDetailsEndpointMappingTests
             new AppAccountDetails.AccountDetailsRefreshOutcome.RefreshInProgress(retrievedAt)).ToHttpResult();
 
         var conflict = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.Conflict<AccountDetailsRefreshConflictResponse>>(result);
-        Assert.Equal(retrievedAt, conflict.Value.LatestRetrievedAtUtc);
+        Assert.Equal(retrievedAt, conflict.Value!.LatestRetrievedAtUtc);
     }
 
     /// <summary>Verifies a coalesced refresh returns HTTP 409 without inventing a retrieval timestamp.</summary>
@@ -62,7 +62,7 @@ public class AccountDetailsEndpointMappingTests
             new AppAccountDetails.AccountDetailsRefreshOutcome.Deferred()).ToHttpResult();
 
         var conflict = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.Conflict<AccountDetailsRefreshConflictResponse>>(result);
-        Assert.Null(conflict.Value.LatestRetrievedAtUtc);
+        Assert.Null(conflict.Value!.LatestRetrievedAtUtc);
     }
 
     /// <summary>Verifies each recognized provider failure maps to its specified HTTP status.</summary>
@@ -93,7 +93,7 @@ public class AccountDetailsEndpointMappingTests
                 AppAccountDetails.AccountDetailsFailureCategory.Conflict, "conflict")).ToHttpResult();
 
         var conflict = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.Conflict<AccountDetailsRefreshConflictResponse>>(result);
-        Assert.Null(conflict.Value.LatestRetrievedAtUtc);
+        Assert.Null(conflict.Value!.LatestRetrievedAtUtc);
     }
 
     private static AppAccountDetails.AccountDetailsSnapshot CreateSnapshot()

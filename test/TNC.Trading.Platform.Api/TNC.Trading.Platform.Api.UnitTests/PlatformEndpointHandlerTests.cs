@@ -26,7 +26,7 @@ public class PlatformEndpointHandlerTests
             CancellationToken.None);
 
         var accepted = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.Accepted<TriggerManualAuthRetryResponse>>(result.Result);
-        Assert.Equal(retryCycleId, accepted.Value.RetryCycleId);
+        Assert.Equal(retryCycleId, accepted.Value!.RetryCycleId);
     }
 
     /// <summary>
@@ -44,7 +44,7 @@ public class PlatformEndpointHandlerTests
             CancellationToken.None);
 
         var conflict = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.Conflict<ManualAuthRetryConflictResponse>>(result.Result);
-        Assert.Equal("Manual retry becomes available only after the initial automatic retries are exhausted.", conflict.Value.Error);
+        Assert.Equal("Manual retry becomes available only after the initial automatic retries are exhausted.", conflict.Value!.Error);
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public class PlatformEndpointHandlerTests
             CancellationToken.None);
 
         var conflict = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.Conflict<ManualAuthRetryConflictResponse>>(result.Result);
-        Assert.Equal("Manual retry becomes available only after the initial automatic retries are exhausted.", conflict.Value.Error);
+        Assert.Equal("Manual retry becomes available only after the initial automatic retries are exhausted.", conflict.Value!.Error);
     }
 
     [Fact]

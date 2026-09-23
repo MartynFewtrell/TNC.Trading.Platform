@@ -8,7 +8,7 @@ namespace TNC.Trading.Platform.Infrastructure.IntegrationTests;
 public sealed class SqlServerDatabaseFixture : IAsyncLifetime
 {
     private static readonly TimeSpan OperationTimeout = TimeSpan.FromSeconds(45);
-    private readonly MsSqlContainer sqlServer = new MsSqlBuilder()
+    private readonly MsSqlContainer sqlServer = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest")
         .WithPassword("TncTradingPlatform!Integration1")
         .Build();
     private string databaseName = string.Empty;
@@ -84,6 +84,8 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
             DROP TABLE IF EXISTS [AccountPreferencesDesiredStateAudits];
             DROP TABLE IF EXISTS [AccountPreferencesCurrentStates];
             DROP TABLE IF EXISTS [AccountPreferencesOperations];
+            DROP TABLE IF EXISTS [MarketCategories];
+            DROP TABLE IF EXISTS [MarketCategoryCatalogStates];
             DROP TABLE IF EXISTS [OperationalEvents];
             DROP TABLE IF EXISTS [PlatformConfigurations];
             DROP TABLE IF EXISTS [ProtectedCredentials];

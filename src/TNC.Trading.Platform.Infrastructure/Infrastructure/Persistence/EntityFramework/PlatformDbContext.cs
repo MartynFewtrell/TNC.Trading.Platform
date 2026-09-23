@@ -40,6 +40,8 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
     internal DbSet<AccountPreferencesCurrentStateEntity> AccountPreferencesCurrentStates => Set<AccountPreferencesCurrentStateEntity>();
     internal DbSet<AccountPreferencesDesiredStateAuditEntity> AccountPreferencesDesiredStateAudits => Set<AccountPreferencesDesiredStateAuditEntity>();
     internal DbSet<AccountPreferencesOperationEntity> AccountPreferencesOperations => Set<AccountPreferencesOperationEntity>();
+    internal DbSet<MarketCategoryCatalogStateEntity> MarketCategoryCatalogStates => Set<MarketCategoryCatalogStateEntity>();
+    internal DbSet<MarketCategoryEntity> MarketCategories => Set<MarketCategoryEntity>();
 
     internal DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
@@ -305,6 +307,27 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.Property(item => item.Actor).HasMaxLength(128).IsRequired();
             entity.Property(item => item.CorrelationId).HasMaxLength(64).IsRequired();
             entity.Property(item => item.Phase).HasMaxLength(32).IsRequired();
+        });
+
+        modelBuilder.Entity<MarketCategoryCatalogStateEntity>(entity =>
+        {
+            entity.HasKey(item => item.BrokerEnvironmentId);
+            entity.HasOne<BrokerEnvironmentEntity>()
+                .WithMany()
+                .HasForeignKey(item => item.BrokerEnvironmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.Property(item => item.LastRefreshedAtUtc).IsRequired();
+        });
+
+        modelBuilder.Entity<MarketCategoryEntity>(entity =>
+        {
+            entity.HasKey(item => new { item.BrokerEnvironmentId, item.Code });
+            entity.HasOne<BrokerEnvironmentEntity>()
+                .WithMany()
+                .HasForeignKey(item => item.BrokerEnvironmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.Property(item => item.Code).HasMaxLength(128).IsRequired();
+            entity.Property(item => item.NonTradeable).IsRequired();
         });
 
         modelBuilder.Entity<AccountDetailsAccountEntity>(entity =>

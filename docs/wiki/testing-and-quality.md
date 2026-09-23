@@ -73,6 +73,27 @@ API tests cover only hosting and composition behavior.
 
 ## Test projects
 
+### Market Categories coverage
+
+The bounded catalogue is covered without real IG accounts or provider calls.
+Application tests verify SQL-only reads, ordinal ordering, explicit empty
+state, cancellation, and no-write typed failures. Infrastructure tests use a
+controlled HTTP handler for session headers, API versions, Demo guarding,
+single `401` replay, safe failure classification, and complete response
+validation. Fixture-owned SQL Server integration tests cover the migration,
+constraints, atomic replacement, failed-refresh preservation, and
+environment isolation. API tests cover response mapping and safe Problem
+Details. Web unit/bUnit tests cover scoped client paths, saved/empty/stale
+states, role-gated refresh, pending disablement, reload, and Viewer
+navigation. Browser E2E coverage is not added because no browser-only
+workflow was introduced.
+
+No additional protected-endpoint Aspire retrieval test was added for this
+bounded reference-data slice: the existing distributed fixtures require
+full authentication and startup infrastructure, while the API mapping,
+controlled-provider tests, and SQL-backed store tests already cover the new
+behavior without real provider access.
+
 | Project | Test type | Focus |
 | --- | --- | --- |
 | `test/TNC.Trading.Platform.Application/TNC.Trading.Platform.Application.UnitTests` | Unit | Pure retry timing, schedule evaluation, auth-state policy, use-case handlers, and application logic using fakes and in-memory state only. |

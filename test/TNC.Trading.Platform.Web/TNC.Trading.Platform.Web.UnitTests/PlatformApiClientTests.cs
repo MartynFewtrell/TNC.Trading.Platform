@@ -6,6 +6,55 @@ namespace TNC.Trading.Platform.Web.UnitTests;
 public sealed class PlatformApiClientTests
 {
     /// <summary>
+    /// Trace: Work Item 4, market-category API contract.
+    /// Verifies: the client uses the Viewer-authorized GET route and parses the typed category response.
+    /// Expected: category data is returned and the request targets the market-category route.
+    /// Why: this protects the Web boundary from drift in the existing API contract.
+    /// </summary>
+    [Fact]
+    public async Task GetMarketCategoriesAsync_ShouldReturnTypedSnapshot_WhenApiReturnsPayload()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            userName: "local-viewer",
+            apiResponses: _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new
+            {
+                Categories = new[] { new { Code = "FX", NonTradeable = false } },
+                LastRefreshedAtUtc = DateTimeOffset.UtcNow
+            }));
+        var client = context.Services.GetRequiredService<PlatformApiClient>();
+
+        var result = await client.GetMarketCategoriesAsync(CancellationToken.None);
+
+        Assert.Single(result.Categories);
+        Assert.Equal("FX", result.Categories[0].Code);
+        var request = Assert.Single(context.ApiHandler.Requests);
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.EndsWith("/api/platform/market-categories", request.RequestUri, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: Work Item 4, operator refresh and shared API error convention.
+    /// Verifies: the client posts the operator refresh request and translates Problem Details through the existing typed exception.
+    /// Expected: a PlatformApiException contains the provider failure detail and the request uses POST.
+    /// Why: callers can preserve stale data while still presenting a safe, actionable failure.
+    /// </summary>
+    [Fact]
+    public async Task RefreshMarketCategoriesAsync_ShouldThrowPlatformApiException_WhenApiReturnsProblemDetails()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            userName: "local-operator",
+            apiResponses: _ => PlatformWebTestData.CreateProblemResponse(HttpStatusCode.ServiceUnavailable, new { title = "Provider unavailable", detail = "Try again later." }));
+        var client = context.Services.GetRequiredService<PlatformApiClient>();
+
+        var exception = await Assert.ThrowsAsync<PlatformApiException>(() => client.RefreshMarketCategoriesAsync(CancellationToken.None));
+
+        Assert.Contains("Try again later", exception.Message, StringComparison.Ordinal);
+        var request = Assert.Single(context.ApiHandler.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.EndsWith("/api/platform/market-categories/refresh", request.RequestUri, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Trace: FR5, FR6, NF2, NF4, SR2, SR3, TR4, TR5, TR8.
     /// Verifies: the Web-to-API client parses the protected status payload, including the embedded IG login detail and latest non-secret snapshot, and sends the delegated bearer token to the API boundary.
     /// Expected: the parsed platform status is returned with the current IG login state and latest snapshot fields intact, and the outgoing request targets the protected status route with an authorization header.

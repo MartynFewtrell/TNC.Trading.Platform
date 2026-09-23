@@ -55,8 +55,8 @@ public sealed class MainLayoutTests
     }
 
     /// <summary>
-    /// Trace: account navigation alignment. Verifies Viewer-only and Operator-only principals retain only their authorized account links, while a combined principal places Account preferences immediately after Account details.
-    /// Expected: each role sees its permitted destination, and the combined navigation preserves the requested adjacent order.
+    /// Trace: account navigation alignment. Verifies Viewer-only and Operator-only principals retain only their authorized account links, while a combined principal places Market categories below Account preferences and above Status.
+    /// Expected: each role sees its permitted destination, and the combined navigation preserves the requested order.
     /// Why: moving the navigation item must not widen either authorization boundary or regress the account workflow's discoverability.
     /// </summary>
     [Fact]
@@ -69,6 +69,7 @@ public sealed class MainLayoutTests
             parameters.Add(layout => layout.Body, CreateBody()));
 
         Assert.NotEmpty(viewer.FindAll("a[href='/account-details']"));
+        Assert.NotEmpty(viewer.FindAll("a[href='/market-categories']"));
         Assert.Empty(viewer.FindAll("a[href='/account-preferences']"));
 
         using var operatorContext = new PlatformComponentTestContext(
@@ -86,9 +87,13 @@ public sealed class MainLayoutTests
             parameters.Add(layout => layout.Body, CreateBody()));
         var links = combined.FindAll("nav[aria-label='Primary'] a").ToList();
         var accountDetailsIndex = links.FindIndex(link => link.GetAttribute("href") == "/account-details");
+        var marketCategoriesIndex = links.FindIndex(link => link.GetAttribute("href") == "/market-categories");
         var accountPreferencesIndex = links.FindIndex(link => link.GetAttribute("href") == "/account-preferences");
+        var statusIndex = links.FindIndex(link => link.GetAttribute("href") == "/status");
 
         Assert.Equal(accountDetailsIndex + 1, accountPreferencesIndex);
+        Assert.Equal(accountPreferencesIndex + 1, marketCategoriesIndex);
+        Assert.Equal(marketCategoriesIndex + 1, statusIndex);
     }
 
     /// <summary>

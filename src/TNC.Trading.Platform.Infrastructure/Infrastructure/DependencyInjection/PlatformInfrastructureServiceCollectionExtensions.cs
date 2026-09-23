@@ -12,6 +12,7 @@ using TNC.Trading.Platform.Application.Features.GetPlatformEvents.Ports;
 using TNC.Trading.Platform.Application.Features.GetPlatformStatus.Ports;
 using TNC.Trading.Platform.Application.Features.AccountDetails;
 using TNC.Trading.Platform.Application.Features.AccountPreferences;
+using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.BrokerEnvironments;
 using TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent.Ports;
 using TNC.Trading.Platform.Application.Services;
@@ -102,7 +103,12 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         services.AddScoped<IAccountPreferencesOperationStore, EfAccountPreferencesOperationStore>();
         services.AddScoped<IAccountPreferencesReconciliationLease, SqlAccountPreferencesReconciliationLease>();
         services.AddScoped<IAccountDetailsRefreshLease, SqlAccountDetailsRefreshLease>();
+        services.AddScoped<IMarketCategorySnapshotStore, EfMarketCategorySnapshotStore>();
         services.AddHttpClient<IAccountDetailsGateway, IgAccountDetailsGateway>(client =>
+        {
+            client.BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/");
+        });
+        services.AddHttpClient<IMarketCategoriesGateway, IgMarketCategoriesGateway>(client =>
         {
             client.BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/");
         });
