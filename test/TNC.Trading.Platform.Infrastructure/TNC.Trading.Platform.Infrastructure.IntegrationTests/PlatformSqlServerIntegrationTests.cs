@@ -87,6 +87,8 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
                 "NotificationRecords", "OperationalEvents", "PlatformConfigurations", "ProtectedCredentials"
             },
             table => Assert.Contains(table, tables));
+        Assert.Contains("MarketCategoryCatalogStates", tables);
+        Assert.Contains("MarketCategories", tables);
         Assert.Contains("BrokerEnvironments", tables);
         Assert.Contains("BrokerEnvironmentDefaults", tables);
         Assert.Contains("BrokerEnvironmentSelections", tables);

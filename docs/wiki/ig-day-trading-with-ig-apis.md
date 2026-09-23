@@ -95,6 +95,21 @@ Your app must handle token expiry and re-authentication. IG Labs notes planned m
 
 ## Market discovery and instrument identifiers
 
+### Demo market-category reference data
+
+The platform's initial market-category catalogue is deliberately Demo-only
+and operator-triggered. An Operator refresh creates an IG v2 session and then
+requests `GET categories` with API version 1 and the session headers required
+by IG. A single fresh-session replay is allowed when that categories request
+returns `401`; other statuses are classified without blind retries.
+
+The complete response is validated before it is stored. Missing or empty
+categories, blank or duplicate codes, overlong codes, and missing
+`nonTradeable` values are rejected as malformed provider data. The API and UI
+never expose credentials, session headers, raw provider payloads, or provider
+response content. Viewer reads use only the saved catalogue; page rendering
+does not refresh IG and no automatic or Live workflow is supported.
+
 Before you can trade or subscribe to prices you need to identify instruments.
 
 Key ideas:

@@ -45,6 +45,21 @@ The additive EF migration is applied before bootstrap configuration and
 retention; incompatible migration history remains fail-closed for operator
 correction.
 
+## Market Categories reference snapshot
+
+Market categories are stored as the current complete snapshot for the applied
+broker environment. A Viewer GET reads SQL only and returns categories in
+ordinal code order with the nullable last-successful-refresh timestamp. It
+does not contact IG or write data.
+
+Only an Operator can start the manual refresh. A successful refresh validates
+the entire Demo response and atomically replaces that environment's category
+rows and timestamp. If the provider is unavailable, rate-limited, times out,
+returns rejected data, or returns a malformed/empty/partial catalogue, the
+existing rows and timestamp remain unchanged. The Web page keeps showing that
+saved data and displays a safe stale-after-failure message. There is no
+startup, login, scheduled, or automatic category refresh.
+
 ## Runtime model summary
 
 The current runtime model is a supervised control loop.

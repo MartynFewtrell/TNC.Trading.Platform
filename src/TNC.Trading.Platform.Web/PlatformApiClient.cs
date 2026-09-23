@@ -199,6 +199,26 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
             ?? throw new InvalidOperationException("Account details refresh response was empty.");
     }
 
+    /// <summary>Gets the saved market-category snapshot for a Viewer.</summary>
+    public async Task<MarketCategoriesViewModel> GetMarketCategoriesAsync(CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Get, "/api/platform/market-categories", [PlatformAuthenticationDefaults.Scopes.Viewer], cancellationToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<MarketCategoriesViewModel>(JsonOptions, cancellationToken)
+            ?? throw new InvalidOperationException("Market categories response was empty.");
+    }
+
+    /// <summary>Refreshes and saves market categories for an Operator.</summary>
+    public async Task<MarketCategoriesViewModel> RefreshMarketCategoriesAsync(CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Post, "/api/platform/market-categories/refresh", [PlatformAuthenticationDefaults.Scopes.Operator], cancellationToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<MarketCategoriesViewModel>(JsonOptions, cancellationToken)
+            ?? throw new InvalidOperationException("Market categories refresh response was empty.");
+    }
+
     public async Task<AccountPreferencesViewModel> GetAccountPreferencesAsync(CancellationToken cancellationToken)
     {
         using var request = await CreateAuthorizedRequestAsync(HttpMethod.Get, "/api/platform/account-preferences", [PlatformAuthenticationDefaults.Scopes.Operator], cancellationToken);

@@ -6,6 +6,7 @@ using TNC.Trading.Platform.Application.Features.GetIgLoginHistory;
 using TNC.Trading.Platform.Application.Features.GetPlatformConfiguration;
 using TNC.Trading.Platform.Application.Features.GetPlatformEvents;
 using TNC.Trading.Platform.Application.Features.GetPlatformStatus;
+using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.ReconcilePlatformAuthentication;
 using TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent;
 using TNC.Trading.Platform.Application.Features.TriggerManualAuthRetry;
@@ -42,6 +43,8 @@ internal static class PlatformApplicationServiceCollectionExtensions
         services.AddScoped<GetIgLoginHistoryHandler>();
         services.AddScoped<GetAccountDetailsHandler>();
         services.AddScoped<RefreshAccountDetailsHandler>();
+        services.AddScoped<GetMarketCategoriesHandler>();
+        services.AddScoped<RefreshMarketCategoriesHandler>();
         services.AddScoped<GetAccountPreferencesHandler>();
         services.AddScoped<UpdateAccountPreferencesValidator>();
         services.AddScoped<UpdateAccountPreferencesHandler>();

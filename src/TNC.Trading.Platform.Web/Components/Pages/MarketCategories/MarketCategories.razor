@@ -1,0 +1,90 @@
+@namespace TNC.Trading.Platform.Web.Components.Pages
+@page "/market-categories"
+@implements IDisposable
+@attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Viewer)]
+@using TNC.Trading.Platform.Web.Authentication
+@inject MarketCategoriesPagePresenter Presenter
+@inject PlatformNavigationAccessCoordinator NavigationAccessCoordinator
+@inject PlatformOperatorContextAccessor OperatorContextAccessor
+
+<PageTitle>Market categories</PageTitle>
+
+@if (!hasRequiredScope)
+{
+    <p data-testid="market-categories-access">Redirecting...</p>
+}
+else if (Presenter.IsLoading && Presenter.State is null)
+{
+    <section class="panel" data-testid="market-categories-loading"><p>Loading market categories...</p></section>
+}
+else
+{
+    <section class="panel platform-page-header">
+        <div><h1>Market categories</h1><p class="hint">Saved market categories from the configured IG environment.</p></div>
+        @if (canRefresh)
+        {
+            <button class="platform-primary-action" type="button" data-testid="market-categories-refresh" @onclick="RefreshAsync" disabled="@Presenter.IsRefreshing">
+                @(Presenter.IsRefreshing ? "Refreshing..." : "Refresh")
+            </button>
+        }
+    </section>
+
+    @if (Presenter.State is null)
+    {
+        <section class="panel" data-testid="market-categories-failure" role="alert"><p>@Presenter.Error</p></section>
+    }
+    else if (!Presenter.State.HasSavedSnapshot)
+    {
+        <section class="panel" data-testid="market-categories-empty"><p>No saved market categories are available yet.</p></section>
+    }
+    else
+    {
+        <section class="panel" data-testid="market-categories-saved">
+            <h2>Saved categories</h2>
+            <p>Last refreshed <time datetime="@Presenter.State.LastRefreshedAtUtc!.Value.ToString("O")">@Presenter.State.LastRefreshedAtUtc.Value.ToLocalTime().ToString("g")</time></p>
+            <table>
+                <caption>Saved market categories</caption>
+                <thead><tr><th scope="col">Code</th><th scope="col">Non-tradeable</th></tr></thead>
+                <tbody>
+                    @foreach (var category in Presenter.State.Categories)
+                    {
+                        <tr @key="category.Code"><td>@category.Code</td><td>@(category.NonTradeable ? "Non-tradeable" : "Tradeable")</td></tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+
+    @if (Presenter.IsRefreshing)
+    {
+        <p role="status" data-testid="market-categories-refreshing">Refreshing market categories...</p>
+    }
+    @if (!string.IsNullOrWhiteSpace(Presenter.Error) && Presenter.State is not null)
+    {
+        <p class="error" role="alert" data-testid="market-categories-stale-failure">The saved categories are still shown. @Presenter.Error</p>
+    }
+}
+
+@code {
+    private bool hasRequiredScope;
+    private bool canRefresh;
+    private readonly CancellationTokenSource requestLifetime = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        hasRequiredScope = await NavigationAccessCoordinator.EnsureRequiredScopesAsync("/market-categories", PlatformAuthenticationDefaults.Scopes.Viewer);
+        if (hasRequiredScope)
+        {
+            canRefresh = (await OperatorContextAccessor.GetCurrentAsync()).IsOperator;
+            await Presenter.LoadAsync(requestLifetime.Token);
+        }
+    }
+
+    private async Task RefreshAsync() => await Presenter.RefreshAsync(requestLifetime.Token);
+
+    public void Dispose()
+    {
+        requestLifetime.Cancel();
+        requestLifetime.Dispose();
+    }
+}
