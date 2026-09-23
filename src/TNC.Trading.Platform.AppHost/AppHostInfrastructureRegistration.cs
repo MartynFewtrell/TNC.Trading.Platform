@@ -33,21 +33,24 @@ internal static class AppHostInfrastructureRegistration
             .WithLifetime(ContainerLifetime.Persistent)
             .WithHttpEndpoint(targetPort: 8025, name: "http")
             .WithEndpoint(targetPort: 1025, name: "smtp")
-            .WithUrlForEndpoint("http", _ => new()
+            .WithUrlForEndpoint("http", url =>
             {
-                Url = "/",
-                DisplayText = "Mailpit UI"
-            });
+                url.Url = "/";
+                url.DisplayText = "Mailpit UI";
+            })
+            .WithAnnotation(new ResourceUrlsCallbackAnnotation(context =>
+                context.Urls.RemoveAll(url => url.Endpoint?.EndpointName == "smtp")));
         var keycloakAdminUser = builder.AddParameter("keycloak-admin-user", AppHostCompositionConstants.KeycloakAdminUserName);
         var keycloak = builder.AddKeycloak(
             "keycloak",
+            port: 8080,
             adminUsername: keycloakAdminUser)
             .WithEndpointProxySupport(proxyEnabled: false)
             .WithLifetime(usePersistentKeycloakState ? ContainerLifetime.Persistent : ContainerLifetime.Session)
             .WithRealmImport("./Realms")
             .WithUrlForEndpoint("http", url =>
             {
-                url.Url = "/admin/master/console/";
+                url.Url = "https://localhost:8080/admin/master/console/";
                 url.DisplayText = "Keycloak Admin Console";
             });
 

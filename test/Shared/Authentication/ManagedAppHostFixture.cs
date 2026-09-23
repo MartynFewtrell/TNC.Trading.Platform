@@ -2,6 +2,7 @@ using Aspire.Hosting;
 using Aspire.Hosting.Testing;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
+using System.Net;
 
 namespace TNC.Trading.Platform.TestShared.Authentication;
 
@@ -17,7 +18,21 @@ public sealed class ManagedAppHostFixture : IAsyncLifetime
 
     public ManagedAppHostFixture(IReadOnlyDictionary<string, string?>? configuration = null)
     {
-        this.configuration = configuration ?? new Dictionary<string, string?>();
+        var fixtureConfiguration = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["AppHost:UsePersistentKeycloakState"] = bool.FalseString,
+            ["AppHost:UsePersistentSqlState"] = bool.FalseString
+        };
+
+        if (configuration is not null)
+        {
+            foreach (var setting in configuration)
+            {
+                fixtureConfiguration[setting.Key] = setting.Value;
+            }
+        }
+
+        this.configuration = fixtureConfiguration;
     }
 
     public Uri WebEndpointUri { get; private set; } = null!;
@@ -50,6 +65,8 @@ public sealed class ManagedAppHostFixture : IAsyncLifetime
             WebEndpointUri = application.GetEndpoint("web", "https");
             ApiEndpointUri = application.GetEndpoint("api", "https");
             KeycloakEndpointUri = application.GetEndpoint("keycloak", "http");
+            using var apiReadinessClient = CreateApiClient();
+            await WaitForApiReadinessAsync(apiReadinessClient, token).ConfigureAwait(false);
         }
         catch
         {
@@ -76,19 +93,27 @@ public sealed class ManagedAppHostFixture : IAsyncLifetime
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
+            DECLARE @demoBrokerEnvironmentId UNIQUEIDENTIFIER;
+            SELECT @demoBrokerEnvironmentId = [BrokerEnvironmentId] FROM [BrokerEnvironments] WHERE [NormalizedName] = 'IG DEMO';
             UPDATE [IgLoginSnapshots]
             SET [CurrentAccountId] = @sessionAccountId,
                 [CapturedAtUtc] = DATEADD(second, 1, SYSUTCDATETIME())
             WHERE [BrokerEnvironment] = 'Demo';
+            IF @@ROWCOUNT = 0
+            BEGIN
+                INSERT INTO [IgLoginSnapshots]
+                ([IgLoginSnapshotId], [BrokerEnvironmentId], [BrokerEnvironment], [CapturedAtUtc], [TradingDay], [SnapshotKind], [CurrentAccountId], [ResponseHeadersJson], [RawNonSecretPayloadJson])
+                VALUES (NEWID(), @demoBrokerEnvironmentId, 'Demo', SYSUTCDATETIME(), CONVERT(date, SYSUTCDATETIME()), 'Latest', @sessionAccountId, '{}', '{}');
+            END;
             DELETE FROM [TrailingStopsPreferenceObservations]
-            WHERE [PlatformEnvironment] = 'Test' AND [BrokerEnvironment] = 'Demo';
+            WHERE [BrokerEnvironmentId] = @demoBrokerEnvironmentId;
             DELETE audit
             FROM [AccountPreferencesDesiredStateAudits] AS audit
             INNER JOIN [AccountPreferencesCurrentStates] AS state
                 ON state.[AccountPreferencesCurrentStateId] = audit.[AccountPreferencesCurrentStateId]
-            WHERE state.[PlatformEnvironment] = 'Test' AND state.[BrokerEnvironment] = 'Demo';
+            WHERE state.[BrokerEnvironmentId] = @demoBrokerEnvironmentId;
             DELETE FROM [AccountPreferencesOperations]
-            WHERE [PlatformEnvironment] = 'Test' AND [BrokerEnvironment] = 'Demo';
+            WHERE [BrokerEnvironmentId] = @demoBrokerEnvironmentId;
             UPDATE [AccountPreferencesCurrentStates]
             SET [AccountId] = @sessionAccountId,
                 [DesiredTrailingStopsEnabled] = 0,
@@ -106,12 +131,12 @@ public sealed class ManagedAppHostFixture : IAsyncLifetime
                 [RetryCount] = 0,
                 [FailureSummary] = NULL,
                 [CorrelationId] = NULL
-            WHERE [PlatformEnvironment] = 'Test' AND [BrokerEnvironment] = 'Demo';
+            WHERE [BrokerEnvironmentId] = @demoBrokerEnvironmentId;
             IF @@ROWCOUNT = 0
             BEGIN
                 INSERT INTO [AccountPreferencesCurrentStates]
-                ([AccountPreferencesCurrentStateId], [PlatformEnvironment], [BrokerEnvironment], [AccountId], [DesiredTrailingStopsEnabled], [DesiredRevision], [DesiredActor], [DesiredChangedAtUtc], [ObservedTrailingStopsEnabled], [ObservedAccountId], [ObservedAtUtc], [VerificationStatus], [LastVerifiedAtUtc], [RetryCount])
-                VALUES (NEWID(), 'Test', 'Demo', @sessionAccountId, 0, 1, 'test-fixture', SYSUTCDATETIME(), 0, @sessionAccountId, SYSUTCDATETIME(), 'InSync', SYSUTCDATETIME(), 0);
+                ([AccountPreferencesCurrentStateId], [PlatformEnvironment], [BrokerEnvironment], [BrokerEnvironmentId], [AccountId], [DesiredTrailingStopsEnabled], [DesiredRevision], [DesiredActor], [DesiredChangedAtUtc], [ObservedTrailingStopsEnabled], [ObservedAccountId], [ObservedAtUtc], [VerificationStatus], [LastVerifiedAtUtc], [RetryCount])
+                VALUES (NEWID(), 'Desktop', 'Demo', @demoBrokerEnvironmentId, @sessionAccountId, 0, 1, 'test-fixture', SYSUTCDATETIME(), 0, @sessionAccountId, SYSUTCDATETIME(), 'InSync', SYSUTCDATETIME(), 0);
             END;
             """;
         command.Parameters.AddWithValue("@sessionAccountId", sessionAccountId);
@@ -159,7 +184,7 @@ public sealed class ManagedAppHostFixture : IAsyncLifetime
             UPDATE [AccountPreferencesCurrentStates]
             SET [AccountId] = @targetAccountId,
                 [ObservedAccountId] = @targetAccountId
-            WHERE [PlatformEnvironment] = 'Test' AND [BrokerEnvironment] = 'Demo';
+            WHERE [PlatformEnvironment] = 'Desktop' AND [BrokerEnvironment] = 'Demo';
             """;
         command.Parameters.AddWithValue("@targetAccountId", targetAccountId);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -187,7 +212,7 @@ public sealed class ManagedAppHostFixture : IAsyncLifetime
             UPDATE [AccountPreferencesCurrentStates]
             SET [AccountId] = @targetAccountId,
                 [ObservedAccountId] = @targetAccountId
-            WHERE [PlatformEnvironment] = 'Test' AND [BrokerEnvironment] = 'Demo';
+            WHERE [PlatformEnvironment] = 'Desktop' AND [BrokerEnvironment] = 'Demo';
             """;
         command.Parameters.AddWithValue("@sessionAccountId", sessionAccountId);
         command.Parameters.AddWithValue("@targetAccountId", targetAccountId);
@@ -260,5 +285,33 @@ public sealed class ManagedAppHostFixture : IAsyncLifetime
         return endpointName is null
             ? application.CreateHttpClient(resourceName)
             : application.CreateHttpClient(resourceName, endpointName);
+    }
+
+    private static async Task WaitForApiReadinessAsync(HttpClient httpClient, CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                using var readinessResponse = await httpClient.GetAsync("/health/ready", cancellationToken).ConfigureAwait(false);
+                if (readinessResponse.StatusCode == HttpStatusCode.OK)
+                {
+                    return;
+                }
+            }
+            catch (HttpRequestException) when (!cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (IOException) when (!cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken).ConfigureAwait(false);
+        }
+
+        throw new TimeoutException("The AppHost API did not become ready within the initialization timeout.");
     }
 }

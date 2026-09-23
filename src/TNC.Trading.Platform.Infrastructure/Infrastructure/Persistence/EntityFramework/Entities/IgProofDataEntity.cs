@@ -4,6 +4,8 @@ internal sealed class IgProofDataEntity
 {
     public int IgProofDataId { get; set; }
 
+    public Guid BrokerEnvironmentId { get; set; }
+
     public string BrokerEnvironment { get; set; } = string.Empty;
 
     public string? PreferredAccountName { get; set; }

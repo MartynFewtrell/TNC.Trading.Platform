@@ -28,6 +28,7 @@ public class AuthRetryCycleTests
     public async Task UpsertRetryCycleAsync_ShouldUpdateExistingCycle_WhenRetryCycleAlreadyExists()
     {
         using var dbContext = InfrastructureReflection.CreateDbContext();
+        var brokerEnvironmentId = Guid.NewGuid();
         var configuration = new ConfigurationBuilder().Build();
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, TimeProvider.System);
         var configurationStore = CreateConfigurationStore(dbContext, configuration, protectedCredentialService, TimeProvider.System);
@@ -36,8 +37,10 @@ public class AuthRetryCycleTests
             CreateAuthSimulationSettings(configuration),
             configurationService,
             new EfPlatformRuntimeStateStore(dbContext),
-            new EfPlatformIgLoginSnapshotStore(dbContext),
-            new EfPlatformRetryCycleStore(dbContext),
+            new EfPlatformIgLoginSnapshotStore(
+                dbContext,
+                new StaticAppliedBrokerEnvironmentContextResolver(brokerEnvironmentId)),
+            new EfPlatformRetryCycleStore(dbContext, new StaticAppliedBrokerEnvironmentContextResolver(brokerEnvironmentId)),
             new EfPlatformEventStore(dbContext),
             CreateNotificationDispatcher(dbContext, TimeProvider.System),
             new TradingScheduleGate(),
@@ -76,6 +79,29 @@ public class AuthRetryCycleTests
         Assert.True(cycle.RetryLimitReached);
         Assert.True(cycle.FailureNotificationSent);
         Assert.Equal(60, cycle.LastDelaySeconds);
+        Assert.Equal(brokerEnvironmentId, cycle.BrokerEnvironmentId);
+    }
+
+    /// <summary>
+    /// Trace: broker-environment catalogue persistence.
+    /// Verifies: a retry cycle cannot be inserted when the applied broker environment is absent.
+    /// Expected: the persistence boundary raises a descriptive invariant failure before it sends an invalid foreign key to SQL Server.
+    /// Why: the foreign key must remain enforced while startup errors identify stale catalogue selection rather than reporting a database constraint violation.
+    /// </summary>
+    [Fact]
+    public async Task UpsertAsync_WhenAppliedEnvironmentIsMissing_ShouldThrowInvariantFailure()
+    {
+        using var dbContext = InfrastructureReflection.CreateDbContext();
+        var store = new EfPlatformRetryCycleStore(dbContext, new StaticAppliedBrokerEnvironmentContextResolver(null));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => store.UpsertAsync(
+            CreateRetryCycle(),
+            CancellationToken.None));
+
+        Assert.Equal(
+            "The applied broker environment must exist and match retry cycle environment 'Demo'.",
+            exception.Message);
+        Assert.Empty(dbContext.AuthRetryCycles);
     }
 
     /// <summary>
@@ -1038,7 +1064,8 @@ public class AuthRetryCycleTests
             dbContext,
             configuration,
             protectedCredentialService,
-            timeProvider);
+            timeProvider,
+            new PlatformEnvironmentContext(PlatformEnvironmentKind.Test));
     }
 
     private static PlatformAuthSimulationSettings CreateAuthSimulationSettings(IConfiguration configuration)
@@ -1063,8 +1090,12 @@ public class AuthRetryCycleTests
             CreateAuthSimulationSettings(configuration),
             configurationService,
             new EfPlatformRuntimeStateStore(dbContext),
-            new EfPlatformIgLoginSnapshotStore(dbContext),
-            new EfPlatformRetryCycleStore(dbContext),
+            new EfPlatformIgLoginSnapshotStore(
+                dbContext,
+                new StaticAppliedBrokerEnvironmentContextResolver(Guid.NewGuid())),
+            new EfPlatformRetryCycleStore(
+                dbContext,
+                new StaticAppliedBrokerEnvironmentContextResolver(Guid.NewGuid())),
             new EfPlatformEventStore(dbContext),
             CreateNotificationDispatcher(dbContext, timeProvider),
             new TradingScheduleGate(),
@@ -1116,6 +1147,18 @@ public class AuthRetryCycleTests
             DateTimeOffset.UtcNow,
             false);
     }
+
+    private static PlatformRetryCycle CreateRetryCycle() =>
+        new()
+        {
+            RetryCycleId = Guid.NewGuid(),
+            CycleType = "Automatic",
+            PlatformEnvironment = "Live",
+            BrokerEnvironment = "Demo",
+            RetryPhase = AuthRetryPhase.InitialAutomatic,
+            StartedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow
+        };
 
     private static IBrokerAuthenticationGateway CreateSuccessfulSessionClient()
     {

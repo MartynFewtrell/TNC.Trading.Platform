@@ -319,6 +319,39 @@ public sealed class PlatformApiClientTests
     }
 
     /// <summary>
+    /// Trace: broker environment credential replacement.
+    /// Verifies: the client preserves the API's safe operation error for a rejected credential update.
+    /// Expected: the administrator sees the server-provided remediation reason rather than an unhelpful generic request failure.
+    /// Why: credential values are write-only, so the operator needs a safe reason to correct a rejected update without exposing secret material.
+    /// </summary>
+    [Fact]
+    public async Task SaveBrokerEnvironmentCredentialsAsync_ShouldExposeOperationError_WhenApiRejectsUpdate()
+    {
+        var environmentId = Guid.NewGuid();
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            userName: "local-admin",
+            apiResponses: _ => PlatformWebTestData.CreateProblemResponse(HttpStatusCode.BadRequest, new
+            {
+                error = "This broker environment cannot authenticate."
+            }));
+        var client = context.Services.GetRequiredService<PlatformApiClient>();
+
+        var exception = await Assert.ThrowsAsync<PlatformApiException>(() =>
+            client.SaveBrokerEnvironmentCredentialsAsync(
+                environmentId,
+                new SaveBrokerEnvironmentCredentialsViewModel("replacement-key", "operator", "replacement-password"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("API request failed", exception.Title);
+        Assert.Equal("This broker environment cannot authenticate.", exception.Detail);
+        Assert.Equal("API request failed: This broker environment cannot authenticate.", exception.Message);
+        var request = Assert.Single(context.ApiHandler.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.EndsWith($"/api/platform/broker-environments/{environmentId}/credentials", request.RequestUri, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Trace: FR3, NF2, OR1, TR1.
     /// Verifies: the Web-to-API client rejects an empty protected status payload even when the HTTP status code is successful.
     /// Expected: the status call throws an invalid-operation error that identifies the empty response body.

@@ -29,6 +29,65 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
         return content ?? throw new InvalidOperationException("Platform status response was empty.");
     }
 
+    public async Task<IReadOnlyList<BrokerEnvironmentViewModel>> GetBrokerEnvironmentsAsync(CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Get, "/api/platform/broker-environments", [PlatformAuthenticationDefaults.Scopes.Viewer], cancellationToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<IReadOnlyList<BrokerEnvironmentViewModel>>(JsonOptions, cancellationToken) ?? [];
+    }
+
+    public async Task<BrokerEnvironmentStatusViewModel> GetBrokerEnvironmentStatusAsync(CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Get, "/api/platform/broker-environments/status", [PlatformAuthenticationDefaults.Scopes.Viewer], cancellationToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<BrokerEnvironmentStatusViewModel>(JsonOptions, cancellationToken) ?? throw new InvalidOperationException("Broker environment status response was empty.");
+    }
+
+    public async Task<BrokerEnvironmentStatusViewModel> SelectBrokerEnvironmentAsync(Guid id, long expectedRevision, bool acknowledged, CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Post, "/api/platform/broker-environments/selection", [PlatformAuthenticationDefaults.Scopes.Operator], cancellationToken);
+        request.Content = JsonContent.Create(new { BrokerEnvironmentId = id, ExpectedRevision = expectedRevision, Acknowledged = acknowledged }, options: JsonOptions);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<BrokerEnvironmentStatusViewModel>(JsonOptions, cancellationToken) ?? throw new InvalidOperationException("Broker environment selection response was empty.");
+    }
+
+    public async Task<BrokerEnvironmentViewModel> CreateBrokerEnvironmentAsync(CreateBrokerEnvironmentViewModel model, CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Post, "/api/platform/broker-environments", [PlatformAuthenticationDefaults.Scopes.Administrator], cancellationToken);
+        request.Content = JsonContent.Create(model, options: JsonOptions);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<BrokerEnvironmentViewModel>(JsonOptions, cancellationToken) ?? throw new InvalidOperationException("Created broker environment response was empty.");
+    }
+
+    public async Task<BrokerEnvironmentViewModel> SaveBrokerEnvironmentCredentialsAsync(Guid id, SaveBrokerEnvironmentCredentialsViewModel model, CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Post, $"/api/platform/broker-environments/{id}/credentials", [PlatformAuthenticationDefaults.Scopes.Administrator], cancellationToken);
+        request.Content = JsonContent.Create(model, options: JsonOptions);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<BrokerEnvironmentViewModel>(JsonOptions, cancellationToken) ?? throw new InvalidOperationException("Updated broker environment credentials response was empty.");
+    }
+
+    public async Task<BrokerEnvironmentRetirementPreviewViewModel> PreviewBrokerEnvironmentRetirementAsync(Guid id, CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Post, $"/api/platform/broker-environments/{id}/retirement-preview", [PlatformAuthenticationDefaults.Scopes.Administrator], cancellationToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<BrokerEnvironmentRetirementPreviewViewModel>(JsonOptions, cancellationToken) ?? throw new InvalidOperationException("Retirement preview response was empty.");
+    }
+
+    public async Task RetireBrokerEnvironmentAsync(Guid id, BrokerEnvironmentRetirementRequestViewModel requestModel, CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Post, $"/api/platform/broker-environments/{id}/retire", [PlatformAuthenticationDefaults.Scopes.Administrator], cancellationToken);
+        request.Content = JsonContent.Create(requestModel, options: JsonOptions);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
+    }
+
     public async Task<PlatformConfigurationViewModel> GetConfigurationAsync(CancellationToken cancellationToken)
     {
         using var request = await CreateAuthorizedRequestAsync(
@@ -206,8 +265,12 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
             {
                 if (document.RootElement.TryGetProperty("title", out var titleProperty)) title = titleProperty.GetString() ?? title;
                 if (document.RootElement.TryGetProperty("detail", out var detailProperty)) detail = detailProperty.GetString() ?? string.Empty;
-                if (document.RootElement.TryGetProperty("type", out var typeProperty)) type = typeProperty.GetString() ?? string.Empty;
-                if (document.RootElement.TryGetProperty("failureCategory", out var categoryProperty)) failureCategory = categoryProperty.GetString() ?? string.Empty;
+            if (document.RootElement.TryGetProperty("error", out var errorProperty))
+            {
+                detail = errorProperty.GetString() ?? detail;
+            }
+            if (document.RootElement.TryGetProperty("type", out var typeProperty)) type = typeProperty.GetString() ?? string.Empty;
+            if (document.RootElement.TryGetProperty("failureCategory", out var categoryProperty)) failureCategory = categoryProperty.GetString() ?? string.Empty;
             }
         }
         catch (JsonException) { }
@@ -218,6 +281,29 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
 
     private sealed record IgLoginHistoryResponse(IReadOnlyList<IgLoginHistorySnapshotViewModel> RetainedSnapshots);
 }
+
+internal sealed record BrokerEnvironmentViewModel(Guid Id, string Name, string Provider, string Kind, string Lifecycle, string Availability, string? AvailabilityReason, string EndpointProfile, bool CanAuthenticate, bool HasCredentials, string? ConcurrencyToken);
+internal sealed record BrokerEnvironmentStatusViewModel(string PlatformEnvironment, BrokerEnvironmentViewModel? Applied, BrokerEnvironmentViewModel? Selected, bool RestartRequired, long Revision);
+internal sealed class CreateBrokerEnvironmentViewModel
+{
+    public CreateBrokerEnvironmentViewModel(string name, string displayName, string provider, string kind, string endpointProfile)
+    {
+        Name = name;
+        DisplayName = displayName;
+        Provider = provider;
+        Kind = kind;
+        EndpointProfile = endpointProfile;
+    }
+
+    public string Name { get; set; }
+    public string DisplayName { get; set; }
+    public string Provider { get; set; }
+    public string Kind { get; set; }
+    public string EndpointProfile { get; set; }
+}
+internal sealed record SaveBrokerEnvironmentCredentialsViewModel(string? ApiKey, string? Identifier, string? Password);
+internal sealed record BrokerEnvironmentRetirementPreviewViewModel(Guid BrokerEnvironmentId, string Name, string NormalizedName, string ConcurrencyToken, string ConfirmationToken, DateTimeOffset ExpiresAtUtc, IReadOnlyDictionary<string, int> PurgeCounts, IReadOnlyDictionary<string, int> RetainedCounts);
+internal sealed record BrokerEnvironmentRetirementRequestViewModel(string ConfirmationToken, string ExpectedConcurrencyToken, string TypedName);
 
 internal sealed record AccountPreferencesViewModel
 {

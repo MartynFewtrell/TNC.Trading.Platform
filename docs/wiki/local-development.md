@@ -22,6 +22,19 @@ AppHost starts:
 
 This mode is required because Keycloak is part of the local authentication stack and the in-memory SQL option is no longer a supported application runtime.
 
+The local platform environment is always `Desktop`; AppHost injects
+`Platform__Environment=Desktop` into both API and Web. This value is immutable
+for each process and is separate from the selected named broker catalog record.
+Broker selection is persisted in SQL and takes effect after restart, so
+restarting only the affected application processes is required after a
+selection request.
+
+The same container contract is portable beyond AppHost: provide a container
+image, an allow-listed `Platform__Environment`, an external SQL connection,
+secret references, and the standard health endpoints. Azure Container Apps is
+the preferred first cloud host, but no application behavior depends on its
+runtime APIs; Kubernetes can provide the same inputs.
+
 The distributed auth test suites use the real Aspire-managed AppHost and Keycloak runtime. There is no supported synthetic AppHost runtime path for local application startup or AppHost-backed distributed validation, although some lower-level unit tests still use dedicated test helpers that do not go through AppHost.
 
 Automated auth tests deliberately use a different lifecycle from normal local development. They set `AppHost:UsePersistentKeycloakState=false`, use a volume-free session-scoped Keycloak container, and import the checked-in realm into clean state. This prevents stale realms, users, sessions, and client mutations from crossing test sessions. It does not remove or change the persistent local-development mode described below.
@@ -59,6 +72,12 @@ does not start the API, invoke startup reset behavior, or modify the persistent
 	reconciliation. The initial reconciliation is blocking; the API-owned
 	supervisor then continues once per second after hosted startup. A transient
 	scheduled failure is logged and retried on the next tick.
+* Desktop is the documented local migration mode. AppHost supplies
+	`Platform__Environment=Desktop` and the SQL reference supplies
+	`ConnectionStrings__platformdb`; the initializer applies local migrations
+	before bootstrap configuration. Test and Live are deployment modes: build and
+	run the migration bundle once with an explicit deployment SQL connection
+	before starting replicas, rather than allowing each replica to migrate.
 * Reconciliation uses a SQL Server session-owned application lock so multiple
 	API replicas sharing `platformdb` cannot run the write workflow concurrently.
 	The lock is released when the SQL session closes; the integration suite proves
@@ -90,6 +109,27 @@ From the repository root:
 ```powershell
 dotnet build
 ```
+
+To build a deployment migration artifact from the repository root:
+
+```powershell
+pwsh infra/migrations/build-migration-bundle.ps1 -Configuration Release
+```
+
+For Test or Live, the deployment runner must provide the external SQL
+connection; no credential or connection fallback is supplied by the script:
+
+```powershell
+pwsh infra/migrations/run-migration-bundle.ps1 `
+  -PlatformEnvironment Test `
+  -ConnectionString $env:DEPLOYMENT_SQL_CONNECTION
+```
+
+Use one isolated database per `Platform__Environment`. The application
+container contract is otherwise unchanged across Azure Container Apps and
+other container hosts: provide the image, fixed platform environment, external
+SQL connection, secret references, health endpoints, and ordinary
+configuration.
 
 ## Run
 
@@ -336,10 +376,16 @@ cross-process idempotency is not provided by the current local runtime.
 - do not delete the SQL volume when preserving existing protected credentials is required
 - if the key table or key material was intentionally lost, replace the IG credentials through the write-only configuration flow so new ciphertext is created
 
+### Keycloak admin console returns HTTP 431
+
+- restart AppHost so Keycloak is available at its stable `https://localhost:8080` endpoint
+- clear browser site data for `localhost` to remove cookies issued while Keycloak used dynamic local ports
+- retry the AppHost **Keycloak Admin Console** link
+
 ### Keycloak admin console shows a third-party iframe timeout
 
 - open Keycloak through the direct local endpoint instead of an older proxied dashboard URL
-- use the AppHost Keycloak link after restarting AppHost, or browse to `http://localhost:8080/admin/master/console/`
+- use the AppHost Keycloak link after restarting AppHost, or browse to `https://localhost:8080/admin/master/console/`
 - if the problem persists after a branch change, reset the persisted local `keycloak` resource and retry
 
 ### AppHost-backed auth tests fail to find the Web listener

@@ -8,11 +8,26 @@ using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 
 namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 
-internal sealed class EfPlatformIgLoginSnapshotStore(PlatformDbContext dbContext) : IPlatformIgLoginSnapshotStore, IGetIgLoginHistoryReader
+internal sealed class EfPlatformIgLoginSnapshotStore(
+    PlatformDbContext dbContext,
+    IAppliedBrokerEnvironmentContextResolver appliedBrokerEnvironmentContextResolver) : IPlatformIgLoginSnapshotStore, IGetIgLoginHistoryReader
 {
     public async Task CaptureSuccessfulSnapshotAsync(IgLoginSnapshot latestSnapshot, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(latestSnapshot);
+
+        var appliedEnvironment = await appliedBrokerEnvironmentContextResolver
+            .ResolveAppliedAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (appliedEnvironment is null
+            || !string.Equals(
+                appliedEnvironment.Kind,
+                latestSnapshot.BrokerEnvironment.ToString(),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "The applied broker environment is unavailable or does not match the IG login snapshot environment.");
+        }
 
         var brokerEnvironment = latestSnapshot.BrokerEnvironment.ToString();
         var existingLatestSnapshots = await dbContext.IgLoginSnapshots
@@ -25,7 +40,7 @@ internal sealed class EfPlatformIgLoginSnapshotStore(PlatformDbContext dbContext
             dbContext.IgLoginSnapshots.RemoveRange(existingLatestSnapshots);
         }
 
-        dbContext.IgLoginSnapshots.Add(Map(latestSnapshot));
+        dbContext.IgLoginSnapshots.Add(Map(latestSnapshot, appliedEnvironment.BrokerEnvironmentId));
 
         var hasRetainedDailySnapshot = await dbContext.IgLoginSnapshots
             .AnyAsync(
@@ -41,7 +56,7 @@ internal sealed class EfPlatformIgLoginSnapshotStore(PlatformDbContext dbContext
             {
                 Id = Guid.NewGuid(),
                 SnapshotKind = IgLoginSnapshotKind.RetainedDailyFirstSuccessful
-            }));
+            }, appliedEnvironment.BrokerEnvironmentId));
         }
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -77,11 +92,12 @@ internal sealed class EfPlatformIgLoginSnapshotStore(PlatformDbContext dbContext
         CancellationToken cancellationToken) =>
         GetRetainedDailySnapshotsAsync(brokerEnvironment, cancellationToken);
 
-    private static IgLoginSnapshotEntity Map(IgLoginSnapshot snapshot)
+    private static IgLoginSnapshotEntity Map(IgLoginSnapshot snapshot, Guid brokerEnvironmentId)
     {
         return new IgLoginSnapshotEntity
         {
             IgLoginSnapshotId = snapshot.Id,
+            BrokerEnvironmentId = brokerEnvironmentId,
             BrokerEnvironment = snapshot.BrokerEnvironment.ToString(),
             CapturedAtUtc = snapshot.CapturedAtUtc,
             TradingDay = snapshot.TradingDay,

@@ -1,4 +1,4 @@
-﻿# API reference
+# API reference
 
 This document describes the current HTTP surface exposed by the platform API.
 
@@ -20,8 +20,15 @@ The Blazor UI talks to the API over service discovery using the internal `https+
 | `GET` | `/api/platform/ig-login/history` | Retained daily first-successful non-secret login payloads within the 90-day retention window for viewer-capable operators. |
 | `GET` | `/api/platform/account-details?cursor={opaque}` | Read the newest or adjacent historical saved account retrieval for Viewer-capable operators. |
 | `POST` | `/api/platform/account-details/refresh` | Request a fresh retrieval from the configured IG test account for Operator-capable users. |
-| `GET` | `/api/platform/configuration` | Current redacted configuration snapshot for operator-capable users. |
-| `PUT` | `/api/platform/configuration` | Update operator-managed configuration for operator-capable users. |
+| `GET` | `/api/platform/broker-environments` | List catalog records for viewer-capable users. |
+| `GET` | `/api/platform/broker-environments/status` | Return selected/applied broker IDs and restart state. |
+| `POST` | `/api/platform/broker-environments` | Create a named broker catalog record (Administrator). |
+| `POST` | `/api/platform/broker-environments/{id}/credentials` | Replace write-only credentials (Administrator). |
+| `POST` | `/api/platform/broker-environments/selection` | Request restart-applied broker selection (Operator). |
+| `POST` | `/api/platform/broker-environments/{id}/retirement-preview` | Create a server-bound retirement preview (Administrator). |
+| `POST` | `/api/platform/broker-environments/{id}/retire` | Retire and purge a catalog record (Administrator). |
+| `GET` | `/api/platform/configuration` | Current redacted schedule/profile configuration for operator-capable users. |
+| `PUT` | `/api/platform/configuration` | Update schedule, retry, and notification configuration; platform identity is not mutable here. |
 | `POST` | `/api/platform/auth/manual-retry` | Trigger a manual retry cycle when allowed for operator-capable users. |
 | `POST` | `/api/platform/auth/audit` | Persist operator authentication audit events for authenticated callers. |
 | `GET` | `/api/platform/events` | Return redacted operational events for viewer-capable operators. |
@@ -35,6 +42,15 @@ The Blazor UI talks to the API over service discovery using the internal `https+
 - Secret values are never returned by configuration or status endpoints.
 - Validation failures on configuration updates return a validation-problem payload with the existing field keys and `400` status.
 - Manual retry conflicts return `409 Conflict` when the current runtime state does not allow the action.
+- Broker selection requires operator scope, acknowledgement, and the expected
+  revision; stale revisions, unavailable/retired records, or a missing
+  acknowledgement return a conflict or validation problem without changing
+  the applied runtime.
+- Retirement requires administrator scope plus an unexpired server-bound
+  confirmation token, matching concurrency token, and exact normalized name.
+  The selected or applied record cannot be retired.
+- Catalog and credential responses expose presence/metadata only. Raw secrets
+  are never returned, logged, or included in audit payloads.
 
 ## Account Details
 
@@ -218,10 +234,14 @@ Returns the current platform runtime state together with the current IG login pr
 
 | Field | Meaning |
 | --- | --- |
-| `platformEnvironment` | Current platform environment, `Test` or `Live`. |
-| `brokerEnvironment` | Current broker environment, `Demo` or `Live`. |
-| `liveOptionVisible` | Indicates the live option should still be shown in the UI. |
-| `liveOptionAvailable` | Indicates whether the live option may actually be used. |
+| `platformEnvironment` | Immutable deployment context: `Desktop`, `Development`, `Test`, or `Live`. |
+| `brokerEnvironment` | Compatibility presentation of the applied broker catalog kind/name. |
+| `appliedBrokerEnvironment` | The catalog record currently used by this process. |
+| `selectedBrokerEnvironment` | The requested catalog record, which may differ until restart. |
+| `restartRequired` | Indicates that selected broker configuration is not yet applied. |
+| `selectionRevision` | Optimistic-concurrency revision for selection requests. |
+| `liveOptionVisible` | Compatibility field indicating whether a live-kind option can be displayed. |
+| `liveOptionAvailable` | Compatibility field indicating whether the provider capability allows use. |
 | `tradingScheduleState.isActive` | Indicates whether runtime behavior is currently inside the configured schedule. |
 | `authState.sessionStatus` | Current auth-related runtime state. |
 | `retryState.phase` | Current retry phase, such as `None`, `InitialAutomatic`, or `Periodic`. |
@@ -330,128 +350,41 @@ Requires a bearer token with the `viewer` scope or `Viewer`, `Operator`, or `Adm
 - Entries older than 90 days are removed by the shared retention processor.
 - The current-state latest snapshot is served by `GET /api/platform/status`, not this endpoint.
 
-## GET /api/platform/configuration
+## Broker environment and configuration routes
 
-Returns the current redacted configuration snapshot.
+`GET /api/platform/broker-environments` is viewer-readable and returns catalog
+metadata without credentials. `GET /api/platform/broker-environments/status`
+returns the immutable platform environment, selected and applied broker records,
+revision, and `restartRequired`.
 
-### Response shape
+`POST /api/platform/broker-environments/selection` is Operator-authorized. It
+accepts `brokerEnvironmentId`, `expectedRevision`, and `acknowledged`. The
+server validates lifecycle and provider capability, persists the selected ID,
+and reports that the change applies only after restart. A running process never
+changes its applied broker account or endpoint.
 
-```json
-{
-  "platformEnvironment": "Test",
-  "brokerEnvironment": "Demo",
-  "tradingSchedule": {
-    "startOfDay": "08:00:00",
-    "endOfDay": "16:30:00",
-    "tradingDays": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
-    "weekendBehavior": "ExcludeWeekends",
-    "bankHolidayExclusions": [],
-    "timeZone": "UTC"
-  },
-  "retryPolicy": {
-    "initialDelaySeconds": 1,
-    "maxAutomaticRetries": 5,
-    "multiplier": 2,
-    "maxDelaySeconds": 60,
-    "periodicDelayMinutes": 5
-  },
-  "notificationSettings": {
-    "provider": "RecordedOnly",
-    "emailTo": "operator@local.test"
-  },
-  "credentials": {
-    "hasApiKey": false,
-    "hasIdentifier": false,
-    "hasPassword": false
-  },
-  "restartRequired": false,
-  "updatedAtUtc": "2026-04-01T10:00:00+00:00"
-}
-```
+`POST /api/platform/broker-environments` and
+`POST /api/platform/broker-environments/{id}/credentials` are Administrator-
+authorized. Creation requires a uniquely normalized name and copies the active
+server-owned defaults snapshot. Credential replacement is write-only.
 
-### Secret handling
+Retirement is a two-step Administrator flow:
+`POST /api/platform/broker-environments/{id}/retirement-preview` returns purge
+and retained counts plus an expiring confirmation token;
+`POST /api/platform/broker-environments/{id}/retire` requires that token, the
+expected concurrency token, and the exact typed name. Selected/applied records,
+stale tokens, name mismatches, unavailable records, and concurrency conflicts
+are rejected without partial retirement. Mutable broker state and credentials
+are purged; audit, event, notification, account-retrieval, and desired-state
+history is retained under ordinary retention.
 
-The `credentials` object reports presence only. It never contains raw secret values.
+`GET /api/platform/configuration` remains the redacted schedule, retry, and
+notification profile surface. `PUT /api/platform/configuration` cannot mutate
+platform identity or broker selection. It validates profile invariants before
+persistence and returns presence flags only for credentials.
 
-## PUT /api/platform/configuration
-
-Updates operator-managed configuration.
-
-### Request shape
-
-```json
-{
-  "platformEnvironment": "Live",
-  "brokerEnvironment": "Demo",
-  "tradingSchedule": {
-    "startOfDay": "08:00:00",
-    "endOfDay": "16:30:00",
-    "tradingDays": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
-    "weekendBehavior": "ExcludeWeekends",
-    "bankHolidayExclusions": [],
-    "timeZone": "UTC"
-  },
-  "retryPolicy": {
-    "initialDelaySeconds": 1,
-    "maxAutomaticRetries": 5,
-    "multiplier": 2,
-    "maxDelaySeconds": 60,
-    "periodicDelayMinutes": 5
-  },
-  "notificationSettings": {
-    "provider": "RecordedOnly",
-    "emailTo": "owner@example.com"
-  },
-  "credentials": {
-    "apiKey": "new-api-key",
-    "identifier": "new-identifier",
-    "password": "new-password"
-  },
-  "changedBy": "operator"
-}
-```
-
-### Behavior notes
-
-- Empty or omitted credential values do not reveal the existing stored values.
-- Changing startup-fixed values can set `restartRequired` in the response.
-- The response body is the same redacted configuration model returned by `GET /api/platform/configuration`.
-- The API validates transport shape and enum syntax, then the Application use case validates business invariants before any persistence, credential update, audit write, or reconciliation occurs. This also protects non-HTTP callers.
-- After successful Application validation, the feature handler commits configuration, supplied credential replacements, and the audit through one inward-owned commit port, then dispatches reconciliation. A commit failure or cancellation is not mapped to a successful response.
-
-### Validation rules
-
-The current validator enforces these main rules:
-
-- platform environment must be `Test` or `Live`
-- broker environment must be `Demo` or `Live`
-- trading schedule end time must be later than start time
-- at least one trading day is required
-- weekend behavior must be valid
-- time zone must identify a known runtime time zone
-- initial retry delay must be at least `1`
-- max automatic retries must be at least `1`
-- multiplier must be at least `2`
-- max delay must be greater than or equal to initial delay
-- periodic delay minutes must be at least `1`
-- notification provider must be `RecordedOnly`, `Smtp`, or `AzureCommunicationServicesEmail`
-- `changedBy` is required
-- `Test` platform plus `Live` broker is rejected
-
-### Validation error example
-
-```json
-{
-  "errors": {
-    "BrokerEnvironment": [
-      "IG live is visible but unavailable while the platform environment is Test."
-    ]
-  }
-}
-```
-
-The same Problem Details field names are used when the Application use case rejects a mapped request. The API translates that typed outcome at the HTTP boundary; it does not own the business rules.
-
+The platform environment is one of `Desktop`, `Development`, `Test`, or `Live`
+and is deployment-owned. Missing or unknown values fail startup closed.
 ## POST /api/platform/auth/manual-retry
 
 Triggers manual retry when the current runtime state allows it.

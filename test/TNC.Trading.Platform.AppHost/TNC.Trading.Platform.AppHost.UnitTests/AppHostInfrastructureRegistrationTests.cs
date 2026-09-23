@@ -36,18 +36,17 @@ public sealed class AppHostInfrastructureRegistrationTests
             infrastructure.Keycloak.Resource.Annotations,
             annotation => annotation is ResourceUrlsCallbackAnnotation);
 
-        var mailpitEndpointNames = infrastructure.Mailpit.Resource.Annotations
+        var mailpitEndpoints = infrastructure.Mailpit.Resource.Annotations
             .OfType<EndpointAnnotation>()
-            .Select(annotation => annotation.Name)
-            .ToArray();
-        var keycloakEndpointNames = infrastructure.Keycloak.Resource.Annotations
+            .ToDictionary(annotation => annotation.Name, StringComparer.Ordinal);
+        var keycloakEndpoints = infrastructure.Keycloak.Resource.Annotations
             .OfType<EndpointAnnotation>()
-            .Select(annotation => annotation.Name)
-            .ToArray();
+            .ToDictionary(annotation => annotation.Name, StringComparer.Ordinal);
 
-        Assert.Contains("http", mailpitEndpointNames);
-        Assert.Contains("smtp", mailpitEndpointNames);
-        Assert.Contains("http", keycloakEndpointNames);
+        Assert.Contains("http", mailpitEndpoints.Keys);
+        Assert.Contains("smtp", mailpitEndpoints.Keys);
+        Assert.Contains("http", keycloakEndpoints.Keys);
+        Assert.Equal(8080, keycloakEndpoints["http"].Port);
     }
 
     /// <summary>

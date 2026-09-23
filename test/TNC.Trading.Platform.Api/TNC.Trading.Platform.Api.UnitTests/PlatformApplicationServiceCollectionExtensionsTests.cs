@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using TNC.Trading.Platform.Api.Features.Platform;
 using TNC.Trading.Platform.Api.Hosting;
 using TNC.Trading.Platform.Application.Features.AccountPreferences;
+using TNC.Trading.Platform.Application.Features.BrokerEnvironments;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Services;
 
@@ -13,12 +14,12 @@ public class PlatformApplicationServiceCollectionExtensionsTests
 {
     /// <summary>
     /// Trace: trailing-stops remediation Phase 1, Steps 1.1-1.2.
-    /// Verifies: the API composition root can construct every account-preferences route and resolve its scoped application services.
-    /// Expected: endpoint metadata is created without inferred request-body failures and all four route dependencies resolve from one scope.
-    /// Why: missing explicit registrations previously prevented API startup before account-preferences requests could be handled.
+    /// Verifies: the API composition root can construct mapped account-preferences and broker-environment routes and resolve their scoped services.
+    /// Expected: endpoint metadata is created without inferred request-body failures and all required dependencies resolve from one scope.
+    /// Why: missing explicit registrations previously prevented API startup before broker-environment requests could be handled.
     /// </summary>
     [Fact]
-    public async Task AddPlatformApplication_ShouldConstructAccountPreferencesRoutesAndResolveServices_WhenApplicationIsBuilt()
+    public async Task AddPlatformApplication_ShouldConstructMappedRoutesAndResolveServices_WhenApplicationIsBuilt()
     {
         var builder = WebApplication.CreateBuilder();
         builder.Services.AddPlatformApplication();
@@ -26,6 +27,7 @@ public class PlatformApplicationServiceCollectionExtensionsTests
         builder.Services.AddScoped<IAccountPreferencesGateway, TestAccountPreferencesGateway>();
         builder.Services.AddScoped<ITrailingStopsPreferenceObservationStore, TestTrailingStopsPreferenceObservationStore>();
         builder.Services.AddScoped<IPlatformEventStore, TestPlatformEventStore>();
+        builder.Services.AddScoped<IBrokerEnvironmentCatalogService, TestBrokerEnvironmentCatalogService>();
         builder.Services.AddSingleton(TimeProvider.System);
 
         await using var app = builder.Build();
@@ -74,5 +76,22 @@ public class PlatformApplicationServiceCollectionExtensionsTests
         public Task<IReadOnlyList<OperationalEventModel>> GetEventsAsync(string? category, string? environment, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task AddAsync(PlatformEventRecord record, CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class TestBrokerEnvironmentCatalogService : IBrokerEnvironmentCatalogService
+    {
+        public Task<IReadOnlyList<BrokerEnvironmentCatalogItem>> ListAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<BrokerEnvironmentOperationResult> CreateAsync(CreateBrokerEnvironmentCommand command, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<BrokerEnvironmentOperationResult> SaveCredentialsAsync(SaveBrokerEnvironmentCredentialsCommand command, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<BrokerEnvironmentOperationResult> SelectAsync(SelectBrokerEnvironmentCommand command, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<BrokerEnvironmentStatus> GetStatusAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<BrokerEnvironmentRetirementPreview?> PreviewRetirementAsync(Guid brokerEnvironmentId, string actor, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<BrokerEnvironmentRetirementResult> RetireAsync(RetireBrokerEnvironmentCommand command, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }

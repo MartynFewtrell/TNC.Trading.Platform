@@ -1,5 +1,7 @@
 ﻿using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Infrastructure.Configuration.SqlServer;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
+using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 
 namespace TNC.Trading.Platform.Infrastructure.UnitTests;
 
@@ -15,7 +17,10 @@ public class EfPlatformIgLoginSnapshotStoreTests
     public async Task CaptureSuccessfulSnapshotAsync_ShouldRetainFirstDailySnapshot_WhenMultipleSuccessesOccurOnSameTradingDay()
     {
         await using var dbContext = InfrastructureReflection.CreateDbContext();
-        var store = new EfPlatformIgLoginSnapshotStore(dbContext);
+        var brokerEnvironmentId = await CreateAppliedDemoEnvironmentAsync(dbContext);
+        var store = new EfPlatformIgLoginSnapshotStore(
+            dbContext,
+            new SqlAppliedBrokerEnvironmentContextResolver(dbContext));
 
         var firstCapture = CreateSnapshot(
             capturedAtUtc: new DateTimeOffset(2026, 5, 28, 8, 0, 0, TimeSpan.Zero),
@@ -36,6 +41,37 @@ public class EfPlatformIgLoginSnapshotStoreTests
         var retainedDailySnapshot = Assert.Single(retainedDailySnapshots);
         Assert.Equal(IgLoginSnapshotKind.RetainedDailyFirstSuccessful, retainedDailySnapshot.SnapshotKind);
         Assert.Equal("FIRST", retainedDailySnapshot.CurrentAccountId);
+        Assert.All(
+            dbContext.IgLoginSnapshots,
+            snapshot => Assert.Equal(brokerEnvironmentId, snapshot.BrokerEnvironmentId));
+    }
+
+    private static async Task<Guid> CreateAppliedDemoEnvironmentAsync(PlatformDbContext dbContext)
+    {
+        var brokerEnvironmentId = Guid.NewGuid();
+        dbContext.BrokerEnvironments.Add(new BrokerEnvironmentEntity
+        {
+            BrokerEnvironmentId = brokerEnvironmentId,
+            Name = "IG Demo",
+            NormalizedName = "IG DEMO",
+            Provider = "Ig",
+            Kind = "Demo",
+            Lifecycle = "Active",
+            Availability = "Available",
+            EndpointProfile = "IgDemo",
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow
+        });
+        dbContext.BrokerEnvironmentSelections.Add(new BrokerEnvironmentSelectionEntity
+        {
+            SelectionId = 1,
+            AppliedBrokerEnvironmentId = brokerEnvironmentId,
+            SelectedBrokerEnvironmentId = brokerEnvironmentId,
+            UpdatedAtUtc = DateTimeOffset.UtcNow
+        });
+        await dbContext.SaveChangesAsync();
+
+        return brokerEnvironmentId;
     }
 
     private static IgLoginSnapshot CreateSnapshot(DateTimeOffset capturedAtUtc, string currentAccountId)

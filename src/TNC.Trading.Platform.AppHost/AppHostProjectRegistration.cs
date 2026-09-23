@@ -11,12 +11,13 @@ internal static class AppHostProjectRegistration
         ArgumentNullException.ThrowIfNull(builder);
 
         var apiProject = builder.AddProject<Projects.TNC_Trading_Platform_Api>("api")
-            .WithExternalHttpEndpoints()
-            .WithUrlForEndpoint("https", _ => new()
+            .WithUrlForEndpoint("https", url =>
             {
-                Url = "/scalar/v1",
-                DisplayText = "Scalar UI"
-            });
+                url.Url = "/scalar/v1";
+                url.DisplayText = "Scalar UI";
+            })
+            .WithAnnotation(new ResourceUrlsCallbackAnnotation(context =>
+                context.Urls.RemoveAll(url => url.Endpoint?.EndpointName == "http")));
 
         apiProject = apiProject
             .WithReference(infrastructure.PlatformDatabase)
@@ -35,15 +36,18 @@ internal static class AppHostProjectRegistration
         ArgumentNullException.ThrowIfNull(apiProject);
         ArgumentNullException.ThrowIfNull(infrastructure);
 
-        return builder.AddProject<Projects.TNC_Trading_Platform_Web>("web")
+        var webProject = builder.AddProject<Projects.TNC_Trading_Platform_Web>("web")
             .WithReference(apiProject)
             .WithReference(infrastructure.PlatformDatabase)
             .WaitFor(apiProject)
-            .WithExternalHttpEndpoints()
-            .WithUrlForEndpoint("https", _ => new()
+            .WithUrlForEndpoint("https", url =>
             {
-                Url = "/",
-                DisplayText = "Operator UI"
-            });
+                url.Url = "/";
+                url.DisplayText = "Operator UI";
+            })
+            .WithAnnotation(new ResourceUrlsCallbackAnnotation(context =>
+                context.Urls.RemoveAll(url => url.Endpoint?.EndpointName == "http")));
+
+        return webProject;
     }
 }

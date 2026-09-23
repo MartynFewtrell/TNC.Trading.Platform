@@ -23,7 +23,9 @@ public class PlatformShellContextProviderTests
     [Fact]
     public async Task GetEnvironmentAsync_ShouldCacheEnvironment_WhenStatusLoadsSuccessfully()
     {
-        var handler = new SequencedHttpMessageHandler(_ => CreateStatusResponse(HttpStatusCode.OK, "Local", "Demo", liveOptionAvailable: true));
+        var handler = new SequencedHttpMessageHandler(
+            _ => CreateStatusResponse(HttpStatusCode.OK, "Local", "Demo", liveOptionAvailable: true),
+            _ => CreateBrokerStatusResponse("Local"));
         var provider = CreateProvider(handler);
 
         var firstResult = await provider.GetEnvironmentAsync();
@@ -34,7 +36,7 @@ public class PlatformShellContextProviderTests
         Assert.Equal("Demo", firstResult.BrokerEnvironment);
         Assert.True(firstResult.LiveOptionAvailable);
         Assert.Same(firstResult, secondResult);
-        Assert.Equal(1, handler.CallCount);
+        Assert.Equal(2, handler.CallCount);
     }
 
     /// <summary>
@@ -48,7 +50,8 @@ public class PlatformShellContextProviderTests
     {
         var handler = new SequencedHttpMessageHandler(
             _ => throw new HttpRequestException("The API is not ready."),
-            _ => CreateStatusResponse(HttpStatusCode.OK, "Local", "Live", liveOptionAvailable: true));
+            _ => CreateStatusResponse(HttpStatusCode.OK, "Local", "Live", liveOptionAvailable: true),
+            _ => CreateBrokerStatusResponse("Local"));
         var provider = CreateProvider(handler);
 
         var firstResult = await provider.GetEnvironmentAsync();
@@ -59,7 +62,7 @@ public class PlatformShellContextProviderTests
         Assert.Equal("Local", secondResult.PlatformEnvironment);
         Assert.Equal("Live", secondResult.BrokerEnvironment);
         Assert.True(secondResult.LiveOptionAvailable);
-        Assert.Equal(2, handler.CallCount);
+        Assert.Equal(3, handler.CallCount);
     }
 
     private static PlatformShellContextProvider CreateProvider(SequencedHttpMessageHandler handler)
@@ -126,6 +129,17 @@ public class PlatformShellContextProviderTests
                 liveOptionAvailable: liveOptionAvailable))
         };
     }
+
+    private static HttpResponseMessage CreateBrokerStatusResponse(string platformEnvironment) =>
+        new(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new BrokerEnvironmentStatusViewModel(
+                platformEnvironment,
+                null,
+                null,
+                RestartRequired: false,
+                Revision: 1))
+        };
 
     private sealed class SequencedHttpMessageHandler(params Func<HttpRequestMessage, HttpResponseMessage>[] responses) : HttpMessageHandler
     {

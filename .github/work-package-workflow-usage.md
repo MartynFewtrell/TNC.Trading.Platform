@@ -40,16 +40,13 @@ The workflow is implemented with these prompts:
 6. [execute-delivery.prompt.md](./prompts/execute-delivery.prompt.md)
 7. [review-work-package-delivery.prompt.md](./prompts/review-work-package-delivery.prompt.md)
 
-Those prompts target or rely on these top-level agents:
+These prompts are the maintained workflow assets for bootstrap, research, definition, delivery, and review. Use the corresponding prompt directly for each stage; no separate top-level agent file is required:
 
-1. [work-package-bootstrapper.agent.md](./agents/work-package-bootstrapper.agent.md)
-2. [work-package-researcher.agent.md](./agents/work-package-researcher.agent.md)
-3. [work-package-reviewer.agent.md](./agents/work-package-reviewer.agent.md)
-
-The workflow can also rely on these existing helpers where appropriate:
-
-1. `Explore` for focused read-only discovery
-2. [validation-command-resolver.agent.md](./agents/subagents/validation-command-resolver.agent.md) when delivery-review validation commands need help being inferred
+1. [start-work-package.prompt.md](./prompts/start-work-package.prompt.md) for bootstrap
+2. [research-work-package.prompt.md](./prompts/research-work-package.prompt.md) for repository research
+3. [generate-requirements.prompt.md](./prompts/generate-requirements.prompt.md), [generate-technical-spec.prompt.md](./prompts/generate-technical-spec.prompt.md), and [generate-delivery-plan.prompt.md](./prompts/generate-delivery-plan.prompt.md) for package definition
+4. [execute-delivery.prompt.md](./prompts/execute-delivery.prompt.md) for implementation
+5. [review-work-package-delivery.prompt.md](./prompts/review-work-package-delivery.prompt.md) for delivery review and validation
 
 ## Recommended Operator Flow
 

@@ -6,7 +6,9 @@ using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 
 namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 
-internal sealed class EfPlatformRetryCycleStore(PlatformDbContext dbContext) : IPlatformRetryCycleStore
+internal sealed class EfPlatformRetryCycleStore(
+    PlatformDbContext dbContext,
+    IAppliedBrokerEnvironmentContextResolver appliedBrokerEnvironmentContextResolver) : IPlatformRetryCycleStore
 {
     public async Task UpsertAsync(PlatformRetryCycle cycle, CancellationToken cancellationToken)
     {
@@ -19,11 +21,22 @@ internal sealed class EfPlatformRetryCycleStore(PlatformDbContext dbContext) : I
 
         if (entity is null)
         {
+            var brokerEnvironment = await appliedBrokerEnvironmentContextResolver
+                .ResolveAppliedAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (brokerEnvironment is null
+                || !string.Equals(brokerEnvironment.Kind, cycle.BrokerEnvironment, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"The applied broker environment must exist and match retry cycle environment '{cycle.BrokerEnvironment}'.");
+            }
+
             entity = new AuthRetryCycleEntity
             {
                 RetryCycleId = cycle.RetryCycleId,
                 StartedAtUtc = cycle.StartedAtUtc,
-                CycleType = cycle.CycleType
+                CycleType = cycle.CycleType,
+                BrokerEnvironmentId = brokerEnvironment.BrokerEnvironmentId
             };
 
             dbContext.AuthRetryCycles.Add(entity);

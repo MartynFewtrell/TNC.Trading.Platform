@@ -10,9 +10,17 @@ namespace TNC.Trading.Platform.Infrastructure.Infrastructure.Persistence.EntityF
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "IX_TrailingStopsPreferenceObservations_BrokerEnvironment_ObservedAtUtc_TrailingStopsPreferenceObservationId",
-                table: "TrailingStopsPreferenceObservations");
+            migrationBuilder.Sql("""
+                IF EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE object_id = OBJECT_ID(N'[dbo].[TrailingStopsPreferenceObservations]')
+                        AND [name] = N'IX_TrailingStopsPreferenceObservations_BrokerEnvironment_ObservedAtUtc_TrailingStopsPreferenceObservationId')
+                BEGIN
+                    DROP INDEX [IX_TrailingStopsPreferenceObservations_BrokerEnvironment_ObservedAtUtc_TrailingStopsPreferenceObservationId]
+                        ON [dbo].[TrailingStopsPreferenceObservations];
+                END;
+                """);
         }
 
         /// <inheritdoc />

@@ -36,7 +36,7 @@ else
                         @if (Presenter.State.DesiredRevision is not null) { <button class="platform-primary-action" type="button" @onclick="CheckStatusAsync" disabled="@(Presenter.IsOperating || Presenter.IsSaving)">@(Presenter.IsOperating ? "Checking..." : "Check status")</button> }
                     </div>
                 </section>
-                @if (Presenter.State.HasConfirmedValue)
+                @if (Presenter.CurrentError is null)
                 {
                     <section class="panel">
                         <h2>Trailing stops configuration</h2>

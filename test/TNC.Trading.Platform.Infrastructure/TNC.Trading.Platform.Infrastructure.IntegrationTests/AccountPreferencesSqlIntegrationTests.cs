@@ -21,10 +21,13 @@ public sealed class AccountPreferencesSqlIntegrationTests(SqlServerDatabaseFixtu
         await context.Database.MigrateAsync(fixture.CancellationToken);
         var tables = await context.Database.SqlQueryRaw<string>("SELECT TABLE_NAME AS [Value] FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'TrailingStopsPreferenceObservations'").ToListAsync();
         var indexes = await context.Database.SqlQueryRaw<string>("SELECT name AS [Value] FROM sys.indexes WHERE object_id = OBJECT_ID(N'TrailingStopsPreferenceObservations')").ToListAsync(fixture.CancellationToken);
+        var operationIndexes = await context.Database.SqlQueryRaw<string>("SELECT name AS [Value] FROM sys.indexes WHERE object_id = OBJECT_ID(N'AccountPreferencesOperations')").ToListAsync(fixture.CancellationToken);
         var migrations = await context.Database.SqlQueryRaw<string>("SELECT MigrationId AS [Value] FROM __EFMigrationsHistory").ToListAsync(fixture.CancellationToken);
         Assert.Contains("TrailingStopsPreferenceObservations", tables);
         Assert.Contains("IX_TrailingStopsPreferenceObservations_BrokerEnvironment_PlatformEnvironment_ObservedAtUtc_TrailingStopsPreferenceObservationId", indexes);
         Assert.DoesNotContain("IX_TrailingStopsPreferenceObservations_BrokerEnvironment_ObservedAtUtc_TrailingStopsPreferenceObservationId", indexes);
+        Assert.Contains("IX_AccountPreferencesOperations_PlatformEnvironment_BrokerEnvironmentId_IdempotencyKey", operationIndexes);
+        Assert.Contains("20260921154503_AddBrokerEnvironmentRetirement", migrations);
         Assert.Contains("20260830112227_SnapshotRepair", migrations);
         Assert.Contains("20260830160041_RemoveTrailingStopsBrokerEnvironmentIndex", migrations);
         Assert.DoesNotContain("20260830120000_AddTrailingStopsPreferenceObservations", migrations);
@@ -44,6 +47,38 @@ public sealed class AccountPreferencesSqlIntegrationTests(SqlServerDatabaseFixtu
         var after = await context.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM sys.tables WHERE name = 'TrailingStopsPreferenceObservations'").SingleAsync(fixture.CancellationToken);
         Assert.Equal(1, before);
         Assert.Equal(1, after);
+    }
+
+    /// <summary>
+    /// Verifies: a new trailing-stops operation is associated with the available catalog environment before it is saved.
+    /// Expected: the persisted operation has the seeded IG Demo catalog key, satisfying the foreign-key constraint.
+    /// Why: preference saves must not fail when the operation journal is written after the catalog foreign key is introduced.
+    /// </summary>
+    [Fact]
+    public async Task StartAsync_ShouldUseAvailableCatalogEnvironment_WhenSavingOperation()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        await context.Database.MigrateAsync(fixture.CancellationToken);
+        var expectedBrokerEnvironmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(context, fixture.CancellationToken);
+        var operation = new AccountPreferencesOperation(
+            Guid.NewGuid(),
+            "operation-key",
+            PlatformEnvironmentKind.Test,
+            BrokerEnvironmentKind.Demo,
+            "account-1",
+            1,
+            true,
+            "operator",
+            "correlation",
+            AccountPreferencesOperationPhase.Started,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+
+        await new EfAccountPreferencesOperationStore(context).StartAsync(operation, fixture.CancellationToken);
+
+        var persistedOperation = await context.AccountPreferencesOperations.SingleAsync(fixture.CancellationToken);
+        Assert.Equal(expectedBrokerEnvironmentId, persistedOperation.BrokerEnvironmentId);
     }
 
     /// <summary>Verifies observations remain readable after the writing SQL context is replaced.</summary>
@@ -118,16 +153,18 @@ public sealed class AccountPreferencesSqlIntegrationTests(SqlServerDatabaseFixtu
         await fixture.ResetDatabaseAsync();
         await using var context = fixture.CreateDbContext();
         await context.Database.MigrateAsync(fixture.CancellationToken);
+        var brokerEnvironmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(context, fixture.CancellationToken);
         var selected = CreateObservation(DateTimeOffset.UtcNow);
-        var other = CreateEntity(DateTimeOffset.UtcNow);
+        var other = CreateEntity(brokerEnvironmentId, DateTimeOffset.UtcNow);
         other.PlatformEnvironment = "Production";
         other.BrokerEnvironment = "Live";
+        other.BrokerEnvironmentId = brokerEnvironmentId;
         context.TrailingStopsPreferenceObservations.AddRange(
             new TrailingStopsPreferenceObservationEntity
             {
                 TrailingStopsPreferenceObservationId = selected.Id, TrailingStopsEnabled = selected.TrailingStopsEnabled,
                 ObservedAtUtc = selected.ObservedAtUtc, RecordedAtUtc = selected.RecordedAtUtc, PlatformEnvironment = "Test",
-                BrokerEnvironment = "Demo", ObservationKind = selected.ObservationKind, Source = selected.Source,
+            BrokerEnvironment = "Demo", BrokerEnvironmentId = brokerEnvironmentId, ObservationKind = selected.ObservationKind, Source = selected.Source,
                 Actor = selected.Actor, CorrelationId = selected.CorrelationId
             }, other);
         await context.SaveChangesAsync(fixture.CancellationToken);
@@ -144,11 +181,13 @@ public sealed class AccountPreferencesSqlIntegrationTests(SqlServerDatabaseFixtu
         await fixture.ResetDatabaseAsync();
         await using var context = fixture.CreateDbContext();
         await context.Database.MigrateAsync(fixture.CancellationToken);
+        var brokerEnvironmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(context, fixture.CancellationToken);
         var selected = CreateObservation(DateTimeOffset.UtcNow);
         await new EfTrailingStopsPreferenceObservationStore(context).AppendAsync(selected, fixture.CancellationToken);
-        var other = CreateEntity(DateTimeOffset.UtcNow);
+        var other = CreateEntity(brokerEnvironmentId, DateTimeOffset.UtcNow);
         other.PlatformEnvironment = "Production";
         other.BrokerEnvironment = "Live";
+        other.BrokerEnvironmentId = brokerEnvironmentId;
         context.TrailingStopsPreferenceObservations.Add(other);
         await context.SaveChangesAsync(fixture.CancellationToken);
         var store = new EfTrailingStopsPreferenceObservationStore(context);
@@ -165,8 +204,9 @@ public sealed class AccountPreferencesSqlIntegrationTests(SqlServerDatabaseFixtu
         await fixture.ResetDatabaseAsync();
         await using var context = fixture.CreateDbContext();
         await context.Database.MigrateAsync(fixture.CancellationToken);
+        var brokerEnvironmentId = await context.BrokerEnvironments.Where(item => item.Kind == "Demo").Select(item => item.BrokerEnvironmentId).SingleAsync(fixture.CancellationToken);
         context.TrailingStopsPreferenceObservations.AddRange(
-            CreateEntity(DateTimeOffset.UtcNow.AddDays(-91)), CreateEntity(DateTimeOffset.UtcNow));
+            CreateEntity(brokerEnvironmentId, DateTimeOffset.UtcNow.AddDays(-91)), CreateEntity(brokerEnvironmentId, DateTimeOffset.UtcNow));
         await context.SaveChangesAsync(fixture.CancellationToken);
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Retention:OperationalRecordsDays"] = "1" }).Build();
         var processor = new OperationalRecordRetentionProcessor(context, configuration, TimeProvider.System, NullLogger<OperationalRecordRetentionProcessor>.Instance);
@@ -196,6 +236,7 @@ public sealed class AccountPreferencesSqlIntegrationTests(SqlServerDatabaseFixtu
         await using (var writingContext = fixture.CreateDbContext())
         {
             await writingContext.Database.MigrateAsync(fixture.CancellationToken);
+            await SeedCurrentStateAsync(writingContext);
             var result = await new EfAccountPreferencesCurrentStateStore(writingContext).CommitDesiredStateAsync(change, fixture.CancellationToken);
             Assert.True(result.Committed);
             Assert.Equal(1, result.Revision);
@@ -217,6 +258,7 @@ public sealed class AccountPreferencesSqlIntegrationTests(SqlServerDatabaseFixtu
         await fixture.ResetDatabaseAsync();
         await using var context = fixture.CreateDbContext();
         await context.Database.MigrateAsync(fixture.CancellationToken);
+        await SeedCurrentStateAsync(context);
         var store = new EfAccountPreferencesCurrentStateStore(context);
         await store.CommitDesiredStateAsync(CreateChange(true, "first", "correlation-1"), fixture.CancellationToken);
 
@@ -235,6 +277,7 @@ public sealed class AccountPreferencesSqlIntegrationTests(SqlServerDatabaseFixtu
         await fixture.ResetDatabaseAsync();
         await using var context = fixture.CreateDbContext();
         await context.Database.MigrateAsync(fixture.CancellationToken);
+        await SeedCurrentStateAsync(context);
         var store = new EfAccountPreferencesCurrentStateStore(context);
         await store.CommitDesiredStateAsync(CreateChange(true, "operator", "due"), fixture.CancellationToken);
         var authenticatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
@@ -278,6 +321,7 @@ public sealed class AccountPreferencesSqlIntegrationTests(SqlServerDatabaseFixtu
         await fixture.ResetDatabaseAsync();
         await using var context = fixture.CreateDbContext();
         await context.Database.MigrateAsync(fixture.CancellationToken);
+        await SeedCurrentStateAsync(context);
         var store = new EfAccountPreferencesCurrentStateStore(context);
         var first = await store.CommitDesiredStateAsync(CreateChange(true, "first", "first"), fixture.CancellationToken);
         await store.CommitDesiredStateAsync(CreateChange(false, "second", "second", first.Revision), fixture.CancellationToken);
@@ -298,6 +342,7 @@ public sealed class AccountPreferencesSqlIntegrationTests(SqlServerDatabaseFixtu
         await fixture.ResetDatabaseAsync();
         await using var context = fixture.CreateDbContext();
         await context.Database.MigrateAsync(fixture.CancellationToken);
+        await SeedCurrentStateAsync(context);
         await new EfAccountPreferencesCurrentStateStore(context).CommitDesiredStateAsync(CreateChange(true, "operator", "audit"), fixture.CancellationToken);
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Retention:OperationalRecordsDays"] = "0" }).Build();
         var processor = new OperationalRecordRetentionProcessor(context, configuration, TimeProvider.System, NullLogger<OperationalRecordRetentionProcessor>.Instance);
@@ -309,9 +354,20 @@ public sealed class AccountPreferencesSqlIntegrationTests(SqlServerDatabaseFixtu
 
     private static TrailingStopsPreferenceObservation CreateObservation(DateTimeOffset observedAt, Guid? id = null) => new(id ?? Guid.NewGuid(), true, observedAt, observedAt, PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, "account-1", "Observed", "AccountPreferences", "integration", Guid.NewGuid().ToString("N"));
     private static AccountPreferencesDesiredStateChange CreateChange(bool enabled, string actor, string correlationId, long? expectedRevision = null) => new(PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo, "account-1", enabled, expectedRevision, actor, DateTimeOffset.UtcNow, correlationId);
-    private static TrailingStopsPreferenceObservationEntity CreateEntity(DateTimeOffset observedAt) => new()
+    private static async Task SeedCurrentStateAsync(PlatformDbContext context)
     {
-        TrailingStopsPreferenceObservationId = Guid.NewGuid(), BrokerEnvironment = "Demo", PlatformEnvironment = "Test", TrailingStopsEnabled = true,
+        var brokerEnvironmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(context, CancellationToken.None);
+        context.AccountPreferencesCurrentStates.Add(new AccountPreferencesCurrentStateEntity
+        {
+            AccountPreferencesCurrentStateId = Guid.NewGuid(), BrokerEnvironmentId = brokerEnvironmentId,
+            PlatformEnvironment = PlatformEnvironmentKind.Test.ToString(), BrokerEnvironment = BrokerEnvironmentKind.Demo.ToString(),
+            VerificationStatus = AccountPreferencesVerificationStatus.Pending.ToString(), ConcurrencyToken = []
+        });
+        await context.SaveChangesAsync();
+    }
+    private static TrailingStopsPreferenceObservationEntity CreateEntity(Guid brokerEnvironmentId, DateTimeOffset observedAt) => new()
+    {
+        TrailingStopsPreferenceObservationId = Guid.NewGuid(), BrokerEnvironmentId = brokerEnvironmentId, BrokerEnvironment = "Demo", PlatformEnvironment = "Test", TrailingStopsEnabled = true,
         ObservedAtUtc = observedAt, RecordedAtUtc = observedAt, ObservationKind = "Observed", Source = "AccountPreferences", CorrelationId = Guid.NewGuid().ToString("N")
     };
 }

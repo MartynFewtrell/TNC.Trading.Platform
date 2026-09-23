@@ -8,7 +8,6 @@ internal static class UpdatePlatformConfigurationMapping
     public static AppUpdatePlatformConfiguration.UpdatePlatformConfigurationRequest ToApplicationRequest(this UpdatePlatformConfigurationRequest request)
         => new(
             new PlatformConfigurationUpdate(
-                Enum.Parse<PlatformEnvironmentKind>(request.PlatformEnvironment, ignoreCase: true),
                 Enum.Parse<BrokerEnvironmentKind>(request.BrokerEnvironment, ignoreCase: true),
                 new TradingScheduleConfiguration(
                     request.TradingSchedule.StartOfDay,

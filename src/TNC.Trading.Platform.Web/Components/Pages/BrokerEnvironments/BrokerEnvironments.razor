@@ -1,0 +1,243 @@
+@namespace TNC.Trading.Platform.Web.Components.Pages
+@page "/administration/broker-environments"
+@attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Administrator)]
+@inject PlatformApiClient PlatformApiClient
+@inject PlatformNavigationAccessCoordinator NavigationAccessCoordinator
+
+<PageTitle>Broker environments</PageTitle>
+
+@if (!hasRequiredScope)
+{
+    <p>Redirecting...</p>
+}
+else if (!string.IsNullOrWhiteSpace(loadError))
+{
+    <section class="panel platform-callout"><h1>Broker environments</h1><p class="error">@loadError</p></section>
+}
+else
+{
+    <section class="panel platform-page-header">
+        <div>
+            <h1>Broker environments</h1>
+            <p class="hint">Manage catalog metadata and replace credentials without reading stored secrets.</p>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Create broker environment</h2>
+        <p class="hint" data-testid="broker-environment-creation-guidance">
+            Enter a unique internal name and an operator-facing display name, then use the provider, kind, and approved endpoint profile identifiers supplied by the broker adapter.
+            The currently supported IG Demo identifiers are provider <code>Ig</code>, kind <code>Demo</code>, and endpoint profile <code>IgDemo</code>. New catalog records remain unavailable until their capability is approved.
+        </p>
+        <EditForm Model="newEnvironment" OnValidSubmit="CreateAsync">
+            <div class="platform-form-grid">
+                <label>Name <InputText @bind-Value="newEnvironment.Name" /></label>
+                <label>Display name <InputText @bind-Value="newEnvironment.DisplayName" /></label>
+                <label>Provider <InputText @bind-Value="newEnvironment.Provider" /></label>
+                <label>Kind <InputText @bind-Value="newEnvironment.Kind" /></label>
+                <label>Endpoint profile <InputText @bind-Value="newEnvironment.EndpointProfile" /></label>
+            </div>
+            <button class="platform-primary-action" type="submit" disabled="@busy">Create environment</button>
+        </EditForm>
+    </section>
+
+    <section class="panel">
+        <div class="platform-catalog-header" data-testid="broker-environment-catalog-header">
+            <h2>Catalog</h2>
+            <label>
+                <InputCheckbox id="show-retired-environments" @bind-Value="showRetiredEnvironments" />
+                Show retired environments
+            </label>
+        </div>
+        @if (VisibleEnvironments.Count == 0)
+        {
+            @if (environments.Count == 0)
+            {
+                <p class="warning" role="status" data-testid="broker-environments-empty-catalog">The broker environment catalog is empty. Restart the platform to restore the required IG Demo entry, then review the startup logs if the catalog remains empty.</p>
+            }
+            else
+            {
+                <p role="status" data-testid="broker-environments-no-active-catalog">No active broker environments are available. Select Show retired environments to view retired catalog entries.</p>
+            }
+        }
+        else
+        {
+            @foreach (var environment in VisibleEnvironments)
+            {
+                var credential = CredentialFor(environment.Id);
+                <PlatformAccordionSection Title="@environment.Name" IsOpen="false" @key="environment.Id">
+                    <article class="panel">
+                        <p>@environment.Provider / @environment.Kind</p>
+                        <p>Lifecycle: @environment.Lifecycle</p>
+                        <p>Availability: @environment.Availability</p>
+                        @if (!string.IsNullOrWhiteSpace(environment.AvailabilityReason))
+                        {
+                            <p class="warning">@environment.AvailabilityReason</p>
+                        }
+                        <p>Credentials: @(environment.HasCredentials ? "Present" : "Missing")</p>
+                        @if (environment.Lifecycle != "Retired")
+                        {
+                            <button class="platform-primary-action" type="button" @onclick="() => PreviewRetirementAsync(environment)" disabled="@busy">Preview retirement</button>
+                        }
+                        @if (retirement?.BrokerEnvironmentId == environment.Id)
+                        {
+                            <div class="platform-callout">
+                                <p>Retirement will purge @string.Join(", ", retirement.PurgeCounts.Select(item => $"{item.Key}: {item.Value}")) and retain @string.Join(", ", retirement.RetainedCounts.Select(item => $"{item.Key}: {item.Value}")).</p>
+                                <p class="warning">This administrator-only action is server-bound, expires shortly, and cannot retire a selected or applied environment.</p>
+                                <label>Type @retirement.NormalizedName to confirm <InputText @bind-Value="typedRetirementName" /></label>
+                                <button type="button" @onclick="() => RetireAsync(environment.Id)" disabled="@(busy || !string.Equals(typedRetirementName, retirement.NormalizedName, StringComparison.Ordinal))">Retire environment</button>
+                            </div>
+                        }
+                        <EditForm Model="credential" OnValidSubmit="() => SaveCredentialsAsync(environment.Id)">
+                            <div class="platform-form-grid">
+                                <label>New API key <InputText @bind-Value="credential.ApiKey" /></label>
+                                <label>New identifier <InputText @bind-Value="credential.Identifier" /></label>
+                                <label>New password <InputText @bind-Value="credential.Password" type="password" /></label>
+                            </div>
+                            <button class="platform-primary-action" type="submit" disabled="@busy">Replace credentials</button>
+                        </EditForm>
+                    </article>
+                </PlatformAccordionSection>
+            }
+        }
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <p role="status">@message</p>
+    }
+}
+
+@code {
+    private IReadOnlyList<BrokerEnvironmentViewModel> environments = [];
+    private readonly CreateBrokerEnvironmentViewModel newEnvironment = new("", "", "", "", "");
+    private readonly Dictionary<Guid, CredentialForm> credentials = [];
+    private bool hasRequiredScope;
+    private bool busy;
+    private bool showRetiredEnvironments;
+    private string? loadError;
+    private string? message;
+    private BrokerEnvironmentRetirementPreviewViewModel? retirement;
+    private string typedRetirementName = string.Empty;
+
+    private IReadOnlyList<BrokerEnvironmentViewModel> VisibleEnvironments =>
+        showRetiredEnvironments
+            ? environments
+            : environments.Where(environment => environment.Lifecycle != "Retired").ToArray();
+
+    protected override async Task OnInitializedAsync()
+    {
+        hasRequiredScope = await NavigationAccessCoordinator.EnsureRequiredScopesAsync(
+            "/administration/broker-environments",
+            PlatformAuthenticationDefaults.Scopes.Administrator);
+        if (hasRequiredScope)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            environments = await PlatformApiClient.GetBrokerEnvironmentsAsync(CancellationToken.None);
+            foreach (var environment in environments)
+            {
+                credentials.TryAdd(environment.Id, new CredentialForm());
+            }
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or PlatformScopeChallengeRequiredException)
+        {
+            loadError = $"Unable to load broker environments: {exception.Message}";
+        }
+    }
+
+    private CredentialForm CredentialFor(Guid id) => credentials.TryGetValue(id, out var value) ? value : credentials[id] = new CredentialForm();
+
+    private async Task CreateAsync()
+    {
+        if (!await EnsureAdministratorScopeAsync())
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            await PlatformApiClient.CreateBrokerEnvironmentAsync(newEnvironment, CancellationToken.None);
+            message = "Broker environment created.";
+            await LoadAsync();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or PlatformScopeChallengeRequiredException)
+        {
+            message = $"Environment creation failed: {exception.Message}";
+        }
+        finally { busy = false; }
+    }
+
+    private async Task SaveCredentialsAsync(Guid id)
+    {
+        if (!await EnsureAdministratorScopeAsync())
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            var form = CredentialFor(id);
+            await PlatformApiClient.SaveBrokerEnvironmentCredentialsAsync(id, new(form.ApiKey, form.Identifier, form.Password), CancellationToken.None);
+            message = "Credentials replaced. Stored values are never displayed.";
+            await LoadAsync();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or PlatformScopeChallengeRequiredException)
+        {
+            message = $"Credential update failed: {exception.Message}";
+        }
+        finally { busy = false; }
+    }
+
+    private async Task PreviewRetirementAsync(BrokerEnvironmentViewModel environment)
+    {
+        if (!await EnsureAdministratorScopeAsync())
+        {
+            return;
+        }
+
+        busy = true;
+        try { retirement = await PlatformApiClient.PreviewBrokerEnvironmentRetirementAsync(environment.Id, CancellationToken.None); typedRetirementName = string.Empty; }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or PlatformScopeChallengeRequiredException) { message = $"Retirement preview failed: {exception.Message}"; }
+        finally { busy = false; }
+    }
+
+    private async Task RetireAsync(Guid id)
+    {
+        if (retirement is null || !await EnsureAdministratorScopeAsync())
+        {
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            await PlatformApiClient.RetireBrokerEnvironmentAsync(id, new(retirement.ConfirmationToken, retirement.ConcurrencyToken, typedRetirementName), CancellationToken.None);
+            retirement = null;
+            message = "Broker environment retired. Retained history and audit evidence remain available.";
+            await LoadAsync();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or PlatformScopeChallengeRequiredException) { message = $"Retirement failed: {exception.Message}"; }
+        finally { busy = false; }
+    }
+
+    private Task<bool> EnsureAdministratorScopeAsync() =>
+        NavigationAccessCoordinator.EnsureRequiredScopesAsync(
+            "/administration/broker-environments",
+            PlatformAuthenticationDefaults.Scopes.Administrator);
+
+    private sealed class CredentialForm
+    {
+        public string? ApiKey { get; set; }
+        public string? Identifier { get; set; }
+        public string? Password { get; set; }
+    }
+}

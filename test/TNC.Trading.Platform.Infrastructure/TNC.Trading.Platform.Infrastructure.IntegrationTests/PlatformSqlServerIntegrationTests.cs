@@ -87,7 +87,25 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
                 "NotificationRecords", "OperationalEvents", "PlatformConfigurations", "ProtectedCredentials"
             },
             table => Assert.Contains(table, tables));
+        Assert.Contains("BrokerEnvironments", tables);
+        Assert.Contains("BrokerEnvironmentDefaults", tables);
+        Assert.Contains("BrokerEnvironmentSelections", tables);
+        Assert.Contains("BrokerEnvironmentScheduleProfiles", tables);
+        Assert.Contains("BrokerEnvironmentRetryProfiles", tables);
+        Assert.Contains("BrokerEnvironmentNotificationProfiles", tables);
+        Assert.Contains("BrokerEnvironmentRetirementTokens", tables);
+        Assert.Contains("BrokerEnvironmentRetirementAudits", tables);
         Assert.Contains("20260807103334_AddAccountDetailsSnapshots", await dbContext.Database.GetAppliedMigrationsAsync());
+
+        var catalog = await dbContext.BrokerEnvironments.AsNoTracking().ToListAsync();
+        Assert.Single(catalog);
+        Assert.Equal("IG Demo", catalog[0].Name);
+        Assert.Equal("Available", catalog[0].Availability);
+        Assert.Equal(1, await dbContext.BrokerEnvironmentDefaults.CountAsync(item => item.IsActive));
+        Assert.Equal(1, await dbContext.BrokerEnvironmentScheduleProfiles.CountAsync());
+        Assert.Equal(1, await dbContext.BrokerEnvironmentRetryProfiles.CountAsync());
+        Assert.Equal(1, await dbContext.BrokerEnvironmentNotificationProfiles.CountAsync(item => !item.Enabled));
+        Assert.False(await dbContext.BrokerEnvironments.AnyAsync(item => item.Kind == "Live" && item.Availability == "Available"));
 
         var indexes = await dbContext.Database.SqlQueryRaw<string>("""
             SELECT name AS [Value]
@@ -97,6 +115,169 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
         Assert.Contains("IX_AccountDetailsRetrievals_BrokerEnvironment_RetrievedAtUtc_AccountDetailsRetrievalId", indexes);
         Assert.Contains("IX_AccountDetailsRetrievals_BrokerEnvironment_TradingDay", indexes);
         Assert.Contains("IX_AccountDetailsAccounts_AccountDetailsRetrievalId_AccountId", indexes);
+    }
+
+    /// <summary>
+    /// Trace: catalog integrity remediation.
+    /// Verifies: Desktop startup restores the mandatory IG Demo catalog record and its profiles after the catalog data has been removed.
+    /// Expected: recovery restores exactly one canonical active and available IG Demo entry without requiring an administrator-created replacement.
+    /// Why: migration history can exist while its required seed data is absent, leaving the catalog UI empty and broker operations blocked.
+    /// </summary>
+    [Fact]
+    public async Task InitializeAsync_ShouldRestoreIgDemoCatalog_WhenMigrationIsAppliedButCatalogDataIsMissing()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var dbContext = fixture.CreateDbContext();
+        await dbContext.Database.MigrateAsync();
+
+        var demoId = BrokerEnvironmentCatalogIntegrityService.DemoBrokerEnvironmentId;
+        dbContext.BrokerEnvironmentSelections.RemoveRange(dbContext.BrokerEnvironmentSelections);
+        dbContext.BrokerEnvironmentScheduleProfiles.RemoveRange(dbContext.BrokerEnvironmentScheduleProfiles);
+        dbContext.BrokerEnvironmentRetryProfiles.RemoveRange(dbContext.BrokerEnvironmentRetryProfiles);
+        dbContext.BrokerEnvironmentNotificationProfiles.RemoveRange(dbContext.BrokerEnvironmentNotificationProfiles);
+        await dbContext.SaveChangesAsync();
+        dbContext.BrokerEnvironments.Remove(await dbContext.BrokerEnvironments.SingleAsync(item => item.BrokerEnvironmentId == demoId));
+        await dbContext.SaveChangesAsync();
+
+        var initializer = CreateStartupInitializer(dbContext, CreateConfigurationStore(dbContext, CreateConfiguration()), restoreCatalog: true);
+
+        await initializer.InitializeAsync(CancellationToken.None);
+
+        var demo = await dbContext.BrokerEnvironments.SingleAsync(item => item.BrokerEnvironmentId == demoId);
+        Assert.Equal("IG Demo", demo.Name);
+        Assert.Equal("Active", demo.Lifecycle);
+        Assert.Equal("Available", demo.Availability);
+        Assert.True(await dbContext.BrokerEnvironmentScheduleProfiles.AnyAsync(item => item.BrokerEnvironmentId == demoId));
+        Assert.True(await dbContext.BrokerEnvironmentRetryProfiles.AnyAsync(item => item.BrokerEnvironmentId == demoId));
+        Assert.True(await dbContext.BrokerEnvironmentNotificationProfiles.AnyAsync(item => item.BrokerEnvironmentId == demoId));
+        var selection = await dbContext.BrokerEnvironmentSelections.SingleAsync();
+        Assert.Equal(demoId, selection.AppliedBrokerEnvironmentId);
+        Assert.Equal(demoId, selection.SelectedBrokerEnvironmentId);
+    }
+
+    /// <summary>
+    /// Verifies the catalog normalized-name index rejects duplicate names without creating dependent profile rows.
+    /// Expected: the duplicate insert fails and the existing catalog remains the only catalog/profile owner.
+    /// Why: named environments are the operator boundary for same-kind isolation and must not produce orphan snapshots.
+    /// </summary>
+    [Fact]
+    public async Task SaveChangesAsync_ShouldRejectDuplicateNormalizedCatalogName_WithoutOrphanProfiles()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var dbContext = fixture.CreateDbContext();
+        await dbContext.Database.MigrateAsync();
+
+        dbContext.BrokerEnvironments.Add(new BrokerEnvironmentEntity
+        {
+            BrokerEnvironmentId = Guid.NewGuid(), Name = "ig demo copy", NormalizedName = "IG DEMO",
+            Provider = "Ig", Kind = "Demo", Lifecycle = "Active", Availability = "Available", EndpointProfile = "IgDemo",
+            CreatedAtUtc = DateTimeOffset.UtcNow, UpdatedAtUtc = DateTimeOffset.UtcNow
+        });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => dbContext.SaveChangesAsync());
+        Assert.Equal(1, await dbContext.BrokerEnvironments.CountAsync());
+        Assert.Equal(1, await dbContext.BrokerEnvironmentScheduleProfiles.CountAsync());
+        Assert.Equal(1, await dbContext.BrokerEnvironmentRetryProfiles.CountAsync());
+        Assert.Equal(1, await dbContext.BrokerEnvironmentNotificationProfiles.CountAsync());
+    }
+
+    /// <summary>
+    /// Traces to Phase 5.3 retirement safety.
+    /// Verifies the server-side retirement token claim is conditional and cannot be replayed by a second request.
+    /// Expected: the first claimant updates the unused token and the replay updates zero rows.
+    /// Why: a browser can retry a destructive request, so one-time use must be enforced by the database transaction.
+    /// </summary>
+    [Fact]
+    public async Task RetirementTokenClaim_ShouldRejectReplay_WhenTokenWasAlreadyClaimed()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var setupContext = fixture.CreateDbContext();
+        await setupContext.Database.MigrateAsync();
+        var environmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(setupContext, fixture.CancellationToken);
+        var tokenId = Guid.NewGuid();
+        setupContext.BrokerEnvironmentRetirementTokens.Add(new BrokerEnvironmentRetirementTokenEntity
+        {
+            TokenId = tokenId,
+            BrokerEnvironmentId = environmentId,
+            TokenHash = Guid.NewGuid().ToString("N"),
+            Actor = "administrator",
+            ConcurrencyToken = "rowversion",
+            PreviewHash = "preview",
+            ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(5)
+        });
+        await setupContext.SaveChangesAsync(fixture.CancellationToken);
+
+        await using var claimant = fixture.CreateDbContext();
+        var firstClaim = await claimant.BrokerEnvironmentRetirementTokens
+            .Where(item => item.TokenId == tokenId && !item.IsUsed)
+            .ExecuteUpdateAsync(update => update.SetProperty(item => item.IsUsed, true), fixture.CancellationToken);
+        await using var replay = fixture.CreateDbContext();
+        var replayClaim = await replay.BrokerEnvironmentRetirementTokens
+            .Where(item => item.TokenId == tokenId && !item.IsUsed)
+            .ExecuteUpdateAsync(update => update.SetProperty(item => item.IsUsed, true), fixture.CancellationToken);
+
+        Assert.Equal(1, firstClaim);
+        Assert.Equal(0, replayClaim);
+    }
+
+    /// <summary>
+    /// Traces to Phase 4.2/4.3 catalog partitioning.
+    /// Verifies the additive migration backfills Demo rows, enforces catalog foreign keys, and permits two same-kind records to own separate mutable state.
+    /// Expected: every catalog-scoped table retains one row per catalog ID and an orphan catalog ID cannot be committed.
+    /// Why: same-kind named environments must be isolated by immutable identity before legacy columns are removed.
+    /// </summary>
+    [Fact]
+    public async Task CatalogIds_ShouldIsolateSameKindCredentialsProfilesAccountsRuntimeAndOperations()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var dbContext = fixture.CreateDbContext();
+        await dbContext.Database.MigrateAsync();
+
+        var firstId = Guid.NewGuid();
+        var secondId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        dbContext.BrokerEnvironments.AddRange(
+            new BrokerEnvironmentEntity { BrokerEnvironmentId = firstId, Name = "Demo A", NormalizedName = "DEMO A", Provider = "Ig", Kind = "Demo", Lifecycle = "Active", Availability = "Available", EndpointProfile = "IgDemo", CreatedAtUtc = now, UpdatedAtUtc = now },
+            new BrokerEnvironmentEntity { BrokerEnvironmentId = secondId, Name = "Demo B", NormalizedName = "DEMO B", Provider = "Ig", Kind = "Demo", Lifecycle = "Active", Availability = "Available", EndpointProfile = "IgDemo", CreatedAtUtc = now, UpdatedAtUtc = now });
+        dbContext.BrokerEnvironmentScheduleProfiles.AddRange(
+            new BrokerEnvironmentScheduleProfileEntity { BrokerEnvironmentId = firstId, DefaultsVersion = 1, TradingHoursStart = new TimeOnly(8), TradingHoursEnd = new TimeOnly(16), TradingDaysCsv = "Monday", WeekendBehavior = "ExcludeWeekends", BankHolidayExclusionsJson = "[]", TimeZone = "UTC" },
+            new BrokerEnvironmentScheduleProfileEntity { BrokerEnvironmentId = secondId, DefaultsVersion = 1, TradingHoursStart = new TimeOnly(9), TradingHoursEnd = new TimeOnly(17), TradingDaysCsv = "Tuesday", WeekendBehavior = "ExcludeWeekends", BankHolidayExclusionsJson = "[]", TimeZone = "UTC" });
+        dbContext.BrokerEnvironmentRetryProfiles.AddRange(
+            new BrokerEnvironmentRetryProfileEntity { BrokerEnvironmentId = firstId, DefaultsVersion = 1, InitialDelaySeconds = 1, MaxAutomaticRetries = 1, Multiplier = 2, MaxDelaySeconds = 2, PeriodicDelayMinutes = 1 },
+            new BrokerEnvironmentRetryProfileEntity { BrokerEnvironmentId = secondId, DefaultsVersion = 1, InitialDelaySeconds = 3, MaxAutomaticRetries = 3, Multiplier = 2, MaxDelaySeconds = 6, PeriodicDelayMinutes = 3 });
+        dbContext.ProtectedCredentials.AddRange(
+            new ProtectedCredentialEntity { BrokerEnvironmentId = firstId, BrokerEnvironment = "Demo A", CredentialType = "ApiKey", ProtectedValue = "a", UpdatedAtUtc = now, UpdatedBy = "test" },
+            new ProtectedCredentialEntity { BrokerEnvironmentId = secondId, BrokerEnvironment = "Demo B", CredentialType = "ApiKey", ProtectedValue = "b", UpdatedAtUtc = now, UpdatedBy = "test" });
+        dbContext.AccountDetailsRetrievals.AddRange(
+            new AccountDetailsRetrievalEntity { AccountDetailsRetrievalId = Guid.NewGuid(), BrokerEnvironmentId = firstId, BrokerEnvironment = "Demo A", RetrievedAtUtc = now, TradingDay = DateOnly.FromDateTime(now.UtcDateTime), AccountCount = 1, TriggerSource = "Manual" },
+            new AccountDetailsRetrievalEntity { AccountDetailsRetrievalId = Guid.NewGuid(), BrokerEnvironmentId = secondId, BrokerEnvironment = "Demo B", RetrievedAtUtc = now, TradingDay = DateOnly.FromDateTime(now.UtcDateTime), AccountCount = 1, TriggerSource = "Manual" });
+        dbContext.AuthRuntimeStates.AddRange(
+            new AuthRuntimeStateEntity { BrokerEnvironmentId = firstId, BrokerEnvironment = "Demo A", PlatformEnvironment = "Test", TradingScheduleStatus = "Active", SessionStatus = "Authenticated", RetryPhase = "None" },
+            new AuthRuntimeStateEntity { BrokerEnvironmentId = secondId, BrokerEnvironment = "Demo B", PlatformEnvironment = "Test", TradingScheduleStatus = "Active", SessionStatus = "Authenticated", RetryPhase = "None" });
+        dbContext.AuthRetryCycles.AddRange(
+            new AuthRetryCycleEntity { RetryCycleId = Guid.NewGuid(), BrokerEnvironmentId = firstId, BrokerEnvironment = "Demo A", PlatformEnvironment = "Test", CycleType = "Auth", RetryPhase = "None", StartedAtUtc = now, UpdatedAtUtc = now },
+            new AuthRetryCycleEntity { RetryCycleId = Guid.NewGuid(), BrokerEnvironmentId = secondId, BrokerEnvironment = "Demo B", PlatformEnvironment = "Test", CycleType = "Auth", RetryPhase = "None", StartedAtUtc = now, UpdatedAtUtc = now });
+        dbContext.AccountPreferencesOperations.AddRange(
+            new AccountPreferencesOperationEntity { AccountPreferencesOperationId = Guid.NewGuid(), BrokerEnvironmentId = firstId, BrokerEnvironment = "Demo A", PlatformEnvironment = "Test", IdempotencyKey = "same-key", AccountId = "A", Actor = "test", CorrelationId = "a", Phase = "Started", CreatedAtUtc = now, UpdatedAtUtc = now },
+            new AccountPreferencesOperationEntity { AccountPreferencesOperationId = Guid.NewGuid(), BrokerEnvironmentId = secondId, BrokerEnvironment = "Demo B", PlatformEnvironment = "Test", IdempotencyKey = "same-key", AccountId = "B", Actor = "test", CorrelationId = "b", Phase = "Started", CreatedAtUtc = now, UpdatedAtUtc = now });
+
+        await dbContext.SaveChangesAsync();
+
+        Assert.True(await dbContext.ProtectedCredentials.AnyAsync(item => item.BrokerEnvironmentId == firstId));
+        Assert.True(await dbContext.ProtectedCredentials.AnyAsync(item => item.BrokerEnvironmentId == secondId));
+        Assert.Equal(2, await dbContext.BrokerEnvironmentScheduleProfiles.CountAsync(item => item.BrokerEnvironmentId == firstId || item.BrokerEnvironmentId == secondId));
+        Assert.Equal(2, await dbContext.AccountDetailsRetrievals.CountAsync(item => item.BrokerEnvironmentId == firstId || item.BrokerEnvironmentId == secondId));
+        Assert.Equal(2, await dbContext.AuthRuntimeStates.CountAsync(item => item.BrokerEnvironmentId == firstId || item.BrokerEnvironmentId == secondId));
+        Assert.Equal(2, await dbContext.AuthRetryCycles.CountAsync(item => item.BrokerEnvironmentId == firstId || item.BrokerEnvironmentId == secondId));
+        Assert.Equal(2, await dbContext.AccountPreferencesOperations.CountAsync(item => item.BrokerEnvironmentId == firstId || item.BrokerEnvironmentId == secondId));
+        Assert.Equal(0, await dbContext.Database.SqlQueryRaw<int>("""
+            SELECT COUNT(*) AS [Value]
+            FROM [ProtectedCredentials] credentials
+            LEFT JOIN [BrokerEnvironments] catalog ON catalog.[BrokerEnvironmentId] = credentials.[BrokerEnvironmentId]
+            WHERE credentials.[BrokerEnvironmentId] IS NOT NULL AND catalog.[BrokerEnvironmentId] IS NULL
+            """).SingleAsync());
+
+        await Assert.ThrowsAnyAsync<Exception>(() => dbContext.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM [BrokerEnvironments] WHERE [BrokerEnvironmentId] = {firstId}"));
     }
 
     /// <summary>
@@ -139,10 +320,11 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
         await fixture.ResetDatabaseAsync();
         await using var seedContext = fixture.CreateDbContext();
         await seedContext.Database.MigrateAsync();
+        var brokerEnvironmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(seedContext, fixture.CancellationToken);
         var retrievedAt = DateTimeOffset.UtcNow.AddMinutes(-2);
         seedContext.AccountDetailsRetrievals.Add(new AccountDetailsRetrievalEntity
         {
-            AccountDetailsRetrievalId = Guid.NewGuid(), BrokerEnvironment = BrokerEnvironmentKind.Demo.ToString(), RetrievedAtUtc = retrievedAt,
+            AccountDetailsRetrievalId = Guid.NewGuid(), BrokerEnvironmentId = brokerEnvironmentId, BrokerEnvironment = BrokerEnvironmentKind.Demo.ToString(), RetrievedAtUtc = retrievedAt,
             TradingDay = DateOnly.FromDateTime(DateTime.UtcNow), AccountCount = 0, TriggerSource = AccountDetailsTriggerSource.Manual.ToString()
         });
         await seedContext.SaveChangesAsync();
@@ -481,7 +663,6 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
 
             await Assert.ThrowsAsync<DbUpdateException>(() => failingStore.CommitAsync(
                 CreateConfigurationUpdate(
-                    platformEnvironment: "Live",
                     brokerEnvironment: "Demo",
                     provider: "RecordedOnly",
                     emailTo: "updated-owner@example.com",
@@ -553,6 +734,7 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
         await fixture.ResetDatabaseAsync();
         await using var dbContext = fixture.CreateDbContext();
         await dbContext.Database.MigrateAsync();
+        var brokerEnvironmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(dbContext, fixture.CancellationToken);
 
         var now = DateTimeOffset.UtcNow;
         dbContext.OperationalEvents.AddRange(
@@ -631,12 +813,18 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
         using var provider = services.BuildServiceProvider();
         var dataProtectionProvider = provider.GetRequiredService<IDataProtectionProvider>();
         var credentialService = new ProtectedCredentialService(dbContext, dataProtectionProvider, TimeProvider.System);
-        return new SqlPlatformConfigurationStore(dbContext, configuration, credentialService, TimeProvider.System);
+        return new SqlPlatformConfigurationStore(
+            dbContext,
+            configuration,
+            credentialService,
+            TimeProvider.System,
+            new PlatformEnvironmentContext(PlatformEnvironmentKind.Test));
     }
 
     private static PlatformStartupInitializer CreateStartupInitializer(
         PlatformDbContext dbContext,
-        SqlPlatformConfigurationStore configurationStore)
+        SqlPlatformConfigurationStore configurationStore,
+        bool restoreCatalog = false)
     {
         var retentionConfiguration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -650,16 +838,23 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
             TimeProvider.System,
             NullLogger<OperationalRecordRetentionProcessor>.Instance);
 
+        var catalogIntegrityService = restoreCatalog
+            ? new BrokerEnvironmentCatalogIntegrityService(
+                dbContext,
+                TimeProvider.System,
+                NullLogger<BrokerEnvironmentCatalogIntegrityService>.Instance)
+            : null;
         return new PlatformStartupInitializer(
             dbContext,
             new PlatformConfigurationService(configurationStore),
             retentionProcessor,
+            new PlatformEnvironmentContext(PlatformEnvironmentKind.Desktop),
             new IntegrationTestHostEnvironment(),
-            NullLogger<PlatformStartupInitializer>.Instance);
+            NullLogger<PlatformStartupInitializer>.Instance,
+            catalogIntegrityService);
     }
 
     private static PlatformConfigurationUpdate CreateConfigurationUpdate(
-        string platformEnvironment,
         string brokerEnvironment,
         string provider,
         string emailTo,
@@ -667,7 +862,6 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
         string? identifier,
         string? password,
         string changedBy) => new(
-            Enum.Parse<PlatformEnvironmentKind>(platformEnvironment, ignoreCase: true),
             Enum.Parse<BrokerEnvironmentKind>(brokerEnvironment, ignoreCase: true),
             new TradingScheduleConfiguration(
                 new TimeOnly(8, 0),

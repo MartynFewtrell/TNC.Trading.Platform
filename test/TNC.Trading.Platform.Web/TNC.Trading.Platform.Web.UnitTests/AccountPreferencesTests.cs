@@ -246,7 +246,7 @@ public sealed class AccountPreferencesTests
 
     /// <summary>
     /// Trace: Phase 5.1. Verifies a successful fresh-install response renders the explicit Unconfigured state without a provider warning and requests history only after current state succeeds.
-    /// Expected: the page leaves loading, shows Unconfigured, contains no current-state error, and records current-state and history requests in order.
+    /// Expected: the page leaves loading, shows Unconfigured with the full trailing-stops editor, contains no current-state error, and records current-state and history requests in order.
     /// Why: an absent SQL projection is valid configuration state and must not be mistaken for provider unavailability or cause parallel initial reads.
     /// </summary>
     [Fact]
@@ -263,6 +263,9 @@ public sealed class AccountPreferencesTests
             Assert.Contains("Trailing stops", cut.Find("dl.account-preferences-state").TextContent, StringComparison.Ordinal);
             Assert.Contains("Unconfigured", cut.Markup, StringComparison.Ordinal);
             Assert.DoesNotContain("account-preferences-error", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Trailing stops configuration", cut.Markup, StringComparison.Ordinal);
+            Assert.Equal(2, cut.FindAll("fieldset.account-preferences-choice input[type='radio']").Count);
+            Assert.Single(cut.FindAll("[data-testid='account-preferences-save']"));
             Assert.Equal(2, context.ApiHandler.Requests.Count);
             Assert.Contains("/api/platform/account-preferences", context.ApiHandler.Requests[0].RequestUri, StringComparison.Ordinal);
             Assert.Contains("/api/platform/account-preferences/observations", context.ApiHandler.Requests[1].RequestUri, StringComparison.Ordinal);

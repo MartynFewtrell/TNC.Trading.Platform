@@ -3,6 +3,7 @@ using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Services;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
+using TNC.Trading.Platform.Infrastructure.Startup;
 
 namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 
@@ -25,6 +26,7 @@ internal sealed class EfPlatformRuntimeStateStore(PlatformDbContext dbContext) :
         {
             entity = new AuthRuntimeStateEntity
             {
+                BrokerEnvironmentId = BrokerEnvironmentCatalogIntegrityService.DemoBrokerEnvironmentId,
                 TradingScheduleStatus = "Inactive",
                 SessionStatus = PlatformSessionStatus.Unknown.ToString(),
                 IsDegraded = false,
@@ -45,7 +47,10 @@ internal sealed class EfPlatformRuntimeStateStore(PlatformDbContext dbContext) :
         var entity = await dbContext.AuthRuntimeStates.SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         if (entity is null)
         {
-            entity = new AuthRuntimeStateEntity();
+            entity = new AuthRuntimeStateEntity
+            {
+                BrokerEnvironmentId = BrokerEnvironmentCatalogIntegrityService.DemoBrokerEnvironmentId
+            };
             dbContext.AuthRuntimeStates.Add(entity);
         }
 

@@ -10,7 +10,8 @@ namespace TNC.Trading.Platform.Infrastructure.Integrations.Ig;
 
 internal sealed class IgAccountDetailsGateway(
     HttpClient httpClient,
-    IProtectedCredentialService protectedCredentialService) : IAccountDetailsGateway
+    IProtectedCredentialService protectedCredentialService,
+    IAppliedBrokerEnvironmentContextResolver? contextResolver = null) : IAccountDetailsGateway
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
@@ -18,7 +19,12 @@ internal sealed class IgAccountDetailsGateway(
     {
         try
         {
-            var credentials = await protectedCredentialService.GetCredentialsAsync(BrokerEnvironmentKind.Demo, cancellationToken).ConfigureAwait(false);
+            var context = contextResolver is null ? null : await contextResolver.ResolveAppliedAsync(cancellationToken).ConfigureAwait(false);
+            if (context is not null && !context.IsExecutable)
+                return new AccountDetailsGatewayResult.Failed(AccountDetailsFailureCategory.UnsupportedEnvironment, "The applied broker environment is unavailable.");
+            var credentials = context is null
+                ? await protectedCredentialService.GetCredentialsAsync(BrokerEnvironmentKind.Demo, cancellationToken).ConfigureAwait(false)
+                : await protectedCredentialService.GetCredentialsAsync(context.BrokerEnvironmentId, cancellationToken).ConfigureAwait(false);
             var session = await CreateSessionAsync(credentials, cancellationToken).ConfigureAwait(false);
             var response = await GetAccountsAsync(credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);
             if (response.Unauthorized)

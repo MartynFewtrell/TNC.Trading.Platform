@@ -243,7 +243,7 @@ For supported local development:
 - AppHost starts SQL Server
 - AppHost creates the `platformdb` database
 - AppHost starts Mailpit for local SMTP capture
-- AppHost starts Keycloak on a stable local port with a repeatable realm import for seeded auth users, roles, scopes, and clients
+- AppHost starts Keycloak on stable local port `8080` with a repeatable realm import for seeded auth users, roles, scopes, and clients
 - the API and Web hosts receive their SQL, SMTP, and authentication settings through environment variables
 - Docker is required because Keycloak is part of the local authentication boundary and the in-memory SQL mode is not a supported application runtime
 
@@ -261,6 +261,27 @@ flowchart LR
     AppHost --> Mailpit
     AppHost --> Keycloak
 ```
+
+### Portable deployment input contract
+
+The API and Web containers are portable application artifacts. A host supplies
+the same inputs regardless of whether it is Azure Container Apps, another
+container host, or a local deployment wrapper:
+
+- the immutable container image and a fixed `Platform__Environment` value
+  (`Test` or `Live` for shared deployments)
+- one external SQL Server connection named `ConnectionStrings__platformdb`,
+  backed by a distinct database per platform environment
+- secret references for identity, data protection, broker credentials, and
+  notification providers; secret values are never baked into images or ordinary
+  configuration
+- `/health/live` and `/health/ready` endpoints plus ordinary environment-based
+  configuration
+
+Azure Container Apps is the first deployment target, but its runtime APIs are
+not part of platform or broker decisions. Any non-Azure host can provide this
+input contract unchanged. Kubernetes manifests and Helm packaging are
+deliberately outside this phase.
 
 ## Request and interaction flow
 
@@ -306,7 +327,8 @@ The API entry point keeps startup thin:
 
 - registers service defaults, authentication, authorization, data protection, application services, infrastructure services, and validators
 - invokes the Infrastructure startup initializer, which applies the SQL migration
-    lifecycle, bootstrap configuration, and retention processing in that order
+    lifecycle only for Desktop/Development, then performs bootstrap configuration
+    and retention processing in that order
 - dispatches the explicit `ReconcilePlatformAuthenticationHandler` command for the initial authentication reconciliation
 - maps platform endpoints and health endpoints
 
@@ -501,7 +523,35 @@ The Aspire AppHost remains a composition root only.
 - local SQL Server and Keycloak admin credentials use Aspire-managed default local secret handling instead of requiring manual dashboard input
 - the supported local runtime remains Docker-backed SQL Server, Mailpit, and Keycloak, while synthetic auth and in-memory persistence stay limited to explicit automated-test composition
 
-## Persistence model
+## Environment ownership and persistence model
+
+`Platform:Environment` is immutable process context (`Desktop`,
+`Development`, `Test`, or `Live`) supplied by deployment/AppHost. It is not
+operator configuration and does not derive from `IHostEnvironment`. Every
+platform environment has an isolated SQL database.
+
+Broker environments are SQL catalog records with normalized unique names,
+provider/kind metadata, approved endpoint-profile keys, lifecycle, and
+availability. Catalog IDs partition broker-scoped credentials, schedule/retry/
+notification profiles, runtime state, projections, and account data inside
+that database. The server-owned versioned defaults template is copied
+atomically when a catalog record is created; new records start with
+notifications disabled. `IG Demo` is the bootstrap record.
+
+The selection row keeps selected and applied catalog IDs separate. Selection
+is restart-applied, so a running process never changes broker account or
+endpoint mid-process. Capability is checked before credential reads or
+network I/O; unavailable or unsupported records fail closed.
+
+Normal retirement is explicit, administrator-only retire-and-purge. Credentials,
+profiles, current projections, retry state, and other approved mutable rows
+are deleted before the catalog row is marked `Retired`. Audit, events,
+notifications, account retrieval history, desired-state audits, and other
+historical evidence remain addressable under ordinary retention.
+
+The supported local runtime is Docker-backed SQL Server, Mailpit, and
+Keycloak. In-memory persistence is reserved for isolated automated tests and
+is not a supported application runtime.
 
 The current `PlatformDbContext` stores these entities:
 
@@ -515,8 +565,35 @@ The current `PlatformDbContext` stores these entities:
 | `OperationalEventEntity` | Append-style operational event history. |
 | `ConfigurationAuditEntity` | Auditable record of configuration changes. |
 | `NotificationRecordEntity` | Recorded notification dispatch outcomes. |
+| `AccountDetailsRetrievalEntity` and `AccountDetailsAccountEntity` | Retained account retrieval history and its retrieved account children. |
+| `TrailingStopsPreferenceObservationEntity` | Retained Account Preferences observations. |
+| `AccountPreferencesCurrentStateEntity` | Current confirmed Account Preferences projection. |
+| `AccountPreferencesDesiredStateAuditEntity` | Historical Account Preferences desired-state audit. |
+| `AccountPreferencesOperationEntity` | In-flight Account Preferences operation journal. |
+| `DataProtectionKey` | Shared host key-ring material; not broker-environment retirement data. |
 
 ### Persistence relationships by responsibility
+
+Normal broker-environment retirement uses explicit table-by-table deletion;
+relational cascade delete is not an approved retirement mechanism. The
+relationship classification is:
+
+| Relationship/data classification | Retirement treatment |
+| --- | --- |
+| Broker environment to protected credentials, schedule/retry/notification profiles, runtime state, retry cycles, proof data, latest login projection, retained login history, Account Preferences current state, and Account Preferences operation journal | **Mutable and purgeable**. Delete explicitly within the retired broker scope before marking the catalog record retired. |
+| Broker environment to configuration audits, operational events, notification records, Account Preferences desired-state audits, account retrieval headers, and account retrieval child accounts | **Historical evidence**. Retain under ordinary retention; do not cascade from catalog retirement. |
+| Account retrieval header to account retrieval child accounts | **Historical parent/child record**. Preserve both as a unit under ordinary retention; any future expiry operation must explicitly delete the approved parent and children together. |
+| Broker environment selection references and retained evidence references | **Restricted reference**. Do not cascade or silently rewrite history; retirement must leave the catalog identity addressable for diagnostics and audit. |
+| Defaults template and shared Data Protection keys | **Shared infrastructure state**. Retain independently of any broker-environment retirement. |
+
+The login-snapshot classification is intentionally explicit: `Latest` is a
+current projection and `RetainedDailyFirstSuccessful` is operational history,
+but both are scoped payloads for the retired broker environment and are purged
+by normal retirement. This is separate from ordinary retention, where the
+latest projection is preserved and only daily history ages out. Retained
+audits, events, notification outcomes, desired-state audits, and account
+retrieval history are not converted into purgeable mutable state merely
+because their catalog target is retired.
 
 ```mermaid
 flowchart TD

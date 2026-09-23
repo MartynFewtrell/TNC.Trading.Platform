@@ -8,6 +8,7 @@ internal static class AppHostEnvironmentWiring
     {
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
+            ["Platform__Environment"] = "Desktop",
             ["Authentication__ApiAudience"] = AppHostCompositionConstants.ApiAudience,
             ["Authentication__Keycloak__Realm"] = AppHostCompositionConstants.KeycloakRealmName,
             ["Authentication__Keycloak__ApiClientId"] = AppHostCompositionConstants.ApiAudience,
@@ -20,6 +21,7 @@ internal static class AppHostEnvironmentWiring
     {
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
+            ["Platform__Environment"] = "Desktop",
             ["Authentication__CallbackPath"] = "/signin-oidc",
             ["Authentication__SignedOutRedirectPath"] = "/",
             ["Authentication__ApiAudience"] = AppHostCompositionConstants.ApiAudience,

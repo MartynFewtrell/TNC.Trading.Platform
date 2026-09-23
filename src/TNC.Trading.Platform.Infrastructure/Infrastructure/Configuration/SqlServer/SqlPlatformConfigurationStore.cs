@@ -15,7 +15,8 @@ internal sealed class SqlPlatformConfigurationStore(
     PlatformDbContext dbContext,
     IConfiguration configuration,
     IProtectedCredentialService protectedCredentialService,
-    TimeProvider timeProvider) : IPlatformConfigurationStore, IUpdatePlatformConfigurationCommitter
+    TimeProvider timeProvider,
+    IPlatformEnvironmentContext platformEnvironmentContext) : IPlatformConfigurationStore, IUpdatePlatformConfigurationCommitter
 {
     public async Task<PlatformConfigurationSnapshot> ApplyStartupConfigurationAsync(CancellationToken cancellationToken)
     {
@@ -47,18 +48,17 @@ internal sealed class SqlPlatformConfigurationStore(
             return await MapAsync(entity, cancellationToken).ConfigureAwait(false);
         }
 
-        return await MapAsync(entity, platformEnvironment.Value, brokerEnvironment.Value, cancellationToken).ConfigureAwait(false);
+        return await MapAsync(entity, platformEnvironmentContext.Environment, brokerEnvironment.Value, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<UpdatePlatformConfigurationResult> CommitAsync(PlatformConfigurationUpdate update, CancellationToken cancellationToken)
     {
         var entity = await EnsureConfigurationAsync(cancellationToken).ConfigureAwait(false);
         var currentStartupFixedConfiguration = new PlatformStartupFixedConfiguration(
-            Enum.Parse<PlatformEnvironmentKind>(entity.PlatformEnvironment, ignoreCase: true),
+            platformEnvironmentContext.Environment,
             Enum.Parse<BrokerEnvironmentKind>(entity.BrokerEnvironment, ignoreCase: true));
         var restartRequired = PlatformConfigurationRestartPolicy.IsRestartRequired(currentStartupFixedConfiguration, update);
 
-        entity.PlatformEnvironment = update.PlatformEnvironment.ToString();
         entity.BrokerEnvironment = update.BrokerEnvironment.ToString();
         entity.TradingHoursStart = update.TradingSchedule.StartOfDay;
         entity.TradingHoursEnd = update.TradingSchedule.EndOfDay;
@@ -84,7 +84,7 @@ internal sealed class SqlPlatformConfigurationStore(
         dbContext.ConfigurationAudits.Add(new ConfigurationAuditEntity
         {
             ConfigurationId = entity.ConfigurationId,
-            PlatformEnvironment = update.PlatformEnvironment.ToString(),
+            PlatformEnvironment = platformEnvironmentContext.Environment.ToString(),
             BrokerEnvironment = update.BrokerEnvironment.ToString(),
             OccurredAtUtc = timeProvider.GetUtcNow(),
             ChangedBy = update.ChangedBy,
@@ -94,7 +94,6 @@ internal sealed class SqlPlatformConfigurationStore(
                 : "Platform configuration updated.",
             DetailsJson = OperationalDataRedactor.Serialize(new
             {
-                update.PlatformEnvironment,
                 update.BrokerEnvironment,
                 update.TradingSchedule.StartOfDay,
                 update.TradingSchedule.EndOfDay,
@@ -134,7 +133,7 @@ internal sealed class SqlPlatformConfigurationStore(
 
         entity = new PlatformConfigurationEntity
         {
-            PlatformEnvironment = bootstrap.PlatformEnvironment.ToString(),
+            PlatformEnvironment = platformEnvironmentContext.Environment.ToString(),
             BrokerEnvironment = bootstrap.BrokerEnvironment.ToString(),
             TradingHoursStart = bootstrap.TradingSchedule.StartOfDay,
             TradingHoursEnd = bootstrap.TradingSchedule.EndOfDay,
@@ -161,9 +160,8 @@ internal sealed class SqlPlatformConfigurationStore(
 
     private Task<PlatformConfigurationSnapshot> MapAsync(PlatformConfigurationEntity entity, CancellationToken cancellationToken)
     {
-        var platformEnvironment = Enum.Parse<PlatformEnvironmentKind>(entity.PlatformEnvironment, ignoreCase: true);
         var brokerEnvironment = Enum.Parse<BrokerEnvironmentKind>(entity.BrokerEnvironment, ignoreCase: true);
-        return MapAsync(entity, platformEnvironment, brokerEnvironment, cancellationToken);
+        return MapAsync(entity, platformEnvironmentContext.Environment, brokerEnvironment, cancellationToken);
     }
 
     private async Task<PlatformConfigurationSnapshot> MapAsync(

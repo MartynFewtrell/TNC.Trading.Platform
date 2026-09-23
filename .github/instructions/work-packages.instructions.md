@@ -48,6 +48,7 @@ These rules apply when adding or updating documentation for a unit of work. They
 - You MUST keep the `00x` number monotonically increasing (do not reuse a prior number for a different work item).
 - You MUST keep each work item's documentation self-contained within its `./docs/00x-work/` folder and its `plans/` subfolder.
 - You MUST update the relevant documentation under `./docs/wiki/` before marking any numbered plan complete when the implemented behavior, architecture, API surface, runtime behavior, operator workflow, local development guidance, or testing approach has changed.
+- For planned changes involving environment, authentication, configuration, accounts, topology, operator workflow, local development, or testing, you MUST include a scoped Wiki-impact assessment in the delivery plan: identify relevant Wiki pages and record a change/no-change decision for every work item. For lifecycle changes, the assessment MUST also address retention and audit documentation. This scoped rule supplements, rather than duplicates, the global Wiki source-of-truth policy.
 - When asked to review a work package, you MUST create the review report as a physical markdown file within that work package, not only as chat output.
 - When creating a delivery plan from refactoring advice, you MUST scope the plan to that refactor objective rather than to existing work-package docs unless explicitly instructed to reuse them.
 

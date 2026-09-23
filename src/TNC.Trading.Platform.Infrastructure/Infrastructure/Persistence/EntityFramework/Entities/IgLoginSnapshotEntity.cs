@@ -4,6 +4,8 @@ internal sealed class IgLoginSnapshotEntity
 {
     public Guid IgLoginSnapshotId { get; set; }
 
+    public Guid BrokerEnvironmentId { get; set; }
+
     public string BrokerEnvironment { get; set; } = string.Empty;
 
     public DateTimeOffset CapturedAtUtc { get; set; }

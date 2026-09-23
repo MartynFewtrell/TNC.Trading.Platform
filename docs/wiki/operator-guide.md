@@ -31,11 +31,29 @@ The left navigation still changes based on the signed-in operator role.
 | `/status` | Runtime status, trading-schedule state, auth state, current IG login state, latest successful non-secret payload details, and recent auth events. |
 | `/ig-login/history` | Retained daily first-successful non-secret IG login payloads within the 90-day retention window. Distinct from the current-state latest payload on `/status`. |
 | `/configuration` | Operator-managed configuration, notification settings, trading-schedule values, and write-only IG credential updates. |
+| `/administration/broker-environments` | Administrator-only broker catalog. Shows each environment's lifecycle and availability, supports credential replacement, and provides recovery guidance when the required catalog is empty. |
 | `/administration/authentication` | Administrator-only summary of the configured auth provider, role claim type, and protected API audience. |
 | `/account-preferences` | Operator-only live Test-account trailing-stops control and read-only verified observations. The feature does not authorize real orders or monetary exposure. |
 | `/authentication/sign-in` | Starts sign-in. In automated local tests this also lists the seeded local test users. |
 | `/authentication/sign-out` | Requires an authenticated browser session, accepts an antiforgery-protected POST from the shared header, and ends the platform session before returning to the UI entry route, which prompts for sign-in again. |
 | `/authentication/access-denied` | Dedicated denied-access page for signed-in users who lack the required platform role. |
+
+## Broker environment catalog
+
+Administrators use `/administration/broker-environments` to inspect the broker
+catalog. The `IG Demo` entry normally has lifecycle `Active` and availability
+`Available`. These are separate values: lifecycle indicates that the catalog
+entry is in service, while availability indicates whether it can currently be
+used. The credential indicator changes to `Present` only when the complete
+persisted credential set can be read successfully; replacing credentials does
+not change the lifecycle or availability values.
+
+If the Catalog panel reports that it is empty, do not create a replacement
+environment. Restart the Desktop or Development platform first. Startup checks
+and restores the mandatory `IG Demo` catalog entry and its associated profiles
+without replacing existing credentials or operator-managed profile values. If
+the catalog remains empty after restart, review the API startup logs and verify
+that the API uses the intended SQL Server database.
 
 ## Sign-in and sign-out
 
@@ -254,12 +272,10 @@ This table can now show both broker-auth supervision events and operator-session
 
 ## Configuration page
 
-The configuration page groups startup-fixed runtime choices under an **Environment** section.
-
-This section currently allows operators to change:
-
-- platform environment
-- broker environment
+The configuration page shows the immutable platform environment and provides
+broker selection under an **Environment** section. The platform value is
+deployment-owned and cannot be changed in the UI. Operators and
+administrators can request a different available broker catalog record.
 
 The configuration page is the main operator-edit surface.
 
@@ -299,17 +315,24 @@ The current release does not manage users or roles in-app, so this page is infor
 
 ### Environments
 
-The environments section lets the operator review or change:
+The environments section displays the immutable platform value (`Desktop`,
+`Development`, `Test`, or `Live`) and the selected/applied broker catalog
+records. A broker request requires the server-provided warning acknowledgement,
+expected selection revision, and an available/capable record. The request is
+persisted but applies only after a successful restart; the current process
+continues using the applied account and endpoint until then. Viewers cannot
+change selection.
 
-- platform environment
-- broker environment
+Administrators additionally manage named broker records and write-only
+credentials. They can create uniquely normalized names, preview retirement,
+and retire a record using the server-bound confirmation token, concurrency
+token, and exact typed name. Retirement purges mutable broker state and
+credentials but retains audit and historical evidence under ordinary
+retention. Retired or unavailable records cannot be selected.
 
-Important behavior:
-
-- the `Live` broker option is shown but disabled when the platform environment is `Test`
-- changing startup-fixed values can set `RestartRequired`
-- changing only schedule, retry, notification, or credentials does not require restart when both environment selections remain unchanged
-- the page explains that startup-fixed changes apply on the next platform start
+Schedule, retry, notification, and credential edits remain separate from
+platform identity. New broker records receive the server-owned defaults
+snapshot, with notifications disabled.
 - UI theme switching is provided from the shared header control rather than from the configuration form
 
 ### Trading schedule
@@ -592,4 +615,3 @@ Test-only; Live requires a
 separate safety delivery for credentials, authorization, allowance handling,
 and monetary-risk controls. Online history retention uses
 `Retention:OperationalRecordsDays`; archive/export is deferred.
-

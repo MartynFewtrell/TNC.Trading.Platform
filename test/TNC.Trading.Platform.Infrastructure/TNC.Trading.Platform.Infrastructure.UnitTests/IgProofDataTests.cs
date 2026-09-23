@@ -174,8 +174,12 @@ public class IgProofDataTests
             new PlatformAuthSimulationSettings(TimeSpan.FromMinutes(15)),
             configurationService,
             new EfPlatformRuntimeStateStore(dbContext),
-            new EfPlatformIgLoginSnapshotStore(dbContext),
-            new EfPlatformRetryCycleStore(dbContext),
+            new EfPlatformIgLoginSnapshotStore(
+                dbContext,
+                new StaticAppliedBrokerEnvironmentContextResolver(Guid.NewGuid())),
+            new EfPlatformRetryCycleStore(
+                dbContext,
+                new StaticAppliedBrokerEnvironmentContextResolver(Guid.NewGuid())),
             new EfPlatformEventStore(dbContext),
             CreateNotificationDispatcher(dbContext, timeProvider),
             new TradingScheduleGate(),
@@ -241,7 +245,12 @@ public class IgProofDataTests
         ProtectedCredentialService credentialService,
         TimeProvider timeProvider)
     {
-        return new SqlPlatformConfigurationStore(dbContext, configuration, credentialService, timeProvider);
+        return new SqlPlatformConfigurationStore(
+            dbContext,
+            configuration,
+            credentialService,
+            timeProvider,
+            new PlatformEnvironmentContext(PlatformEnvironmentKind.Test));
     }
 
     private static NotificationDispatcher CreateNotificationDispatcher(PlatformDbContext dbContext, TimeProvider timeProvider)

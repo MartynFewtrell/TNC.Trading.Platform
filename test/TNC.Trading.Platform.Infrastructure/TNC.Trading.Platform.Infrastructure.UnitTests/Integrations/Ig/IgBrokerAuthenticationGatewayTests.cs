@@ -103,6 +103,32 @@ public sealed class IgBrokerAuthenticationGatewayTests
     }
 
     /// <summary>
+    /// Traces to Phase 4.3 capability-first routing and SR2.
+    /// Verifies an unavailable applied catalog record is rejected before catalog credential retrieval or HTTP.
+    /// Expected: neither spy records activity.
+    /// Why: unavailable Live/Training records must be non-executable even when legacy request input says Demo.
+    /// </summary>
+    [Fact]
+    public async Task AuthenticateAndCollectProofAsync_ShouldRejectUnavailableAppliedCatalogBeforeCredentialsOrHttp()
+    {
+        var handler = CreateSuccessfulHandler();
+        var credentials = new CountingProtectedCredentialService();
+        var resolver = new StubAppliedBrokerEnvironmentContextResolver(new AppliedBrokerEnvironmentContext(
+            Guid.NewGuid(), "Ig", "Live", "Active", "Unavailable", "IgLive", false));
+        var gateway = new IgBrokerAuthenticationGateway(
+            new HttpClient(handler) { BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/") },
+            credentials,
+            resolver);
+
+        var outcome = await gateway.AuthenticateAndCollectProofAsync(CreateRequest(), CancellationToken.None);
+
+        Assert.False(outcome.IsAuthenticated);
+        Assert.Equal(BrokerAuthenticationFailureKind.UnsupportedEnvironment, outcome.Failure!.Kind);
+        Assert.Equal(0, credentials.CatalogCredentialCalls);
+        Assert.Empty(handler.Requests);
+    }
+
+    /// <summary>
     /// Traces to Phase 4 secret-safety boundary and SR2.
     /// Verifies provider session tokens are used for dependent calls but never appear in the inward outcome.
     /// Expected: evidence and proof serialize without the raw token values while proof requests still carry them outward.
@@ -380,8 +406,11 @@ public sealed class IgBrokerAuthenticationGatewayTests
         }
     }
 
-    private sealed class FakeProtectedCredentialService : IProtectedCredentialService
+    private class FakeProtectedCredentialService : IProtectedCredentialService
     {
+        public virtual Task<IgCredentials> GetCredentialsAsync(Guid brokerEnvironmentId, CancellationToken cancellationToken) =>
+            Task.FromResult(new IgCredentials("api-secret", "demo-user", "password-secret"));
+
         public Task<CredentialPresence> GetPresenceAsync(
             BrokerEnvironmentKind brokerEnvironment,
             CancellationToken cancellationToken) =>
@@ -396,9 +425,27 @@ public sealed class IgBrokerAuthenticationGatewayTests
             CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
-        public Task<IgCredentials> GetCredentialsAsync(
+        public virtual Task<IgCredentials> GetCredentialsAsync(
             BrokerEnvironmentKind brokerEnvironment,
             CancellationToken cancellationToken) =>
             Task.FromResult(new IgCredentials("api-secret", "demo-user", "password-secret"));
+    }
+
+    private sealed class CountingProtectedCredentialService : FakeProtectedCredentialService
+    {
+        public int CatalogCredentialCalls { get; private set; }
+
+        public override Task<IgCredentials> GetCredentialsAsync(Guid brokerEnvironmentId, CancellationToken cancellationToken)
+        {
+            CatalogCredentialCalls++;
+            return Task.FromResult(new IgCredentials("api-secret", "demo-user", "password-secret"));
+        }
+    }
+
+    private sealed class StubAppliedBrokerEnvironmentContextResolver(AppliedBrokerEnvironmentContext context) : IAppliedBrokerEnvironmentContextResolver
+    {
+        public Task<AppliedBrokerEnvironmentContext?> ResolveAppliedAsync(CancellationToken cancellationToken) => Task.FromResult<AppliedBrokerEnvironmentContext?>(context);
+
+        public Task<AppliedBrokerEnvironmentContext?> ResolveAsync(Guid brokerEnvironmentId, CancellationToken cancellationToken) => Task.FromResult<AppliedBrokerEnvironmentContext?>(context);
     }
 }

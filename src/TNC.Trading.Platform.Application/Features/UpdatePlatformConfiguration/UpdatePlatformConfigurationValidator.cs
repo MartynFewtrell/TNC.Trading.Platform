@@ -68,13 +68,6 @@ internal sealed class UpdatePlatformConfigurationValidator
             errors[nameof(update.ChangedBy)] = ["ChangedBy is required."];
         }
 
-        if (TradingScheduleGate.IsLiveTargetBlocked(
-            update.PlatformEnvironment,
-            update.BrokerEnvironment))
-        {
-            errors[nameof(update.BrokerEnvironment)] = ["IG live is visible but unavailable while the platform environment is Test."];
-        }
-
         if (errors.Count > 0)
         {
             throw new ConfigurationValidationException(errors);

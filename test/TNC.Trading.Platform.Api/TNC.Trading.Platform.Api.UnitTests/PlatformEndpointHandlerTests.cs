@@ -50,7 +50,7 @@ public class PlatformEndpointHandlerTests
     [Fact]
     public async Task UpdatePlatformConfigurationHandleAsync_ShouldReturnValidationProblem_WhenRequestIsInvalid()
     {
-        var request = CreateUpdateRequest("invalid", "Demo");
+        var request = CreateUpdateRequest("invalid");
         var validator = new UpdatePlatformConfigurationValidator();
 
         var result = await UpdatePlatformConfigurationEndpointHandler.HandleAsync(
@@ -60,7 +60,7 @@ public class PlatformEndpointHandlerTests
             CancellationToken.None);
 
         var validationProblem = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.ValidationProblem>(result.Result);
-        Assert.Contains(nameof(request.PlatformEnvironment), validationProblem.ProblemDetails.Errors.Keys);
+        Assert.Contains(nameof(request.BrokerEnvironment), validationProblem.ProblemDetails.Errors.Keys);
         Assert.Equal(400, validationProblem.StatusCode);
         Assert.Equal("One or more validation errors occurred.", validationProblem.ProblemDetails.Title);
     }
@@ -99,7 +99,7 @@ public class PlatformEndpointHandlerTests
     private static ClaimsPrincipal CreatePrincipal(params Claim[] claims)
         => new(new ClaimsIdentity(claims, authenticationType: "TestAuthentication"));
 
-    private static UpdatePlatformConfigurationRequest CreateUpdateRequest(string platformEnvironment, string brokerEnvironment)
+    private static UpdatePlatformConfigurationRequest CreateUpdateRequest(string brokerEnvironment)
     {
         var tradingSchedule = new UpdateTradingScheduleRequest(
             new TimeOnly(8, 0),
@@ -114,7 +114,6 @@ public class PlatformEndpointHandlerTests
         var credentials = new UpdateIgCredentialsRequest("api-key", "identifier", "password");
 
         return new UpdatePlatformConfigurationRequest(
-            platformEnvironment,
             brokerEnvironment,
             tradingSchedule,
             retryPolicy,

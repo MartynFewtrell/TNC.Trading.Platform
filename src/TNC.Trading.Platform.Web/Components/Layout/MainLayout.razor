@@ -46,6 +46,7 @@
                 @if (operatorContext.IsAdministrator)
                 {
                     <PlatformNavItem Href="/administration/authentication" Icon="admin_panel_settings" Text="Authentication administration" />
+                    <PlatformNavItem Href="/administration/broker-environments" Icon="lan" Text="Broker environments" />
                 }
             </nav>
         }
@@ -68,6 +69,7 @@
     protected override async Task OnInitializedAsync()
     {
         operatorContext = await ShellContextProvider.GetOperatorContextAsync();
+        ShellContextProvider.EnvironmentChanged += OnEnvironmentChanged;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -83,9 +85,16 @@
 
     public void Dispose()
     {
+        ShellContextProvider.EnvironmentChanged -= OnEnvironmentChanged;
         shellEnvironmentLoadCancellation.Cancel();
         shellEnvironmentLoadCancellation.Dispose();
     }
+
+    private void OnEnvironmentChanged() => _ = InvokeAsync(async () =>
+    {
+        shellEnvironment = await ShellContextProvider.GetEnvironmentAsync();
+        StateHasChanged();
+    });
 
     private Task ToggleSidebarAsync()
     {

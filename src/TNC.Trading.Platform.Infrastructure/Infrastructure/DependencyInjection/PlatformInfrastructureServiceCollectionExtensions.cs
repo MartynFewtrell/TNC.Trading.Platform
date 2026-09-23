@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Http.Resilience;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.GetIgLoginHistory.Ports;
 using TNC.Trading.Platform.Application.Features.PlatformAuthentication.Ports;
@@ -11,6 +12,7 @@ using TNC.Trading.Platform.Application.Features.GetPlatformEvents.Ports;
 using TNC.Trading.Platform.Application.Features.GetPlatformStatus.Ports;
 using TNC.Trading.Platform.Application.Features.AccountDetails;
 using TNC.Trading.Platform.Application.Features.AccountPreferences;
+using TNC.Trading.Platform.Application.Features.BrokerEnvironments;
 using TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent.Ports;
 using TNC.Trading.Platform.Application.Services;
 using TNC.Trading.Platform.Infrastructure.Configuration.SqlServer;
@@ -60,6 +62,8 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         });
 
         services.AddScoped<ProtectedCredentialService>();
+        services.AddScoped<IAppliedBrokerEnvironmentContextResolver, SqlAppliedBrokerEnvironmentContextResolver>();
+        services.AddScoped<IBrokerEnvironmentCatalogService, SqlBrokerEnvironmentCatalogService>();
         services.AddScoped<IProtectedCredentialService>(serviceProvider => serviceProvider.GetRequiredService<ProtectedCredentialService>());
         services.AddScoped<SqlPlatformConfigurationStore>();
         services.AddScoped<IPlatformConfigurationStore>(serviceProvider =>
@@ -85,6 +89,7 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         services.AddScoped<INotificationProvider, AzureCommunicationServicesEmailNotificationProvider>();
         services.AddScoped<AppNotificationDispatcher, NotificationDispatcher>();
         services.AddScoped<OperationalRecordRetentionProcessor>();
+        services.AddScoped<BrokerEnvironmentCatalogIntegrityService>();
         services.AddScoped<PlatformStartupInitializer>();
         services.AddHostedService<OperationalRecordRetentionService>();
 
@@ -109,10 +114,13 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
             throw new InvalidOperationException("'Ig:AccountPreferencesBaseUrl' must be an absolute HTTP(S) URI with a trailing slash.");
         }
 
+#pragma warning disable EXTEXP0001
         services.AddHttpClient<IAccountPreferencesGateway, IgAccountPreferencesGateway>(client =>
         {
             client.BaseAddress = parsedAccountPreferencesBaseUrl;
-        });
+        })
+            .RemoveAllResilienceHandlers();
+#pragma warning restore EXTEXP0001
 
         services.AddHttpClient<IBrokerAuthenticationGateway, IgBrokerAuthenticationGateway>(client =>
         {

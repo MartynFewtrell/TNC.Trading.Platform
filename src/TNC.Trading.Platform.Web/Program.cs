@@ -3,8 +3,28 @@ using TNC.Trading.Platform.Web.Authentication;
 using TNC.Trading.Platform.Web.Components;
 using TNC.Trading.Platform.Application.Authentication;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Options;
+using TNC.Trading.Platform.Application.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddOptions<PlatformEnvironmentOptions>()
+    .Bind(builder.Configuration.GetSection("Platform"))
+    .Validate(options =>
+    {
+        try
+        {
+            options.GetValidatedEnvironment();
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }, "Platform:Environment must be one of Desktop, Development, Test, or Live.")
+    .ValidateOnStart();
+builder.Services.AddSingleton<IPlatformEnvironmentContext>(serviceProvider =>
+    new PlatformEnvironmentContext(serviceProvider.GetRequiredService<IOptions<PlatformEnvironmentOptions>>().Value.GetValidatedEnvironment()));
 
 builder.AddServiceDefaults();
 builder.AddPlatformDataProtection();

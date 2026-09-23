@@ -20,8 +20,9 @@ public sealed class AccountPreferencesEnvironmentPolicyTests
     /// Expected: Demo is supported and Live is rejected before any provider call, preventing unauthorized monetary exposure.
     /// </summary>
     [Fact]
-    public void IsSupported_ShouldRequireTestPlatformAndDemoBroker_WhenCheckingFeatureEnvironment()
+    public void IsSupported_ShouldRequireDesktopOrTestPlatformAndDemoBroker_WhenCheckingFeatureEnvironment()
     {
+        Assert.True(AccountPreferencesEnvironmentPolicy.IsSupported(PlatformEnvironmentKind.Desktop, BrokerEnvironmentKind.Demo));
         Assert.True(AccountPreferencesEnvironmentPolicy.IsSupported(PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Demo));
         Assert.False(AccountPreferencesEnvironmentPolicy.IsSupported(PlatformEnvironmentKind.Live, BrokerEnvironmentKind.Demo));
         Assert.False(AccountPreferencesEnvironmentPolicy.IsSupported(PlatformEnvironmentKind.Test, BrokerEnvironmentKind.Live));
