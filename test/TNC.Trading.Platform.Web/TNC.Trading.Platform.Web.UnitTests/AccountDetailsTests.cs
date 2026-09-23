@@ -6,6 +6,28 @@ namespace TNC.Trading.Platform.Web.UnitTests;
 
 public sealed class AccountDetailsTests
 {
+    /// <summary>
+    /// Trace: FR account details.
+    /// Verifies: a Viewer can load account details without requesting the Operator scope used exclusively by the optional Refresh action.
+    /// Expected: saved account details render, Refresh remains unavailable, and no sign-in navigation occurs.
+    /// Why: checking an optional capability must not redirect a Viewer away from a page the Viewer policy authorizes.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldNotRedirect_WhenViewerCannotRefreshAccountDetails()
+    {
+        using var context = new PlatformComponentTestContext("local-viewer", null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new { Retrieval = (object?)null, OlderCursor = (string?)null, NewerCursor = (string?)null }));
+
+        var cut = context.Render<AccountDetails>();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Contains("No saved account details are available yet", cut.Markup, StringComparison.Ordinal);
+            Assert.Empty(cut.FindAll("button.platform-button"));
+            Assert.Null(context.NavigationManager.LastNavigationUri);
+        });
+    }
+
     /// <summary>Trace: FR account history. Verifies the Viewer page gives an explicit empty state when no snapshot is saved.</summary>
     [Fact]
     public void Render_ShouldShowEmptyState_WhenNoRetrievalIsSaved()

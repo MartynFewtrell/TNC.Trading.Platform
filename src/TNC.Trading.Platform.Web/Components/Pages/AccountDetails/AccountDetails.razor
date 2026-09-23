@@ -4,6 +4,7 @@
 @using TNC.Trading.Platform.Web.Authentication
 @inject AccountDetailsPagePresenter Presenter
 @inject PlatformNavigationAccessCoordinator NavigationAccessCoordinator
+@inject PlatformOperatorContextAccessor OperatorContextAccessor
 
 <PageTitle>Account details</PageTitle>
 
@@ -82,7 +83,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         hasRequiredScope = await NavigationAccessCoordinator.EnsureRequiredScopesAsync("/account-details", PlatformAuthenticationDefaults.Scopes.Viewer);
-        canRefresh = hasRequiredScope && await NavigationAccessCoordinator.EnsureRequiredScopesAsync("/account-details", PlatformAuthenticationDefaults.Scopes.Operator);
+        canRefresh = hasRequiredScope && (await OperatorContextAccessor.GetCurrentAsync()).IsOperator;
         if (hasRequiredScope)
         {
             await Presenter.LoadAsync();

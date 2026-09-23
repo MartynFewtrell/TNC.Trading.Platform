@@ -19,10 +19,9 @@ public sealed class AppHostProjectRegistrationTests
 
         var apiProject = AppHostProjectRegistration.AddApiProject(builder, infrastructure);
         var waitAnnotations = apiProject.Resource.Annotations.OfType<WaitAnnotation>().ToArray();
-        var endpointNames = apiProject.Resource.Annotations
+        var endpoints = apiProject.Resource.Annotations
             .OfType<EndpointAnnotation>()
-            .Select(annotation => annotation.Name)
-            .ToArray();
+            .ToDictionary(annotation => annotation.Name, StringComparer.Ordinal);
 
         Assert.Equal("api", apiProject.Resource.Name);
         Assert.Contains(waitAnnotations, annotation => annotation.Resource.Name == "platformdb");
@@ -30,7 +29,7 @@ public sealed class AppHostProjectRegistrationTests
         Assert.Contains(
             apiProject.Resource.Annotations,
             annotation => annotation is ResourceUrlsCallbackAnnotation);
-        Assert.Contains("https", endpointNames);
+        Assert.Contains("https", endpoints.Keys);
     }
 
     /// <summary>
@@ -48,17 +47,16 @@ public sealed class AppHostProjectRegistrationTests
 
         var webProject = AppHostProjectRegistration.AddWebProject(builder, apiProject, infrastructure);
         var waitAnnotations = webProject.Resource.Annotations.OfType<WaitAnnotation>().ToArray();
-        var endpointNames = webProject.Resource.Annotations
+        var endpoints = webProject.Resource.Annotations
             .OfType<EndpointAnnotation>()
-            .Select(annotation => annotation.Name)
-            .ToArray();
+            .ToDictionary(annotation => annotation.Name, StringComparer.Ordinal);
 
         Assert.Equal("web", webProject.Resource.Name);
         Assert.Contains(waitAnnotations, annotation => annotation.Resource.Name == "api");
         Assert.Contains(
             webProject.Resource.Annotations,
             annotation => annotation is ResourceUrlsCallbackAnnotation);
-        Assert.Contains("https", endpointNames);
+        Assert.Contains("https", endpoints.Keys);
     }
 
     private static IDistributedApplicationBuilder CreateBuilder()

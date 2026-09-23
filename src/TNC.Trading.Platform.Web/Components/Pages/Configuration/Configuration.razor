@@ -50,23 +50,26 @@ else
                     {
                         <p class="warning" role="status" data-testid="configuration-restart-required-indicator">Pending broker selection will apply on the next platform start.</p>
                     }
-                    <div class="platform-form-grid">
-                        @foreach (var broker in brokerEnvironments)
+                    <div class="platform-option-list" role="radiogroup" aria-label="Broker environment">
+                        @foreach (var broker in brokerEnvironments.Where(broker => !IsRetired(broker)))
                         {
-                            <label>
+                            <label class="platform-option-list__option">
                                 <input type="radio" name="broker-selection" checked="@(selectedBrokerId == broker.Id)" @onchange="() => selectedBrokerId = broker.Id" disabled="@(!CanSelect(broker))" />
-                                @broker.Name (@broker.Kind)
-                                @if (!string.IsNullOrWhiteSpace(broker.AvailabilityReason))
-                                {
-                                    <span class="hint">@broker.AvailabilityReason</span>
-                                }
+                                <span>
+                                    @broker.Name (@broker.Kind)
+                                    @if (!string.IsNullOrWhiteSpace(broker.AvailabilityReason))
+                                    {
+                                        <span class="hint platform-option-list__hint">@broker.AvailabilityReason</span>
+                                    }
+                                </span>
                             </label>
                         }
                     </div>
-                    <label>
-                        <input type="checkbox" @bind="selectionAcknowledged" /> I understand this selection takes effect after restart.
+                    <label class="platform-option-list__acknowledgement">
+                        <input type="checkbox" @bind="selectionAcknowledged" />
+                        <span>I understand this selection takes effect after restart.</span>
                     </label>
-                    <button class="platform-primary-action" type="button" data-testid="configuration-select-broker-button" disabled="@(selectionInProgress || selectedBrokerId is null || !selectionAcknowledged)" @onclick="SelectBrokerAsync">@(selectionInProgress ? "Selecting..." : "Select broker")</button>
+                    <button class="platform-primary-action platform-primary-action--broker-selection" type="button" data-testid="configuration-select-broker-button" disabled="@(selectionInProgress || selectedBrokerId is null || !selectionAcknowledged)" @onclick="SelectBrokerAsync">@(selectionInProgress ? "Selecting..." : "Select broker")</button>
                     @if (!string.IsNullOrWhiteSpace(selectionMessage))
                     {
                         <p role="status" data-testid="configuration-selection-message">@selectionMessage</p>
@@ -271,6 +274,9 @@ else
     }
 
     private bool CanSelect(BrokerEnvironmentViewModel broker) => string.Equals(broker.Availability, "Available", StringComparison.OrdinalIgnoreCase) && broker.CanAuthenticate;
+
+    private static bool IsRetired(BrokerEnvironmentViewModel broker) =>
+        string.Equals(broker.Lifecycle, "Retired", StringComparison.OrdinalIgnoreCase);
 
     private async Task SelectBrokerAsync()
     {

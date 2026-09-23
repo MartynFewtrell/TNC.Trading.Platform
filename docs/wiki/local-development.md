@@ -376,10 +376,16 @@ cross-process idempotency is not provided by the current local runtime.
 - do not delete the SQL volume when preserving existing protected credentials is required
 - if the key table or key material was intentionally lost, replace the IG credentials through the write-only configuration flow so new ciphertext is created
 
+### Keycloak admin console returns HTTP 431
+
+- restart AppHost so Keycloak is available at its stable `https://localhost:8080` endpoint
+- clear browser site data for `localhost` to remove cookies issued while Keycloak used dynamic local ports
+- retry the AppHost **Keycloak Admin Console** link
+
 ### Keycloak admin console shows a third-party iframe timeout
 
 - open Keycloak through the direct local endpoint instead of an older proxied dashboard URL
-- use the AppHost Keycloak link after restarting AppHost, or browse to `http://localhost:8080/admin/master/console/`
+- use the AppHost Keycloak link after restarting AppHost, or browse to `https://localhost:8080/admin/master/console/`
 - if the problem persists after a branch change, reset the persisted local `keycloak` resource and retry
 
 ### AppHost-backed auth tests fail to find the Web listener

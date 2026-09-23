@@ -200,6 +200,31 @@ public sealed class ConfigurationTests
     }
 
     /// <summary>
+    /// Trace: broker selection configuration.
+    /// Verifies: retired broker environments are excluded from the selectable environment list.
+    /// Expected: active broker environments remain visible, while retired records are absent.
+    /// Why: retired environments cannot be selected and must not be presented as available choices.
+    /// </summary>
+    [Fact]
+    public void BrokerSelection_ShouldHideRetiredEnvironment_WhenBrokerCatalogContainsRetiredEnvironment()
+    {
+        using var context = new PlatformComponentTestContext(
+            "local-operator",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerCatalogWithRetiredEnvironment()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerStatus()));
+
+        var cut = context.Render<Configuration>();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Contains("IG Demo (Demo)", cut.Markup, StringComparison.Ordinal);
+            Assert.DoesNotContain("Retired IG Demo", cut.Markup, StringComparison.Ordinal);
+        });
+    }
+
+    /// <summary>
     /// Trace: Phase 3 pending selection. Verifies the rendered status distinguishes an unapplied selected broker and exposes the restart warning.
     /// Expected: applied and selected names differ and the pending indicator is rendered.
     /// Why: operators need an unambiguous view of whether a selection is merely pending or already applied.
@@ -238,6 +263,23 @@ public sealed class ConfigurationTests
             true,
             true,
             "catalog-token")
+    ];
+
+    private static BrokerEnvironmentViewModel[] CreateBrokerCatalogWithRetiredEnvironment() =>
+    [
+    .. CreateBrokerCatalog(),
+    new(
+        Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+        "Retired IG Demo",
+        "IG",
+        "Demo",
+        "Retired",
+        "Unavailable",
+        "Retired by an administrator.",
+        "Demo",
+        true,
+        false,
+        "retired-catalog-token")
     ];
 
     private static BrokerEnvironmentStatusViewModel CreateBrokerStatus(bool restartRequired = false, string? selectedName = null)

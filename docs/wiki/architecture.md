@@ -243,7 +243,7 @@ For supported local development:
 - AppHost starts SQL Server
 - AppHost creates the `platformdb` database
 - AppHost starts Mailpit for local SMTP capture
-- AppHost starts Keycloak on a stable local port with a repeatable realm import for seeded auth users, roles, scopes, and clients
+- AppHost starts Keycloak on stable local port `8080` with a repeatable realm import for seeded auth users, roles, scopes, and clients
 - the API and Web hosts receive their SQL, SMTP, and authentication settings through environment variables
 - Docker is required because Keycloak is part of the local authentication boundary and the in-memory SQL mode is not a supported application runtime
 

@@ -306,6 +306,10 @@ form {
     text-decoration: none;
 }
 
+.platform-primary-action--broker-selection {
+    margin-top: 0.75rem;
+}
+
 .platform-manual-retry-button {
     margin-top: 1rem;
 }
@@ -430,6 +434,32 @@ form {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     gap: 0 1rem;
+}
+
+.platform-option-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.platform-option-list__option,
+.platform-option-list__acknowledgement {
+    display: grid;
+    grid-template-columns: 1.25rem minmax(0, 1fr);
+    align-items: start;
+    gap: 0.75rem;
+    margin: 0;
+}
+
+.platform-option-list__option input,
+.platform-option-list__acknowledgement input {
+    margin: 0.2rem 0 0;
+}
+
+.platform-option-list__hint {
+    display: block;
+    margin-top: 0.35rem;
 }
 
 .platform-inline-actions {
