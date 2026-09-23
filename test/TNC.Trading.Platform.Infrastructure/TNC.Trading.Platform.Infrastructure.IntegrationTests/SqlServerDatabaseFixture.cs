@@ -8,7 +8,6 @@ namespace TNC.Trading.Platform.Infrastructure.IntegrationTests;
 public sealed class SqlServerDatabaseFixture : IAsyncLifetime
 {
     private static readonly TimeSpan OperationTimeout = TimeSpan.FromSeconds(45);
-    private readonly CancellationTokenSource fixtureCancellationTokenSource = new(OperationTimeout);
     private readonly MsSqlContainer sqlServer = new MsSqlBuilder()
         .WithPassword("TncTradingPlatform!Integration1")
         .Build();
@@ -18,9 +17,12 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        using var timeoutCancellationTokenSource = new CancellationTokenSource(OperationTimeout);
+        var cancellationToken = timeoutCancellationTokenSource.Token;
+
         try
         {
-            await sqlServer.StartAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
+            await sqlServer.StartAsync(cancellationToken).ConfigureAwait(false);
             var connectionBuilder = new SqlConnectionStringBuilder(sqlServer.GetConnectionString());
             databaseName = $"TncTradingPlatformIntegration_{Guid.NewGuid():N}";
             connectionBuilder.InitialCatalog = databaseName;
@@ -29,11 +31,11 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
             masterConnectionString = connectionBuilder.ConnectionString;
 
             await using var connection = new SqlConnection(masterConnectionString);
-            await connection.OpenAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
             await using var command = connection.CreateCommand();
             command.CommandText = $"CREATE DATABASE [{databaseName}]";
             command.CommandTimeout = (int)OperationTimeout.TotalSeconds;
-            await command.ExecuteNonQueryAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
@@ -52,7 +54,7 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
     }
 
     internal string ConnectionString => databaseConnectionString;
-    internal CancellationToken CancellationToken => fixtureCancellationTokenSource.Token;
+    internal CancellationToken CancellationToken => CancellationToken.None;
 
     internal static Task<Guid> GetIgDemoBrokerEnvironmentIdAsync(PlatformDbContext context, CancellationToken cancellationToken) =>
         context.BrokerEnvironments
@@ -62,8 +64,10 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
 
     internal async Task ResetDatabaseAsync()
     {
+        using var timeoutCancellationTokenSource = new CancellationTokenSource(OperationTimeout);
+        var cancellationToken = timeoutCancellationTokenSource.Token;
         await using var connection = new SqlConnection(databaseConnectionString);
-        await connection.OpenAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             DROP TABLE IF EXISTS [__EFMigrationsHistory];
@@ -93,7 +97,7 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
             DROP TABLE IF EXISTS [BrokerEnvironments];
             """;
         command.CommandTimeout = (int)OperationTimeout.TotalSeconds;
-        await command.ExecuteNonQueryAsync(fixtureCancellationTokenSource.Token).ConfigureAwait(false);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task DisposeAsync()
@@ -113,7 +117,6 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
         finally
         {
             await sqlServer.DisposeAsync().ConfigureAwait(false);
-            fixtureCancellationTokenSource.Dispose();
         }
     }
 }

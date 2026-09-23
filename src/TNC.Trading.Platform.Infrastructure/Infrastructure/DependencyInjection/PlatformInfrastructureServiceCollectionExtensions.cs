@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Http.Resilience;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.GetIgLoginHistory.Ports;
 using TNC.Trading.Platform.Application.Features.PlatformAuthentication.Ports;
@@ -113,10 +114,13 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
             throw new InvalidOperationException("'Ig:AccountPreferencesBaseUrl' must be an absolute HTTP(S) URI with a trailing slash.");
         }
 
+#pragma warning disable EXTEXP0001
         services.AddHttpClient<IAccountPreferencesGateway, IgAccountPreferencesGateway>(client =>
         {
             client.BaseAddress = parsedAccountPreferencesBaseUrl;
-        });
+        })
+            .RemoveAllResilienceHandlers();
+#pragma warning restore EXTEXP0001
 
         services.AddHttpClient<IBrokerAuthenticationGateway, IgBrokerAuthenticationGateway>(client =>
         {

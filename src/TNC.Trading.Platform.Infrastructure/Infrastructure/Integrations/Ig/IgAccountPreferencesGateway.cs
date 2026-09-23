@@ -24,7 +24,7 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
             var result = await SendAsync(HttpMethod.Get, null, credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);
             return result.Outcome is AccountPreferencesGatewayOutcome.Succeeded success
                 ? new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, success.Preferences.TrailingStopsEnabled)
-                : new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, null, AccountPreferencesFailureCategory.Transient, "IG account preference observation was not available.");
+                : new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, null, AccountPreferencesFailureCategory.Transient, "IG account preference observation is unavailable.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (TaskCanceledException) { return new(request.TargetAccountId, attemptId, DateTimeOffset.UtcNow, null, AccountPreferencesFailureCategory.Transient, "IG account preferences observation timed out."); }
@@ -151,7 +151,7 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
                 ? AccountPreferencesFailureCategory.Rejected
                 : (int)response.StatusCode >= 500 ? AccountPreferencesFailureCategory.Unavailable : AccountPreferencesFailureCategory.Unsupported;
             var reason = category == AccountPreferencesFailureCategory.Unavailable
-                ? "IG account preference observation was not available."
+                ? "IG account preference observation is unavailable."
                 : "IG account preferences provider returned a non-success response.";
             return (new AccountPreferencesGatewayOutcome.Failed(category, reason), false);
         }
