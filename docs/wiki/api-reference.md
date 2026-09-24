@@ -28,7 +28,12 @@ The Blazor UI talks to the API over service discovery using the internal `https+
 | `POST` | `/api/platform/broker-environments/{id}/retirement-preview` | Create a server-bound retirement preview (Administrator). |
 | `POST` | `/api/platform/broker-environments/{id}/retire` | Retire and purge a catalog record (Administrator). |
 | `GET` | `/api/platform/configuration` | Current redacted schedule/profile configuration for operator-capable users. |
-| `PUT` | `/api/platform/configuration` | Update schedule, retry, and notification configuration; platform identity is not mutable here. |
+| `PUT` | `/api/platform/configuration` | Update schedule, retry, notification, and instrument-collection settings; platform identity is not mutable here. |
+| `GET` | `/api/platform/market-categories` | Read the saved applied-environment category catalogue, shared interest, and latest collection status (Viewer). |
+| `POST` | `/api/platform/market-categories/refresh` | Refresh the saved category catalogue inside the active schedule and allowance (Operator). |
+| `GET` | `/api/platform/market-categories/{categoryCode}/instruments?pageSize=50&cursor={opaque}` | Read one page from the versioned saved instrument snapshot (Viewer). |
+| `PUT` | `/api/platform/market-categories/{categoryCode}/interest` | Update shared category interest using the expected interest revision (Operator). |
+| `GET` | `/api/platform/instrument-collection/status` | Read persisted collector schedule, budget, and safe outcomes (Viewer). |
 | `POST` | `/api/platform/auth/manual-retry` | Trigger a manual retry cycle when allowed for operator-capable users. |
 | `POST` | `/api/platform/auth/audit` | Persist operator authentication audit events for authenticated callers. |
 | `GET` | `/api/platform/events` | Return redacted operational events for viewer-capable operators. |
@@ -75,6 +80,61 @@ contention, `429` for a recognized IG allowance response, `502` for malformed
 provider data, `503` for an unavailable upstream, and `504` for timeout.
 Existing saved data remains readable when a refresh fails. Viewer users can
 read history but cannot invoke the refresh route.
+
+## Market categories and saved instruments
+
+All routes in this section operate on saved SQL data except for the
+schedule-gated Operator category refresh. Category reads include
+`interestRevision`, the applied environment, current categories with shared
+interest and latest collection status, and dormant interested category codes.
+New categories are not selected by default. `GET` performs no IG request.
+
+The instruments route requires Viewer authorization. `pageSize` defaults to
+`50` and accepts `1` through `100`; invalid codes, size, or cursors return
+validation Problem Details. A successful response includes the state,
+category code, snapshot version, platform UTC retrieval time, instrument rows,
+and nullable `nextCursor`. `NeverCollected` is distinct from a complete empty
+snapshot. Cursors are opaque, Data Protection-protected values bound to the
+applied broker environment, exact category, snapshot version, and last EPIC.
+An invalid cursor is a validation failure; a changed snapshot returns
+`409 Conflict`, so the client must restart from the first page. A category not
+in the saved catalogue returns `404 Not Found`. The API reads SQL only.
+
+Operators update a category with:
+
+```json
+{
+  "interested": true,
+  "expectedRevision": 4
+}
+```
+
+The update is shared within the applied broker environment and uses
+optimistic concurrency. The response contains the new revision; a stale
+revision returns `409 Conflict`, and a category that is not currently listed
+returns `404 Not Found`. This write changes intent only and does not start
+collection.
+
+`GET /api/platform/instrument-collection/status` returns the current safe
+collector state, applied broker environment, trading day, due slot/next
+wake-up, request budget, and per-category outcomes. It never includes IG
+credentials or raw provider diagnostics.
+
+The Operator configuration GET/PUT contract includes
+`instrumentUpdatesPerDay` (one to four) and
+`approvedNonTradingDailyRequestAllowance`. The response reports current and
+pending frequency, the next effective local trading day, the approved
+allowance, request usage, collection outcome, and safe status. A higher
+frequency requires a measured-capacity, environment-specific allowance; zero
+or unset allowance pauses collection. The shared budget counts category,
+session, and instrument calls. Saving settings does not invoke IG; frequency
+changes take effect on the next local trading day.
+
+The Operator category refresh returns `409 Conflict` when the applied
+schedule is inactive or another cycle owns the prerequisite, and safe
+`429`, `502`, `503`, or `504` Problem Details for allowance, provider-data,
+availability, or timeout failures. The saved catalogue and last-good
+instrument snapshots remain available after failure.
 
 ## GET /
 

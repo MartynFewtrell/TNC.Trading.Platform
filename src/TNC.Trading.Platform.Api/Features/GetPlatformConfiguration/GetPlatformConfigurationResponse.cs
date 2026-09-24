@@ -8,4 +8,5 @@ internal sealed record GetPlatformConfigurationResponse(
     ConfigurationNotificationSettingsResponse NotificationSettings,
     CredentialPresenceResponse Credentials,
     bool RestartRequired,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    InstrumentCollectionConfigurationResponse InstrumentCollection);

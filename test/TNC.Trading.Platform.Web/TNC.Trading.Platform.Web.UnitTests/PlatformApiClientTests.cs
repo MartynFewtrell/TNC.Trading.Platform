@@ -55,6 +55,145 @@ public sealed class PlatformApiClientTests
     }
 
     /// <summary>
+    /// Trace: Market Category Instruments Work Item 6, step 3.
+    /// Verifies: the client requests a bounded saved page, URL-escapes the category and opaque cursor, and authenticates with Viewer scope.
+    /// Expected: the typed page is returned from the SQL-only route and the request contains the exact page/cursor query.
+    /// Why: saved browsing must not access the provider and opaque cursor material must survive URL transport.
+    /// </summary>
+    [Fact]
+    public async Task GetMarketCategoryInstrumentPageAsync_ShouldEscapeAndParsePageRequest_WhenCursorIsProvided()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            userName: "local-viewer",
+            apiResponses: _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new
+            {
+                State = "Complete",
+                CategoryCode = "FX & CFD",
+                SnapshotVersion = 7L,
+                LastRetrievedAtUtc = DateTimeOffset.UtcNow,
+                Instruments = Array.Empty<object>(),
+                NextCursor = (string?)null
+            }));
+        var client = context.Services.GetRequiredService<PlatformApiClient>();
+
+        var page = await client.GetMarketCategoryInstrumentPageAsync("FX & CFD", 50, "opaque+cursor", CancellationToken.None);
+
+        Assert.Equal("Complete", page.State);
+        Assert.Equal("FX & CFD", page.CategoryCode);
+        Assert.Equal(7L, page.SnapshotVersion);
+        var request = Assert.Single(context.ApiHandler.Requests);
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Contains("/api/platform/market-categories/FX%20%26%20CFD/instruments?pageSize=50&cursor=opaque%2Bcursor", request.RequestUri, StringComparison.Ordinal);
+        Assert.StartsWith("Bearer ", request.AuthorizationHeader, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: Market Category Instruments Work Item 6, step 2.
+    /// Verifies: shared interest updates use the protected Operator route and serialize the expected set revision.
+    /// Expected: the returned revision is parsed and the PUT body contains both requested values.
+    /// Why: interest edits are optimistic-concurrency writes and must not trigger provider access.
+    /// </summary>
+    [Fact]
+    public async Task UpdateMarketCategoryInterestAsync_ShouldSendExpectedRevision_WhenOperatorChangesInterest()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            userName: "local-operator",
+            apiResponses: _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new { Revision = 12L }));
+        var client = context.Services.GetRequiredService<PlatformApiClient>();
+
+        var revision = await client.UpdateMarketCategoryInterestAsync("FX", true, 11, CancellationToken.None);
+
+        Assert.Equal(12L, revision);
+        var request = Assert.Single(context.ApiHandler.Requests);
+        Assert.Equal(HttpMethod.Put, request.Method);
+        Assert.EndsWith("/api/platform/market-categories/FX/interest", request.RequestUri, StringComparison.Ordinal);
+        Assert.Contains("\"interested\":true", request.Content, StringComparison.Ordinal);
+        Assert.Contains("\"expectedRevision\":11", request.Content, StringComparison.Ordinal);
+        Assert.StartsWith("Bearer ", request.AuthorizationHeader, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: Market Category Instruments Work Item 6, step 1.
+    /// Verifies: successful manual category refresh re-reads the saved category catalogue to hydrate interest state.
+    /// Expected: the client performs the Operator POST followed by the Viewer GET and returns the GET response.
+    /// Why: refresh must preserve the shared interest flags in the refreshed Web model without making the UI call IG.
+    /// </summary>
+    [Fact]
+    public async Task RefreshMarketCategoriesAsync_ShouldReloadCategories_WhenRefreshSucceeds()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            "local-operator",
+            null,
+            _ => new HttpResponseMessage(HttpStatusCode.NoContent),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new
+            {
+                Categories = new[] { new { Code = "FX", Interested = true } },
+                LastRefreshedAtUtc = DateTimeOffset.UtcNow,
+                InterestRevision = 3
+            }));
+        var client = context.Services.GetRequiredService<PlatformApiClient>();
+
+        var result = await client.RefreshMarketCategoriesAsync(CancellationToken.None);
+
+        Assert.True(result.Categories.Single().Interested);
+        Assert.Collection(
+            context.ApiHandler.Requests,
+            request =>
+            {
+                Assert.Equal(HttpMethod.Post, request.Method);
+                Assert.EndsWith("/api/platform/market-categories/refresh", request.RequestUri, StringComparison.Ordinal);
+            },
+            request =>
+            {
+                Assert.Equal(HttpMethod.Get, request.Method);
+                Assert.EndsWith("/api/platform/market-categories", request.RequestUri, StringComparison.Ordinal);
+            });
+    }
+
+    /// <summary>
+    /// Trace: Market Category Instruments Work Item 6, steps 2–4.
+    /// Verifies: the client reads the safe collector status from its protected Viewer endpoint.
+    /// Expected: quota and category outcome metadata are parsed without exposing provider payloads.
+    /// Why: the category and configuration surfaces need SQL-only status for operator visibility.
+    /// </summary>
+    [Fact]
+    public async Task GetInstrumentCollectionStatusAsync_ShouldReturnSafeQuotaStatus_WhenApiReturnsPayload()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            userName: "local-viewer",
+            apiResponses: _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new
+            {
+                State = "Available",
+                BrokerEnvironment = "Demo",
+                TradingDay = new DateOnly(2026, 9, 24),
+                IsDue = false,
+                CurrentSlot = (int?)null,
+                NextWakeUpUtc = DateTimeOffset.UtcNow.AddHours(1),
+                PauseReason = (string?)null,
+                LastCategoryRefreshAtUtc = DateTimeOffset.UtcNow,
+                LastCompletedSlot = 0,
+                CycleOutcome = "Complete",
+                CategoryPrerequisiteOutcome = "Complete",
+                SafeCategoryFailure = (string?)null,
+                UsedRequestBudget = 4,
+                ApprovedDailyRequestAllowance = 25,
+                Categories = new[] { new { CategoryCode = "FX", LastSuccessfulCollectionAtUtc = DateTimeOffset.UtcNow, Attempts = 1, Outcome = "Complete", SafeFailure = (string?)null } }
+            }));
+        var client = context.Services.GetRequiredService<PlatformApiClient>();
+
+        var status = await client.GetInstrumentCollectionStatusAsync(CancellationToken.None);
+
+        Assert.Equal("Available", status.State);
+        Assert.Equal(4, status.UsedRequestBudget);
+        Assert.Equal(25, status.ApprovedDailyRequestAllowance);
+        Assert.Equal("Complete", Assert.Single(status.Categories).Outcome);
+        var request = Assert.Single(context.ApiHandler.Requests);
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.EndsWith("/api/platform/instrument-collection/status", request.RequestUri, StringComparison.Ordinal);
+        Assert.StartsWith("Bearer ", request.AuthorizationHeader, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Trace: FR5, FR6, NF2, NF4, SR2, SR3, TR4, TR5, TR8.
     /// Verifies: the Web-to-API client parses the protected status payload, including the embedded IG login detail and latest non-secret snapshot, and sends the delegated bearer token to the API boundary.
     /// Expected: the parsed platform status is returned with the current IG login state and latest snapshot fields intact, and the outgoing request targets the protected status route with an authorization header.

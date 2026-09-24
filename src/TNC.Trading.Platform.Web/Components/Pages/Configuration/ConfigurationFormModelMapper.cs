@@ -34,7 +34,12 @@ internal static class ConfigurationFormModelMapper
         },
         Credentials = configuration.Credentials,
         CredentialsUpdate = new UpdateCredentialsViewModel(),
-        RestartRequired = configuration.RestartRequired
+        RestartRequired = configuration.RestartRequired,
+        InstrumentUpdatesPerDay = configuration.InstrumentCollection?.PendingUpdatesPerDay
+            ?? configuration.InstrumentCollection?.CurrentUpdatesPerDay,
+        ApprovedNonTradingDailyRequestAllowance = configuration.InstrumentCollection?.ApprovedNonTradingDailyRequestAllowance,
+        InstrumentCollection = configuration.InstrumentCollection
+            ?? new(false, "SettingsUnavailable", null, null, null, null, null, null, null, null)
     };
 
     public static UpdatePlatformConfigurationViewModel ToRequest(ConfigurationFormModel form) => new()
@@ -69,7 +74,9 @@ internal static class ConfigurationFormModelMapper
             Identifier = form.CredentialsUpdate.Identifier,
             Password = form.CredentialsUpdate.Password
         },
-        ChangedBy = form.ChangedBy
+        ChangedBy = form.ChangedBy,
+        InstrumentUpdatesPerDay = form.InstrumentUpdatesPerDay,
+        ApprovedNonTradingDailyRequestAllowance = form.ApprovedNonTradingDailyRequestAllowance
     };
 
     private static IReadOnlyList<DayOfWeek> ParseTradingDays(string value) =>

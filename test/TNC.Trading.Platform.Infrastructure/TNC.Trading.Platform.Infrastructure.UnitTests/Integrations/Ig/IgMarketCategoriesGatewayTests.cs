@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
+using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 using TNC.Trading.Platform.Infrastructure.Integrations.Ig;
 
 namespace TNC.Trading.Platform.Infrastructure.UnitTests.Integrations.Ig;
@@ -18,8 +19,10 @@ public sealed class IgMarketCategoriesGatewayTests
         var success = Assert.IsType<MarketCategoriesGatewayResult.Succeeded>(result);
         Assert.Equal(" FOREX ", success.Categories.Single().Code);
         Assert.Equal(HttpMethod.Post, handler.Requests[0].Method);
+        Assert.Equal("https://demo-api.ig.com/gateway/deal/session", handler.Requests[0].RequestUri!.AbsoluteUri);
         Assert.Equal("2", handler.Requests[0].Headers.GetValues("Version").Single());
         Assert.Equal(HttpMethod.Get, handler.Requests[1].Method);
+        Assert.Equal("https://demo-api.ig.com/gateway/deal/categories", handler.Requests[1].RequestUri!.AbsoluteUri);
         Assert.Equal("categories", handler.Requests[1].RequestUri!.AbsolutePath.Split('/').Last());
         Assert.Equal("1", handler.Requests[1].Headers.GetValues("Version").Single());
         Assert.Equal("api-key", handler.Requests[1].Headers.GetValues("X-IG-API-KEY").Single());
@@ -114,15 +117,100 @@ public sealed class IgMarketCategoriesGatewayTests
         var result = await new IgMarketCategoriesGateway(
             new HttpClient(handler) { BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/") },
             new FakeProtectedCredentialService(),
-            resolver).GetAsync(CancellationToken.None);
+            resolver,
+            new FakeRequestBudget(),
+            new IgProviderRequestThrottle(TimeSpan.Zero)).GetAsync(CancellationToken.None);
 
         var failure = Assert.IsType<MarketCategoriesGatewayResult.Failed>(result);
         Assert.Equal(MarketCategoriesFailureCategory.UnsupportedEnvironment, failure.Category);
         Assert.Empty(handler.Requests);
     }
 
+    /// <summary>Trace: Market Category Instruments Work Item 3. Verifies category reference-data calls use an explicitly configured Live profile without changing the trading/authentication capability.</summary>
+    [Fact]
+    public async Task GetAsync_ShouldUseLiveEndpointProfile_WhenAppliedIgLiveIsMarketDataEnabled()
+    {
+        var handler = new SequencedHandler(
+            SessionResponse("cst", "token"),
+            Response(HttpStatusCode.OK, "{\"categories\":[{\"code\":\"INDICES\",\"nonTradeable\":false}]}"));
+        var resolver = new FakeContextResolver(new(Guid.NewGuid(), "IG", "Live", "Active", "Available", "IgLive", false, true));
+
+        var result = await new IgMarketCategoriesGateway(
+            new HttpClient(handler),
+            new FakeProtectedCredentialService(),
+            resolver,
+            new FakeRequestBudget(),
+            new IgProviderRequestThrottle(TimeSpan.Zero)).GetAsync(CancellationToken.None);
+
+        Assert.IsType<MarketCategoriesGatewayResult.Succeeded>(result);
+        Assert.StartsWith("https://api.ig.com/gateway/deal/", handler.Requests[0].RequestUri!.AbsoluteUri, StringComparison.Ordinal);
+        Assert.StartsWith("https://api.ig.com/gateway/deal/", handler.Requests[1].RequestUri!.AbsoluteUri, StringComparison.Ordinal);
+    }
+
+    /// <summary>Trace: Market Category Instruments Work Item 3. Verifies a missing applied context no longer falls back to Demo credentials or the Demo URL.</summary>
+    [Fact]
+    public async Task GetAsync_ShouldFailClosedWithoutAppliedContext_WhenCategoryRefreshIsRequested()
+    {
+        var handler = new SequencedHandler();
+        var credentials = new FakeProtectedCredentialService();
+
+        var result = await new IgMarketCategoriesGateway(
+            new HttpClient(handler),
+            credentials,
+            new FakeContextResolver(null),
+            new FakeRequestBudget(),
+            new IgProviderRequestThrottle(TimeSpan.Zero)).GetAsync(CancellationToken.None);
+
+        var failure = Assert.IsType<MarketCategoriesGatewayResult.Failed>(result);
+        Assert.Equal(MarketCategoriesFailureCategory.UnsupportedEnvironment, failure.Category);
+        Assert.Empty(handler.Requests);
+        Assert.Equal(0, credentials.CatalogCredentialReads);
+    }
+
+    /// <summary>Trace: Market Category Instruments Work Item 3. Verifies the shared allowance is consumed for both the prerequisite session and category HTTP request.</summary>
+    [Fact]
+    public async Task GetAsync_ShouldReserveSessionAndCategoryCall_WhenCycleBudgetContextIsProvided()
+    {
+        var handler = new SequencedHandler(
+            SessionResponse("cst", "token"),
+            Response(HttpStatusCode.OK, "{\"categories\":[{\"code\":\"INDICES\",\"nonTradeable\":false}]}"));
+        var budget = new FakeRequestBudget();
+
+        var result = await CreateGateway(handler, budget).GetAsync(BudgetContext(), CancellationToken.None);
+
+        Assert.IsType<MarketCategoriesGatewayResult.Succeeded>(result);
+        Assert.Equal(2, budget.Reservations);
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    /// <summary>Trace: Market Category Instruments Work Item 3. Verifies quota exhaustion is reported before an unreserved category call is sent.</summary>
+    [Fact]
+    public async Task GetAsync_ShouldStopBeforeCategoryCall_WhenSharedBudgetIsExhausted()
+    {
+        var handler = new SequencedHandler(SessionResponse("cst", "token"));
+        var budget = new FakeRequestBudget(reservation => reservation == 1);
+
+        var result = await CreateGateway(handler, budget).GetAsync(BudgetContext(), CancellationToken.None);
+
+        var failure = Assert.IsType<MarketCategoriesGatewayResult.Failed>(result);
+        Assert.Equal(MarketCategoriesFailureCategory.AllowanceExceeded, failure.Category);
+        Assert.Equal(2, budget.Reservations);
+        Assert.Single(handler.Requests);
+    }
+
     private static IgMarketCategoriesGateway CreateGateway(HttpMessageHandler handler) =>
-        new(new HttpClient(handler) { BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/") }, new FakeProtectedCredentialService());
+        CreateGateway(handler, new FakeRequestBudget());
+
+    private static IgMarketCategoriesGateway CreateGateway(HttpMessageHandler handler, FakeRequestBudget budget) =>
+        new(
+            new HttpClient(handler),
+            new FakeProtectedCredentialService(),
+            new FakeContextResolver(new(Guid.NewGuid(), "IG", "Demo", "Active", "Available", "IgDemo", true, true)),
+            budget,
+            new IgProviderRequestThrottle(TimeSpan.Zero));
+
+    private static MarketCategoryInstrumentRequestBudgetContext BudgetContext() =>
+        new(new DateOnly(2026, 9, 24), 0, Guid.NewGuid(), 1);
 
     private static HttpResponseMessage SessionResponse(string cst, string token) =>
         Response(HttpStatusCode.OK, "{\"currentAccountId\":\"A\"}", new Dictionary<string, string> { ["CST"] = cst, ["X-SECURITY-TOKEN"] = token });
@@ -143,15 +231,30 @@ public sealed class IgMarketCategoriesGatewayTests
 
     private sealed class FakeProtectedCredentialService : IProtectedCredentialService
     {
+        public int CatalogCredentialReads { get; private set; }
         public Task<CredentialPresence> GetPresenceAsync(BrokerEnvironmentKind brokerEnvironment, CancellationToken cancellationToken) => Task.FromResult(new CredentialPresence(true, true, true));
         public Task<IgCredentials> GetCredentialsAsync(BrokerEnvironmentKind brokerEnvironment, CancellationToken cancellationToken) => Task.FromResult(new IgCredentials("api-key", "identifier", "password-secret"));
+        public Task<IgCredentials> GetCredentialsAsync(Guid brokerEnvironmentId, CancellationToken cancellationToken)
+        {
+            CatalogCredentialReads++;
+            return Task.FromResult(new IgCredentials("api-key", "identifier", "password-secret"));
+        }
         public Task UpdateAsync(BrokerEnvironmentKind brokerEnvironment, string? apiKey, string? identifier, string? password, string changedBy, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    private sealed class FakeContextResolver(AppliedBrokerEnvironmentContext context) : IAppliedBrokerEnvironmentContextResolver
+    private sealed class FakeRequestBudget(Func<int, bool>? allowReservation = null) : IMarketCategoryInstrumentRequestBudget
+    {
+        private readonly Func<int, bool> reserve = allowReservation ?? (_ => true);
+        public int Reservations { get; private set; }
+
+        public Task<bool> TryReserveAsync(BrokerEnvironmentKind environment, MarketCategoryInstrumentRequestBudgetContext context, CancellationToken cancellationToken) =>
+            Task.FromResult(reserve(++Reservations));
+    }
+
+    private sealed class FakeContextResolver(AppliedBrokerEnvironmentContext? context) : IAppliedBrokerEnvironmentContextResolver
     {
         public Task<AppliedBrokerEnvironmentContext?> ResolveAppliedAsync(CancellationToken cancellationToken) => Task.FromResult<AppliedBrokerEnvironmentContext?>(context);
-        public Task<AppliedBrokerEnvironmentContext?> ResolveAsync(Guid brokerEnvironmentId, CancellationToken cancellationToken) => Task.FromResult<AppliedBrokerEnvironmentContext?>(context);
+        public Task<AppliedBrokerEnvironmentContext?> ResolveAsync(Guid brokerEnvironmentId, CancellationToken cancellationToken) => Task.FromResult(context?.BrokerEnvironmentId == brokerEnvironmentId ? context : null);
     }
 
     private sealed class SequencedHandler(params HttpResponseMessage[] responses) : HttpMessageHandler

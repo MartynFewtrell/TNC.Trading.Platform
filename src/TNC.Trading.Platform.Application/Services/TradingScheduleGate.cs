@@ -31,14 +31,12 @@ internal sealed class TradingScheduleGate
         var localNow = TimeZoneInfo.ConvertTime(utcNow, timeZone);
         var currentDate = DateOnly.FromDateTime(localNow.DateTime);
 
-        if (tradingSchedule.BankHolidayExclusions.Contains(currentDate))
+        if (!IsTradingDay(tradingSchedule, currentDate))
         {
-            return new TradingScheduleStatus(false, "Trading schedule is inactive for the configured bank holiday.");
-        }
-
-        if (!IsTradingDayActive(tradingSchedule, localNow.DayOfWeek))
-        {
-            return new TradingScheduleStatus(false, "Trading schedule is inactive for the current day.");
+            var reason = tradingSchedule.BankHolidayExclusions.Contains(currentDate)
+                ? "Trading schedule is inactive for the configured bank holiday."
+                : "Trading schedule is inactive for the current day.";
+            return new TradingScheduleStatus(false, reason);
         }
 
         var currentTime = TimeOnly.FromDateTime(localNow.DateTime);
@@ -56,14 +54,19 @@ internal sealed class TradingScheduleGate
         return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(utcNow, timeZone).DateTime);
     }
 
-    private static bool IsTradingDayActive(TradingScheduleConfiguration tradingSchedule, DayOfWeek currentDay)
+    public bool IsTradingDay(TradingScheduleConfiguration tradingSchedule, DateOnly date)
     {
-        if (tradingSchedule.TradingDays.Contains(currentDay))
+        if (tradingSchedule.BankHolidayExclusions.Contains(date))
+        {
+            return false;
+        }
+
+        if (tradingSchedule.TradingDays.Contains(date.DayOfWeek))
         {
             return true;
         }
 
-        return currentDay switch
+        return date.DayOfWeek switch
         {
             DayOfWeek.Saturday => tradingSchedule.WeekendBehavior is WeekendBehavior.IncludeSaturday or WeekendBehavior.IncludeFullWeekend,
             DayOfWeek.Sunday => tradingSchedule.WeekendBehavior is WeekendBehavior.IncludeSunday or WeekendBehavior.IncludeFullWeekend,
@@ -84,6 +87,30 @@ internal sealed class TradingScheduleGate
         catch (InvalidTimeZoneException)
         {
             return TimeZoneInfo.Utc;
+        }
+    }
+
+    public static bool TryResolveTimeZone(string configuredTimeZone, out TimeZoneInfo timeZone)
+    {
+        try
+        {
+            timeZone = TimeZoneInfo.FindSystemTimeZoneById(configuredTimeZone);
+            return true;
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            timeZone = TimeZoneInfo.Utc;
+            return false;
+        }
+        catch (InvalidTimeZoneException)
+        {
+            timeZone = TimeZoneInfo.Utc;
+            return false;
+        }
+        catch (ArgumentException)
+        {
+            timeZone = TimeZoneInfo.Utc;
+            return false;
         }
     }
 }

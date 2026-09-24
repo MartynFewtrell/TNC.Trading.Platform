@@ -1,4 +1,5 @@
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Api.Features.GetPlatformConfiguration;
 using AppUpdatePlatformConfiguration = TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration;
 
 namespace TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration;
@@ -28,7 +29,9 @@ internal static class UpdatePlatformConfigurationMapping
                 request.Credentials.ApiKey,
                 request.Credentials.Identifier,
                 request.Credentials.Password,
-                request.ChangedBy));
+                request.ChangedBy,
+                request.InstrumentUpdatesPerDay,
+                request.ApprovedNonTradingDailyRequestAllowance));
 
     public static UpdatePlatformConfigurationResponse ToResponse(this AppUpdatePlatformConfiguration.UpdatePlatformConfigurationResponse response)
         => new(
@@ -60,5 +63,18 @@ internal static class UpdatePlatformConfigurationMapping
                 response.Result.Snapshot.Credentials.IsAuthenticationReady,
                 response.Result.Snapshot.Credentials.RequiresCredentialReentry),
             response.Result.RestartRequired,
-            response.Result.Snapshot.UpdatedAtUtc);
+            response.Result.Snapshot.UpdatedAtUtc,
+            new(
+                response.InstrumentCollectionSettingsStatus is null
+                    && response.InstrumentCollectionFrequency is not null,
+                response.InstrumentCollectionSettingsStatus,
+                response.AppliedBrokerEnvironment?.ToString(),
+                response.InstrumentCollectionFrequency?.CurrentUpdatesPerDay,
+                response.InstrumentCollectionFrequency?.PendingUpdatesPerDay,
+                response.InstrumentCollectionFrequency?.PendingEffectiveTradingDay,
+                response.InstrumentCollectionFrequency?.ApprovedNonTradingDailyRequestAllowance,
+                response.InstrumentCollectionStatus?.UsedRequestBudget,
+                response.InstrumentCollectionStatus?.CycleOutcome
+                    ?? response.InstrumentCollectionStatus?.CategoryPrerequisiteOutcome,
+                response.InstrumentCollectionStatus?.SafeCategoryFailure));
 }

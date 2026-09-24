@@ -137,6 +137,7 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
         dbContext.BrokerEnvironmentScheduleProfiles.RemoveRange(dbContext.BrokerEnvironmentScheduleProfiles);
         dbContext.BrokerEnvironmentRetryProfiles.RemoveRange(dbContext.BrokerEnvironmentRetryProfiles);
         dbContext.BrokerEnvironmentNotificationProfiles.RemoveRange(dbContext.BrokerEnvironmentNotificationProfiles);
+        dbContext.InstrumentCollectionSettings.RemoveRange(dbContext.InstrumentCollectionSettings);
         await dbContext.SaveChangesAsync();
         dbContext.BrokerEnvironments.Remove(await dbContext.BrokerEnvironments.SingleAsync(item => item.BrokerEnvironmentId == demoId));
         await dbContext.SaveChangesAsync();

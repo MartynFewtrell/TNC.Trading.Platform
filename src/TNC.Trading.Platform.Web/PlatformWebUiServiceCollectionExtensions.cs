@@ -17,6 +17,7 @@ internal static class PlatformWebUiServiceCollectionExtensions
         builder.Services.AddScoped<StatusPagePresenter>();
         builder.Services.AddScoped<AccountDetailsPagePresenter>();
         builder.Services.AddScoped<MarketCategoriesPagePresenter>();
+        builder.Services.AddScoped<MarketCategoryInstrumentsPagePresenter>();
         builder.Services.AddScoped<PlatformThemeState>();
         builder.Services.AddScoped<PlatformShellContextProvider>();
 

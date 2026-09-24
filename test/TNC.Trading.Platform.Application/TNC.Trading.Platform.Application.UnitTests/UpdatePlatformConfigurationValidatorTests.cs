@@ -41,11 +41,43 @@ public sealed class UpdatePlatformConfigurationValidatorTests
         Assert.Contains("RetryPolicy.MaxDelaySeconds", exception.Errors.Keys);
     }
 
+    /// <summary>
+    /// Trace: Market Category Instruments Work Item 5, step 2.
+    /// Verifies: an operator cannot configure more collection slots than the schedule policy supports.
+    /// Expected: validation reports the instrument frequency field for an out-of-range value.
+    /// Why: frequency bounds are shared between API and application callers and prevent invalid slot arithmetic.
+    /// </summary>
+    [Fact]
+    public void Validate_ShouldRejectUnsupportedInstrumentFrequency_WhenConfigurationIsUpdated()
+    {
+        var exception = Assert.Throws<ConfigurationValidationException>(() =>
+            new UpdatePlatformConfigurationValidator().Validate(CreateUpdate(instrumentUpdatesPerDay: 5)));
+
+        Assert.Contains(nameof(PlatformConfigurationUpdate.InstrumentUpdatesPerDay), exception.Errors.Keys);
+    }
+
+    /// <summary>
+    /// Trace: Market Category Instruments Work Item 5, step 2.
+    /// Verifies: a negative approved daily request allowance is rejected before persistence.
+    /// Expected: validation reports the allowance field.
+    /// Why: an invalid quota must never be interpreted as an implicit provider-call allowance.
+    /// </summary>
+    [Fact]
+    public void Validate_ShouldRejectNegativeRequestAllowance_WhenConfigurationIsUpdated()
+    {
+        var exception = Assert.Throws<ConfigurationValidationException>(() =>
+            new UpdatePlatformConfigurationValidator().Validate(CreateUpdate(approvedDailyRequestAllowance: -1)));
+
+        Assert.Contains(nameof(PlatformConfigurationUpdate.ApprovedNonTradingDailyRequestAllowance), exception.Errors.Keys);
+    }
+
     private static PlatformConfigurationUpdate CreateUpdate(
         IReadOnlyList<DayOfWeek>? tradingDays = null,
         string timeZone = "UTC",
         int initialDelaySeconds = 1,
-        int maxDelaySeconds = 60)
+        int maxDelaySeconds = 60,
+        int? instrumentUpdatesPerDay = null,
+        int? approvedDailyRequestAllowance = null)
         => new(
             BrokerEnvironmentKind.Demo,
             new TradingScheduleConfiguration(new TimeOnly(8, 0), new TimeOnly(16, 30), tradingDays ?? [DayOfWeek.Monday], WeekendBehavior.ExcludeWeekends, [], timeZone),
@@ -54,5 +86,7 @@ public sealed class UpdatePlatformConfigurationValidatorTests
             "api-key",
             "identifier",
             "password",
-            "unit-test");
+            "unit-test",
+            instrumentUpdatesPerDay,
+            approvedDailyRequestAllowance);
 }

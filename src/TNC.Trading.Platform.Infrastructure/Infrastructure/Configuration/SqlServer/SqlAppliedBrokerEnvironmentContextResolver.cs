@@ -23,6 +23,11 @@ internal sealed class SqlAppliedBrokerEnvironmentContextResolver(PlatformDbConte
             item.Availability,
             item.EndpointProfile,
             string.Equals(item.Provider, "IG", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(item.Kind, "Demo", StringComparison.OrdinalIgnoreCase));
+            string.Equals(item.Kind, "Demo", StringComparison.OrdinalIgnoreCase),
+            string.Equals(item.Provider, "IG", StringComparison.OrdinalIgnoreCase) &&
+            ((string.Equals(item.Kind, "Demo", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.EndpointProfile, "IgDemo", StringComparison.Ordinal))
+            || (string.Equals(item.Kind, "Live", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.EndpointProfile, "IgLive", StringComparison.Ordinal))));
     }
 }

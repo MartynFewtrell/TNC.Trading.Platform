@@ -108,6 +108,7 @@ public class PlatformAccessTokenProviderTests
         var tokenFactory = new TestAuthenticationTokenFactory(options);
         var (_, properties) = tokenFactory.Create("local-viewer", [PlatformAuthenticationDefaults.Scopes.Viewer]);
         var accessToken = properties.GetTokenValue("access_token");
+        Assert.NotNull(accessToken);
         var httpContext = CreateHttpContext(accessToken, "/configuration");
         var handler = new RecordingHttpMessageHandler();
         var auditClient = CreateAuditClient(handler, httpContext);

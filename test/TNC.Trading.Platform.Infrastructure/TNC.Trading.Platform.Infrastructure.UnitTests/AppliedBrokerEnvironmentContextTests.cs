@@ -75,5 +75,47 @@ public sealed class AppliedBrokerEnvironmentContextTests
         Assert.NotNull(context);
         Assert.True(context.CanAuthenticate);
         Assert.True(context.IsExecutable);
+        Assert.True(context.CanAccessMarketData);
+    }
+
+    /// <summary>
+    /// Trace: Market Category Instruments Work Item 3. Verifies the applied IG Live market-data capability is resolved independently from the existing authentication capability.
+    /// Expected: the supported Live endpoint profile can be used for market discovery while CanAuthenticate and IsExecutable remain false.
+    /// Why: adding Live reference-data access must not alter order/trading authorization or implicitly enable Live authentication.
+    /// </summary>
+    [Fact]
+    public async Task ResolveAppliedAsync_ShouldSeparateLiveMarketDataCapabilityFromAuthentication_WhenLiveProfileIsApplied()
+    {
+        await using var dbContext = InfrastructureReflection.CreateDbContext();
+        var environmentId = Guid.NewGuid();
+        dbContext.BrokerEnvironments.Add(new BrokerEnvironmentEntity
+        {
+            BrokerEnvironmentId = environmentId,
+            Name = "IG Live Discovery",
+            NormalizedName = "IG LIVE DISCOVERY",
+            Provider = "IG",
+            Kind = "Live",
+            Lifecycle = "Active",
+            Availability = "Available",
+            EndpointProfile = "IgLive",
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow
+        });
+        dbContext.BrokerEnvironmentSelections.Add(new BrokerEnvironmentSelectionEntity
+        {
+            SelectionId = 1,
+            AppliedBrokerEnvironmentId = environmentId,
+            SelectedBrokerEnvironmentId = environmentId,
+            UpdatedAtUtc = DateTimeOffset.UtcNow
+        });
+        await dbContext.SaveChangesAsync();
+
+        var context = await new SqlAppliedBrokerEnvironmentContextResolver(dbContext)
+            .ResolveAppliedAsync(CancellationToken.None);
+
+        Assert.NotNull(context);
+        Assert.False(context.CanAuthenticate);
+        Assert.False(context.IsExecutable);
+        Assert.True(context.CanAccessMarketData);
     }
 }

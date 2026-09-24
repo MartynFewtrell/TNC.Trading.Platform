@@ -19,6 +19,21 @@ internal sealed class MarketCategoriesPagePresenter(PlatformApiClient platformAp
     /// <summary>Gets whether an operator refresh is in progress.</summary>
     public bool IsRefreshing { get; private set; }
 
+    /// <summary>Gets the safe SQL-only collection status.</summary>
+    public MarketCategoryInstrumentCollectionStatusViewModel? CollectionStatus { get; private set; }
+
+    /// <summary>Gets a safe collector status read error without hiding the saved categories.</summary>
+    public string? CollectionStatusError { get; private set; }
+
+    /// <summary>Gets the category currently being saved.</summary>
+    public string? SavingInterestCategoryCode { get; private set; }
+
+    /// <summary>Gets the most recent interest update result message.</summary>
+    public string? InterestMessage { get; private set; }
+
+    /// <summary>Gets the most recent interest update error.</summary>
+    public string? InterestError { get; private set; }
+
     /// <summary>Loads the saved market-category snapshot.</summary>
     public async Task LoadAsync(CancellationToken cancellationToken)
     {
@@ -27,11 +42,12 @@ internal sealed class MarketCategoriesPagePresenter(PlatformApiClient platformAp
         try
         {
             State = await platformApiClient.GetMarketCategoriesAsync(cancellationToken);
+            await LoadCollectionStatusAsync(cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
-        catch (Exception exception) when (exception is HttpRequestException or PlatformScopeChallengeRequiredException or InvalidOperationException)
+        catch (Exception exception) when (exception is HttpRequestException or PlatformApiException or PlatformScopeChallengeRequiredException or InvalidOperationException)
         {
             Error = CreateErrorMessage("Unable to load market categories", exception);
         }
@@ -44,7 +60,7 @@ internal sealed class MarketCategoriesPagePresenter(PlatformApiClient platformAp
     /// <summary>Refreshes the provider snapshot and preserves saved data when the refresh fails.</summary>
     public async Task RefreshAsync(CancellationToken cancellationToken)
     {
-        if (IsRefreshing)
+        if (IsRefreshing || SavingInterestCategoryCode is not null)
         {
             return;
         }
@@ -54,17 +70,92 @@ internal sealed class MarketCategoriesPagePresenter(PlatformApiClient platformAp
         try
         {
             State = await platformApiClient.RefreshMarketCategoriesAsync(cancellationToken);
+            await LoadCollectionStatusAsync(cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
-        catch (Exception exception) when (exception is HttpRequestException or PlatformScopeChallengeRequiredException or InvalidOperationException)
+        catch (Exception exception) when (exception is HttpRequestException or PlatformApiException or PlatformScopeChallengeRequiredException or InvalidOperationException)
         {
             Error = CreateErrorMessage("Unable to refresh market categories", exception);
         }
         finally
         {
             IsRefreshing = false;
+        }
+    }
+
+    /// <summary>Updates one category using the current environment-wide interest revision.</summary>
+    public async Task SetInterestAsync(
+        string categoryCode,
+        bool interested,
+        CancellationToken cancellationToken)
+    {
+        var state = State;
+        if (SavingInterestCategoryCode is not null
+            || state?.InterestRevision is not { } expectedRevision)
+        {
+            return;
+        }
+
+        var category = state.Categories.FirstOrDefault(
+            item => string.Equals(item.Code, categoryCode, StringComparison.Ordinal));
+        if (category is null || category.Interested == interested)
+        {
+            return;
+        }
+
+        SavingInterestCategoryCode = categoryCode;
+        InterestError = null;
+        InterestMessage = null;
+        try
+        {
+            var revision = await platformApiClient.UpdateMarketCategoryInterestAsync(
+                categoryCode,
+                interested,
+                expectedRevision,
+                cancellationToken);
+            State = state with
+            {
+                InterestRevision = revision,
+                Categories = state.Categories
+                    .Select(item => string.Equals(item.Code, categoryCode, StringComparison.Ordinal)
+                        ? item with { Interested = interested }
+                        : item)
+                    .ToArray()
+            };
+            InterestMessage = $"Interest saved for {categoryCode}.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (PlatformApiException exception) when (exception.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            InterestError = "Interest changed elsewhere. Reload the categories before saving another change.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or PlatformApiException or PlatformScopeChallengeRequiredException or InvalidOperationException)
+        {
+            InterestError = CreateErrorMessage("Unable to save category interest", exception);
+        }
+        finally
+        {
+            SavingInterestCategoryCode = null;
+        }
+    }
+
+    private async Task LoadCollectionStatusAsync(CancellationToken cancellationToken)
+    {
+        CollectionStatusError = null;
+        try
+        {
+            CollectionStatus = await platformApiClient.GetInstrumentCollectionStatusAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (exception is HttpRequestException or PlatformApiException or PlatformScopeChallengeRequiredException or InvalidOperationException)
+        {
+            CollectionStatusError = CreateErrorMessage("Unable to load collector status", exception);
         }
     }
 

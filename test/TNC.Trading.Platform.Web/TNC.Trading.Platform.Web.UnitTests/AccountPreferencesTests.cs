@@ -513,7 +513,7 @@ public sealed class AccountPreferencesTests
         cut.Find("[data-testid='account-preferences-next']").Click();
 
         cut.WaitForAssertion(() => Assert.Contains(context.ApiHandler.Requests,
-            request => request.RequestUri.Contains("cursor=cursor with space", StringComparison.Ordinal)));
+            request => request.RequestUri.Contains("cursor=cursor%20with%20space", StringComparison.Ordinal)));
     }
 
     /// <summary>Trace: DD-02. Verifies a new selection clears stale save confirmation and rejection feedback without changing durable load feedback ownership.</summary>

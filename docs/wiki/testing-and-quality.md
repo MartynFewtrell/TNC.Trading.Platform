@@ -73,26 +73,37 @@ API tests cover only hosting and composition behavior.
 
 ## Test projects
 
-### Market Categories coverage
+### Market-category instrument collection coverage
 
-The bounded catalogue is covered without real IG accounts or provider calls.
-Application tests verify SQL-only reads, ordinal ordering, explicit empty
-state, cancellation, and no-write typed failures. Infrastructure tests use a
-controlled HTTP handler for session headers, API versions, Demo guarding,
-single `401` replay, safe failure classification, and complete response
-validation. Fixture-owned SQL Server integration tests cover the migration,
-constraints, atomic replacement, failed-refresh preservation, and
-environment isolation. API tests cover response mapping and safe Problem
-Details. Web unit/bUnit tests cover scoped client paths, saved/empty/stale
-states, role-gated refresh, pending disablement, reload, and Viewer
-navigation. Browser E2E coverage is not added because no browser-only
-workflow was introduced.
+The market-data collection and browsing path is validated without real IG
+credentials or provider network access. Application tests cover slot/schedule
+policy, applied-environment checks, shared budget and retries, category-first
+cycle ordering, interest revision conflicts, SQL-only page reads, stale
+cursors, and manual-refresh schedule denial. Infrastructure tests use
+controlled HTTP responses for the IG v2 session and resource v1 page contract,
+zero-based paging, sequential complete-page validation, profile isolation,
+bounded 401 replay, malformed/partial results, throttling, request-budget
+reservation, cancellation, and safe failure classification.
 
-No additional protected-endpoint Aspire retrieval test was added for this
-bounded reference-data slice: the existing distributed fixtures require
-full authentication and startup infrastructure, while the API mapping,
-controlled-provider tests, and SQL-backed store tests already cover the new
-behavior without real provider access.
+Fixture-owned SQL Server integration tests exercise the additive schema,
+environment-scoped settings and interests, revision concurrency, retained
+observations, current-snapshot replacement, keyset paging, and safe behavior
+when a collection fails. API tests cover Viewer/Operator route policies,
+request validation, cursor protection and conflict mapping, manual
+schedule/allowance conflicts, and redacted status. Web unit/bUnit tests cover
+role-gated interest editing, dormant categories, escaping, status errors that
+preserve saved data, configuration frequency/allowance submission, quota and
+pause presentation, SQL-only page navigation, empty/never-collected states,
+stale-snapshot reload, and snapshot-price disclaimers.
+
+The distributed/API-host integration fixtures and full suite are also run as
+part of delivery acceptance. Provider interactions remain controlled by test
+handlers; no production IG credentials or IG network are used. The Browser
+suite remains focused on authentication because the new category/paging
+behavior is observable in bUnit and does not require browser-only interaction.
+Use the repository's [local development guide](local-development.md) for
+build, test, and Aspire run commands rather than duplicating setup instructions
+here.
 
 | Project | Test type | Focus |
 | --- | --- | --- |

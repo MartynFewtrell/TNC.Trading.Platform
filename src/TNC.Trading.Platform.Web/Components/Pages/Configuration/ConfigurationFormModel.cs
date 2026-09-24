@@ -43,4 +43,11 @@ internal sealed class ConfigurationFormModel
     public bool RestartRequired { get; set; }
 
     public string ChangedBy { get; set; } = "operator";
+
+    public int? InstrumentUpdatesPerDay { get; set; }
+
+    public int? ApprovedNonTradingDailyRequestAllowance { get; set; }
+
+    public InstrumentCollectionConfigurationViewModel InstrumentCollection { get; set; } =
+        new(false, "SettingsUnavailable", null, null, null, null, null, null, null, null);
 }

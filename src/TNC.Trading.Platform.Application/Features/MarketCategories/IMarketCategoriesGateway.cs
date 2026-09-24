@@ -1,8 +1,15 @@
+using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+
 namespace TNC.Trading.Platform.Application.Features.MarketCategories;
 
 internal interface IMarketCategoriesGateway
 {
     Task<MarketCategoriesGatewayResult> GetAsync(CancellationToken cancellationToken);
+
+    Task<MarketCategoriesGatewayResult> GetAsync(
+        MarketCategoryInstrumentRequestBudgetContext requestBudgetContext,
+        CancellationToken cancellationToken) =>
+        GetAsync(cancellationToken);
 }
 
 internal abstract record MarketCategoriesGatewayResult

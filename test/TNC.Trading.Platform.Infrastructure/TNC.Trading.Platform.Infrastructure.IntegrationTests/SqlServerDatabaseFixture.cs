@@ -1,5 +1,6 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Testcontainers.MsSql;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 
@@ -44,13 +45,16 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
         }
     }
 
-    internal PlatformDbContext CreateDbContext()
+    internal PlatformDbContext CreateDbContext(params IInterceptor[] interceptors)
     {
-        var options = new DbContextOptionsBuilder<PlatformDbContext>()
-            .UseSqlServer(databaseConnectionString, sqlOptions => sqlOptions.CommandTimeout((int)OperationTimeout.TotalSeconds))
-            .Options;
+        var optionsBuilder = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlServer(databaseConnectionString, sqlOptions => sqlOptions.CommandTimeout((int)OperationTimeout.TotalSeconds));
+        if (interceptors.Length > 0)
+        {
+            optionsBuilder.AddInterceptors(interceptors);
+        }
 
-        return new PlatformDbContext(options);
+        return new PlatformDbContext(optionsBuilder.Options);
     }
 
     internal string ConnectionString => databaseConnectionString;
@@ -84,6 +88,15 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
             DROP TABLE IF EXISTS [AccountPreferencesDesiredStateAudits];
             DROP TABLE IF EXISTS [AccountPreferencesCurrentStates];
             DROP TABLE IF EXISTS [AccountPreferencesOperations];
+            DROP TABLE IF EXISTS [MarketCategoryInstrumentObservations];
+            DROP TABLE IF EXISTS [MarketCategoryInstruments];
+            DROP TABLE IF EXISTS [MarketCategoryInstrumentCollectionRuns];
+            DROP TABLE IF EXISTS [MarketCategoryInstrumentCatalogStates];
+            DROP TABLE IF EXISTS [MarketCategoryInterests];
+            DROP TABLE IF EXISTS [MarketCategoryInterestStates];
+            DROP TABLE IF EXISTS [InstrumentCollectionCategoryAttempts];
+            DROP TABLE IF EXISTS [InstrumentCollectionCycleStates];
+            DROP TABLE IF EXISTS [InstrumentCollectionSettings];
             DROP TABLE IF EXISTS [MarketCategories];
             DROP TABLE IF EXISTS [MarketCategoryCatalogStates];
             DROP TABLE IF EXISTS [OperationalEvents];

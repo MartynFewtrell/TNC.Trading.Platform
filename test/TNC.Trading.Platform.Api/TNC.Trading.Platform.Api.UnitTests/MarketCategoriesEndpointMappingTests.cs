@@ -44,4 +44,22 @@ public sealed class MarketCategoriesEndpointMappingTests
         Assert.DoesNotContain("raw provider", problem.ProblemDetails.Detail, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Trace: Market Category Instruments Work Item 3. Verifies provider quota exhaustion maps to a safe throttling response.
+    /// Expected: the API returns HTTP 429 without exposing any provider diagnostic.
+    /// Why: callers need a stable indication to pause rather than immediately retrying and consuming more of the shared allowance.
+    /// </summary>
+    [Fact]
+    public void ToHttpResult_ShouldReturnSafeRateLimitProblem_WhenSharedAllowanceIsExceeded()
+    {
+        var result = new RefreshMarketCategoriesResponse(
+            new MarketCategoriesRefreshOutcome.Failed(
+                MarketCategoriesFailureCategory.AllowanceExceeded,
+                "raw quota diagnostics")).ToHttpResult();
+
+        var problem = Assert.IsType<ProblemHttpResult>(result);
+        Assert.Equal(StatusCodes.Status429TooManyRequests, problem.StatusCode);
+        Assert.DoesNotContain("raw quota", problem.ProblemDetails.Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
 }

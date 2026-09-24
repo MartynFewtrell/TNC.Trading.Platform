@@ -8,4 +8,6 @@ internal sealed record PlatformConfigurationUpdate(
     string? ApiKey,
     string? Identifier,
     string? Password,
-    string ChangedBy);
+    string ChangedBy,
+    int? InstrumentUpdatesPerDay = null,
+    int? ApprovedNonTradingDailyRequestAllowance = null);

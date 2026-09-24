@@ -156,6 +156,56 @@ else
             </section>
         </PlatformAccordionSection>
 
+        <PlatformAccordionSection Title="Market-category instrument collection" IsOpen="false">
+            <section class="panel" data-testid="instrument-collection-configuration">
+                <h2>Instrument collection settings</h2>
+                <p data-testid="instrument-collection-state">
+                    Collector: @((!form.InstrumentCollection.IsAvailable
+                        || form.ApprovedNonTradingDailyRequestAllowance is null
+                        or <= 0) ? "Paused" : "Configured")
+                    @if (!string.IsNullOrWhiteSpace(form.InstrumentCollection.AppliedBrokerEnvironment))
+                    {
+                        <span> for @form.InstrumentCollection.AppliedBrokerEnvironment</span>
+                    }
+                </p>
+                <p class="hint">A frequency change takes effect on the next local trading day. A daily allowance of zero pauses provider requests; leaving it unset also keeps collection paused.</p>
+                @if (form.InstrumentCollection.PendingUpdatesPerDay is not null
+                    && form.InstrumentCollection.PendingEffectiveTradingDay is { } effectiveDay)
+                {
+                    <p role="status" data-testid="instrument-collection-pending-frequency">
+                        @form.InstrumentCollection.PendingUpdatesPerDay updates per day will take effect on @effectiveDay.
+                    </p>
+                }
+                @if (form.InstrumentCollection.UsedRequestBudget is { } used
+                    && form.ApprovedNonTradingDailyRequestAllowance is { } allowance)
+                {
+                    <p data-testid="instrument-collection-quota">
+                        Daily request quota: @used used of @allowance; @Math.Max(0, allowance - used) remaining.
+                    </p>
+                }
+                @if (!string.IsNullOrWhiteSpace(form.InstrumentCollection.CollectionOutcome))
+                {
+                    <p data-testid="instrument-collection-outcome">Latest collection state: @form.InstrumentCollection.CollectionOutcome</p>
+                }
+                @if (!string.IsNullOrWhiteSpace(form.InstrumentCollection.SafeFailure))
+                {
+                    <p class="warning" role="status" data-testid="instrument-collection-safe-failure">
+                        Collection needs attention: @form.InstrumentCollection.SafeFailure
+                    </p>
+                }
+                <div class="platform-form-grid">
+                    <label>
+                        Instrument updates per trading day (1–4)
+                        <InputNumber @bind-Value="form.InstrumentUpdatesPerDay" min="1" max="4" data-testid="instrument-updates-per-day" />
+                    </label>
+                    <label>
+                        Approved daily non-trading request allowance (0 pauses)
+                        <InputNumber @bind-Value="form.ApprovedNonTradingDailyRequestAllowance" min="0" data-testid="approved-daily-request-allowance" />
+                    </label>
+                </div>
+            </section>
+        </PlatformAccordionSection>
+
         <PlatformAccordionSection Title="IG credentials" IsOpen="false">
             <section class="panel">
                 <p class="hint" data-testid="configuration-secret-handling-hint">Stored values are never shown. Enter a field only when you want to replace it.</p>

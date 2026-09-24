@@ -1,0 +1,164 @@
+@namespace TNC.Trading.Platform.Web.Components.Pages
+@page "/market-categories/{CategoryCode}/instruments"
+@implements IDisposable
+@attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Viewer)]
+@using TNC.Trading.Platform.Web.Authentication
+@inject MarketCategoryInstrumentsPagePresenter Presenter
+@inject PlatformNavigationAccessCoordinator NavigationAccessCoordinator
+
+<PageTitle>Saved instruments — @CategoryCode</PageTitle>
+
+@if (!hasRequiredScope)
+{
+    <p data-testid="market-category-instruments-access">Redirecting...</p>
+}
+else if (Presenter.IsLoading && Presenter.Page is null)
+{
+    <section class="panel" data-testid="market-category-instruments-loading"><p>Loading saved instruments...</p></section>
+}
+else
+{
+    <section class="panel platform-page-header">
+        <div>
+            <h1>Saved instruments: @CategoryCode</h1>
+            @if (Presenter.Category is { } category)
+            {
+                <p data-testid="instrument-category-interest">Interest: @(category.Interested ? "Interested" : "Not interested")</p>
+                @if (category.NonTradeable)
+                {
+                    <p class="hint">The provider marks this category as non-tradeable. This is provider metadata, not a trading-permission decision.</p>
+                }
+                @if (category.LastSuccessfulCollectionAtUtc is { } collectedAt)
+                {
+                    <p>Last successful collection: <time datetime="@collectedAt.ToString("O")">@collectedAt.ToUniversalTime().ToString("u") UTC</time></p>
+                }
+            }
+            @if (Presenter.CollectionStatus?.NextWakeUpUtc is { } nextWakeUp)
+            {
+                <p>Next scheduled collection check: <time datetime="@nextWakeUp.ToString("O")">@nextWakeUp.ToLocalTime().ToString("g")</time></p>
+            }
+        </div>
+        <a href="/market-categories">Back to market categories</a>
+    </section>
+
+    @if (Presenter.IsLoading)
+    {
+        <p role="status" data-testid="market-category-instruments-loading-more">Loading another saved page...</p>
+    }
+    @if (!string.IsNullOrWhiteSpace(Presenter.Error))
+    {
+        <p class="error" role="alert" data-testid="market-category-instruments-error">@Presenter.Error</p>
+    }
+    @if (!string.IsNullOrWhiteSpace(Presenter.MetadataError))
+    {
+        <p class="warning" role="status" data-testid="market-category-instruments-metadata-error">@Presenter.MetadataError</p>
+    }
+
+    @if (Presenter.Page is { State: "NeverCollected" })
+    {
+        <section class="panel" data-testid="market-category-instruments-never-collected">
+            <h2>Not collected yet</h2>
+            <p>No complete instrument snapshot has been saved for this category.</p>
+        </section>
+    }
+    else if (Presenter.Page is { State: "Complete", Instruments.Count: 0, NextCursor: null })
+    {
+        <section class="panel" data-testid="market-category-instruments-complete-empty">
+            <h2>Complete empty snapshot</h2>
+            <p>The latest successful collection contained no instruments.</p>
+        </section>
+    }
+    else if (Presenter.Page is { State: "Complete" } page)
+    {
+        <section class="panel" data-testid="market-category-instruments-saved">
+            <h2>Saved snapshot</h2>
+            @if (page.LastRetrievedAtUtc is { } retrievedAt)
+            {
+                <p>Retrieved <time datetime="@retrievedAt.ToString("O")">@retrievedAt.ToUniversalTime().ToString("u") UTC</time>.</p>
+            }
+            <p class="hint">Prices and market state are a saved provider snapshot; they may be delayed and are not a live quote or trading instruction.</p>
+            <table>
+                <caption>Saved instruments for @CategoryCode — page @Presenter.CurrentPageNumber</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Name</th><th scope="col">EPIC</th><th scope="col">Type</th>
+                        <th scope="col">Expiry</th><th scope="col">Bid</th><th scope="col">Offer</th>
+                        <th scope="col">Market status</th><th scope="col">IG update time</th><th scope="col">More</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var instrument in page.Instruments)
+                    {
+                        <tr @key="instrument.Epic">
+                            <td>@instrument.Name</td><td>@instrument.Epic</td><td>@instrument.InstrumentType</td>
+                            <td>@instrument.Expiry</td><td>@instrument.Bid</td><td>@instrument.Offer</td>
+                            <td>@instrument.MarketStatus</td><td>@instrument.UpdateTime</td>
+                            <td>
+                                <details>
+                                    <summary>Instrument details</summary>
+                                    <dl>
+                                        <dt>Underlying</dt><dd>@instrument.UnderlyingName</dd>
+                                        <dt>Lot size</dt><dd>@instrument.LotSize</dd>
+                                        <dt>OTC tradeable</dt><dd>@instrument.OtcTradeable</dd>
+                                        <dt>Scaling factor</dt><dd>@instrument.ScalingFactor</dd>
+                                        <dt>Expiry timestamp</dt><dd>@instrument.ExpiryTimestamp</dd>
+                                        <dt>Delay time</dt><dd>@instrument.DelayTime</dd>
+                                        <dt>High</dt><dd>@instrument.High</dd>
+                                        <dt>Low</dt><dd>@instrument.Low</dd>
+                                        <dt>Net change</dt><dd>@instrument.NetChange</dd>
+                                        <dt>Percentage change</dt><dd>@instrument.PercentageChange</dd>
+                                        <dt>Popularity</dt><dd>@instrument.Popularity</dd>
+                                    </dl>
+                                </details>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <nav aria-label="Saved instrument pages">
+                <button type="button" @onclick="LoadPreviousAsync" disabled="@(!Presenter.CanGoPrevious || Presenter.IsLoading)">Previous page</button>
+                <span>Page @Presenter.CurrentPageNumber</span>
+                <button type="button" @onclick="LoadNextAsync" disabled="@(!Presenter.CanGoNext || Presenter.IsLoading)">Next page</button>
+            </nav>
+        </section>
+    }
+    @if (Presenter.IsStale)
+    {
+        <button class="platform-primary-action" type="button" data-testid="market-category-instruments-reload" @onclick="ReloadAsync">Reload current snapshot</button>
+    }
+}
+
+@code {
+    [Parameter]
+    public string CategoryCode { get; set; } = string.Empty;
+
+    private bool hasRequiredScope;
+    private string? authorizedCategoryCode;
+    private readonly CancellationTokenSource requestLifetime = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!string.Equals(authorizedCategoryCode, CategoryCode, StringComparison.Ordinal))
+        {
+            hasRequiredScope = await NavigationAccessCoordinator.EnsureRequiredScopesAsync(
+                $"/market-categories/{Uri.EscapeDataString(CategoryCode)}/instruments",
+                PlatformAuthenticationDefaults.Scopes.Viewer);
+            authorizedCategoryCode = CategoryCode;
+        }
+
+        if (hasRequiredScope)
+        {
+            await Presenter.LoadAsync(CategoryCode, requestLifetime.Token);
+        }
+    }
+
+    private Task LoadPreviousAsync() => Presenter.LoadPreviousAsync(CategoryCode, requestLifetime.Token);
+    private Task LoadNextAsync() => Presenter.LoadNextAsync(CategoryCode, requestLifetime.Token);
+    private Task ReloadAsync() => Presenter.ReloadAsync(CategoryCode, requestLifetime.Token);
+
+    public void Dispose()
+    {
+        requestLifetime.Cancel();
+        requestLifetime.Dispose();
+    }
+}

@@ -45,7 +45,13 @@ internal static class PlatformWebTestData
                 latestSnapshot,
                 null));
 
-    public static PlatformConfigurationViewModel CreateConfiguration(bool restartRequired = false, bool requiresCredentialReentry = false) =>
+    public static PlatformConfigurationViewModel CreateConfiguration(
+        bool restartRequired = false,
+        bool requiresCredentialReentry = false,
+        int? allowance = 25,
+        int? currentFrequency = 1,
+        int? pendingFrequency = 2,
+        DateOnly? pendingEffectiveTradingDay = null) =>
         new(
             "Test",
             "Demo",
@@ -60,7 +66,18 @@ internal static class PlatformWebTestData
             new NotificationSettingsViewModel("RecordedOnly", "owner@example.com"),
             new CredentialPresenceViewModel(true, true, true, true, true, true, !requiresCredentialReentry, requiresCredentialReentry),
             restartRequired,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            new InstrumentCollectionConfigurationViewModel(
+                true,
+                null,
+                "Demo",
+                currentFrequency,
+                pendingFrequency,
+                pendingEffectiveTradingDay ?? new DateOnly(2026, 9, 29),
+                allowance,
+                4,
+                "Partial",
+                "ProviderUnavailable"));
 
     public static PlatformEventsViewModel CreateEvents(params PlatformEventItemViewModel[] events) =>
         new(events.Length == 0

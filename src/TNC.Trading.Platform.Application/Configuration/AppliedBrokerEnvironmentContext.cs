@@ -7,7 +7,8 @@ internal sealed record AppliedBrokerEnvironmentContext(
     string Lifecycle,
     string Availability,
     string EndpointProfile,
-    bool CanAuthenticate)
+    bool CanAuthenticate,
+    bool CanAccessMarketData = false)
 {
     public bool IsExecutable => Lifecycle == "Active" && Availability == "Available" && CanAuthenticate;
 }

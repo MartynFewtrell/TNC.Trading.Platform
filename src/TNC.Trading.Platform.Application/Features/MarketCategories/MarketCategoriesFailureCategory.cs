@@ -10,5 +10,7 @@ public enum MarketCategoriesFailureCategory
     Timeout,
     MalformedProviderData,
     Rejected,
-    Transient
+    Transient,
+    AllowanceExceeded,
+    ScheduleClosed
 }

@@ -26,13 +26,18 @@ At this stage the platform provides:
 - delegated bearer-token propagation from the Blazor host to the protected API
 - SQL-backed operator-managed configuration and named broker-environment
   catalog in the supported local runtime
+- schedule-gated IG market-category and instrument collection, with saved
+  SQL snapshots and retained complete observations
 - protected storage for IG credentials using ASP.NET Core Data Protection
 - auth-state supervision, retry scheduling, notification recording, and operational event history
 - synthetic authentication and in-memory persistence support only for isolated
   automated tests (not a supported application runtime)
 - health checks, OpenTelemetry wiring, and requirement-driven tests
 
-The platform does not yet execute real trading workflows, market-data ingestion, or live IG integration. The current implementation is the environment, configuration, and auth foundation that later work packages will build on.
+The platform does not execute real trading workflows, streaming prices,
+recommendations, or Live trading. Market-data collection is limited to the
+supported applied IG market-data profiles and stores validated snapshots; it
+does not authorize trading or issue orders.
 
 The platform environment is deployment-owned and immutable (`Desktop`,
 `Development`, `Test`, or `Live`). Broker environments are named SQL catalog

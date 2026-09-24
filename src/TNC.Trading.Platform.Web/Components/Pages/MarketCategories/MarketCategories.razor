@@ -23,7 +23,7 @@ else
         <div><h1>Market categories</h1><p class="hint">Saved market categories from the configured IG environment.</p></div>
         @if (canRefresh)
         {
-            <button class="platform-primary-action" type="button" data-testid="market-categories-refresh" @onclick="RefreshAsync" disabled="@Presenter.IsRefreshing">
+            <button class="platform-primary-action" type="button" data-testid="market-categories-refresh" @onclick="RefreshAsync" disabled="@(Presenter.IsRefreshing || Presenter.SavingInterestCategoryCode is not null)">
                 @(Presenter.IsRefreshing ? "Refreshing..." : "Refresh")
             </button>
         }
@@ -42,19 +42,101 @@ else
         <section class="panel" data-testid="market-categories-saved">
             <h2>Saved categories</h2>
             <p>Last refreshed <time datetime="@Presenter.State.LastRefreshedAtUtc!.Value.ToString("O")">@Presenter.State.LastRefreshedAtUtc.Value.ToLocalTime().ToString("g")</time></p>
+            @if (Presenter.State.InterestRevision is { } interestRevision)
+            {
+                <p data-testid="market-category-interest-revision">Interest revision: @interestRevision</p>
+            }
             <table>
-                <caption>Saved market categories</caption>
-                <thead><tr><th scope="col">Code</th><th scope="col">Non-tradeable</th></tr></thead>
+                <caption>Saved market categories and instrument collection state</caption>
+                <thead><tr><th scope="col">Category</th><th scope="col">Non-tradeable</th><th scope="col">Interest</th><th scope="col">Last collection</th><th scope="col">Collection result</th></tr></thead>
                 <tbody>
-                    @foreach (var category in Presenter.State.Categories)
+                    @foreach (var (category, index) in Presenter.State.Categories.Select((item, index) => (item, index)))
                     {
-                        <tr @key="category.Code"><td>@category.Code</td><td>@(category.NonTradeable ? "Non-tradeable" : "Tradeable")</td></tr>
+                        var checkboxId = $"category-interest-{index}";
+                        <tr @key="category.Code">
+                            <td><a href="@($"/market-categories/{Uri.EscapeDataString(category.Code)}/instruments")">@category.Code instruments</a></td>
+                            <td>@(category.NonTradeable ? "Non-tradeable (provider fact)" : "Tradeable")</td>
+                            <td>
+                                @if (canRefresh)
+                                {
+                                    <label for="@checkboxId">Interested in @category.Code</label>
+                                    <input id="@checkboxId" type="checkbox" checked="@category.Interested"
+                                           disabled="@(Presenter.SavingInterestCategoryCode is not null || Presenter.IsRefreshing)"
+                                           @onchange="args => SetInterestAsync(category, args)" />
+                                }
+                                else
+                                {
+                                    <span>@(category.Interested ? "Interested" : "Not interested")</span>
+                                }
+                            </td>
+                            <td>
+                                @if (category.LastSuccessfulCollectionAtUtc is { } collectedAt)
+                                {
+                                    <time datetime="@collectedAt.ToString("O")">@collectedAt.ToLocalTime().ToString("g")</time>
+                                }
+                                else
+                                {
+                                    <span>Never collected</span>
+                                }
+                            </td>
+                            <td>
+                                @(category.CollectionOutcome ?? "No collection")
+                                @if (!string.IsNullOrWhiteSpace(category.SafeFailure))
+                                {
+                                    <span class="warning"> — @category.SafeFailure</span>
+                                }
+                            </td>
+                        </tr>
                     }
                 </tbody>
             </table>
         </section>
     }
 
+    @if (Presenter.CollectionStatus is { } collectionStatus)
+    {
+        <section class="panel" aria-label="Instrument collection schedule" data-testid="market-category-collection-status">
+            <h2>Instrument collection</h2>
+            <p>Collector: @collectionStatus.State@(string.IsNullOrWhiteSpace(collectionStatus.PauseReason) ? string.Empty : $" — {collectionStatus.PauseReason}")</p>
+            @if (collectionStatus.NextWakeUpUtc is { } nextWakeUp)
+            {
+                <p>Next scheduled check: <time datetime="@nextWakeUp.ToString("O")">@nextWakeUp.ToLocalTime().ToString("g")</time></p>
+            }
+            @if (collectionStatus.ApprovedDailyRequestAllowance is { } allowance)
+            {
+                <p>Daily request quota: @collectionStatus.UsedRequestBudget used of @allowance.</p>
+            }
+            else
+            {
+                <p>Daily request allowance is not configured; collection is paused.</p>
+            }
+        </section>
+    }
+    @if (!string.IsNullOrWhiteSpace(Presenter.CollectionStatusError))
+    {
+        <p class="error" role="status" data-testid="market-category-collection-status-error">@Presenter.CollectionStatusError</p>
+    }
+    @if (Presenter.State?.DormantInterests.Count > 0)
+    {
+        <section class="panel" data-testid="market-category-dormant-interests">
+            <h2>Dormant interests</h2>
+            <p>These saved interests are not in the current category catalogue and will not be collected.</p>
+            <ul>
+                @foreach (var dormantCode in Presenter.State.DormantInterests)
+                {
+                    <li>@dormantCode</li>
+                }
+            </ul>
+        </section>
+    }
+    @if (!string.IsNullOrWhiteSpace(Presenter.InterestMessage))
+    {
+        <p role="status" data-testid="market-category-interest-message">@Presenter.InterestMessage</p>
+    }
+    @if (!string.IsNullOrWhiteSpace(Presenter.InterestError))
+    {
+        <p class="error" role="alert" data-testid="market-category-interest-error">@Presenter.InterestError</p>
+    }
     @if (Presenter.IsRefreshing)
     {
         <p role="status" data-testid="market-categories-refreshing">Refreshing market categories...</p>
@@ -81,6 +163,9 @@ else
     }
 
     private async Task RefreshAsync() => await Presenter.RefreshAsync(requestLifetime.Token);
+
+    private Task SetInterestAsync(MarketCategoryViewModel category, ChangeEventArgs args) =>
+        Presenter.SetInterestAsync(category.Code, args.Value is bool interested && interested, requestLifetime.Token);
 
     public void Dispose()
     {

@@ -103,6 +103,40 @@ public sealed class IgBrokerAuthenticationGatewayTests
     }
 
     /// <summary>
+    /// Traces to the applied-environment capability boundary and Phase 0 Live-authentication restriction.
+    /// Verifies a stored-credential-capable IG Live catalog profile remains non-executable for authentication.
+    /// Expected: authentication is rejected before catalog credentials are read or the HTTP handler is invoked.
+    /// Why: Live market-data credential storage must not enable trading authentication or provider network calls.
+    /// </summary>
+    [Fact]
+    public async Task AuthenticateAndCollectProofAsync_ShouldRejectAppliedLiveProfileBeforeCredentialsOrHttp()
+    {
+        var handler = CreateSuccessfulHandler();
+        var credentials = new CountingProtectedCredentialService();
+        var resolver = new StubAppliedBrokerEnvironmentContextResolver(new AppliedBrokerEnvironmentContext(
+            Guid.NewGuid(),
+            "IG",
+            "Live",
+            "Active",
+            "Available",
+            "IgLive",
+            false));
+        var gateway = new IgBrokerAuthenticationGateway(
+            new HttpClient(handler) { BaseAddress = new Uri("https://api.ig.com/gateway/deal/") },
+            credentials,
+            resolver);
+
+        var outcome = await gateway.AuthenticateAndCollectProofAsync(
+            CreateRequest(BrokerEnvironmentKind.Live),
+            CancellationToken.None);
+
+        Assert.False(outcome.IsAuthenticated);
+        Assert.Equal(BrokerAuthenticationFailureKind.UnsupportedEnvironment, outcome.Failure!.Kind);
+        Assert.Equal(0, credentials.CatalogCredentialCalls);
+        Assert.Empty(handler.Requests);
+    }
+
+    /// <summary>
     /// Traces to Phase 4.3 capability-first routing and SR2.
     /// Verifies an unavailable applied catalog record is rejected before catalog credential retrieval or HTTP.
     /// Expected: neither spy records activity.

@@ -104,6 +104,32 @@ catalogues isolated. Replacement of child rows and the successful-refresh
 timestamp occurs in one transaction. No page, read handler, or transport
 client calls IG directly.
 
+`MarketCategoryInstruments` is a separate Application slice with inward-owned
+ports for the IG gateway, environment-scoped interest and frequency, durable
+request budget, cycle coordination, status, and saved snapshots. Infrastructure
+owns the scheduled hosted worker, IG session/page transport and full-response
+validation, SQL leases/fencing, and persistence. API handlers expose protected
+use cases; Web renders saved data and writes operator intent only. Category
+refresh and instrument acquisition run only for the supported applied IG
+market-data environment inside its configured local trading schedule.
+
+The relational model separates mutable catalogue/current state from retained
+history. `MarketCategoryInstrumentEntity` is the current versioned page source;
+`MarketCategoryInstrumentCollectionRunEntity` and
+`MarketCategoryInstrumentObservationEntity` retain complete collection
+provenance and values, partitioned by broker environment and category.
+`MarketCategoryInterestEntity` and `MarketCategoryInterestStateEntity` store
+shared operator selections and their concurrency revision.
+`InstrumentCollectionSettingsEntity`, `InstrumentCollectionCycleStateEntity`,
+and `InstrumentCollectionCategoryAttemptEntity` hold frequency/allowance,
+durable slot/request-budget state, leases, and retry outcomes. A failed or
+incomplete provider run does not replace the current snapshot or become an
+analysis-eligible complete run. Category removal does not delete instrument
+observations. The observation history is retained online in SQL indefinitely
+for this delivery; no archive destination or automatic purge is configured.
+Monitor SQL row and storage growth before later defining any versioned
+retention/archive policy.
+
 * Configuration, runtime-state, retry-cycle, login-snapshot, operational-event,
     audit, and notification-record writes are intended to commit as one local
     consistency unit for a single reconciliation outcome where the current data
@@ -585,6 +611,10 @@ The current `PlatformDbContext` stores these entities:
 | `AccountPreferencesCurrentStateEntity` | Current confirmed Account Preferences projection. |
 | `AccountPreferencesDesiredStateAuditEntity` | Historical Account Preferences desired-state audit. |
 | `AccountPreferencesOperationEntity` | In-flight Account Preferences operation journal. |
+| `MarketCategoryInstrumentCatalogStateEntity` and `MarketCategoryInstrumentEntity` | Current snapshot revision and versioned SQL rows used by bounded saved-instrument pages. |
+| `MarketCategoryInstrumentCollectionRunEntity` and `MarketCategoryInstrumentObservationEntity` | Complete run provenance and immutable instrument observations retained for analysis. |
+| `MarketCategoryInterestEntity` and `MarketCategoryInterestStateEntity` | Environment-scoped category interest and optimistic-concurrency revision. |
+| `InstrumentCollectionSettingsEntity`, `InstrumentCollectionCycleStateEntity`, and `InstrumentCollectionCategoryAttemptEntity` | Applied-environment frequency/allowance, durable cycle lease and request budget, and per-category retry/outcome state. |
 | `DataProtectionKey` | Shared host key-ring material; not broker-environment retirement data. |
 
 ### Persistence relationships by responsibility

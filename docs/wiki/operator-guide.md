@@ -4,7 +4,7 @@ This guide explains how the current Blazor operator UI works, what information e
 
 ## Operator UI summary
 
-The current UI is a Blazor Server app with a sign-in-first browser flow and three protected operator pages:
+The current UI is a Blazor Server app with a sign-in-first browser flow and these protected operator pages:
 
 - `/`
 - `/status`
@@ -30,6 +30,8 @@ The left navigation still changes based on the signed-in operator role.
 | `/` | UI entry route. It redirects anonymous users to sign-in on first access and shows the signed-in home overview for authenticated operators. |
 | `/status` | Runtime status, trading-schedule state, auth state, current IG login state, latest successful non-secret payload details, and recent auth events. |
 | `/ig-login/history` | Retained daily first-successful non-secret IG login payloads within the 90-day retention window. Distinct from the current-state latest payload on `/status`. |
+| `/market-categories` | Browse the saved category catalogue, review shared interest and collector status, and manage interest as an Operator. |
+| `/market-categories/{CategoryCode}/instruments` | Viewer-protected, paged browsing of the saved instrument snapshot for the exact category code. |
 | `/configuration` | Operator-managed configuration, notification settings, trading-schedule values, and write-only IG credential updates. |
 | `/administration/broker-environments` | Administrator-only broker catalog. Shows each environment's lifecycle and availability, supports credential replacement, and provides recovery guidance when the required catalog is empty. |
 | `/administration/authentication` | Administrator-only summary of the configured auth provider, role claim type, and protected API audience. |
@@ -37,6 +39,37 @@ The left navigation still changes based on the signed-in operator role.
 | `/authentication/sign-in` | Starts sign-in. In automated local tests this also lists the seeded local test users. |
 | `/authentication/sign-out` | Requires an authenticated browser session, accepts an antiforgery-protected POST from the shared header, and ends the platform session before returning to the UI entry route, which prompts for sign-in again. |
 | `/authentication/access-denied` | Dedicated denied-access page for signed-in users who lack the required platform role. |
+
+## Market categories and saved instruments
+
+`/market-categories` reads the current applied environment's saved SQL
+catalogue. It does not call IG. Viewers see category interest as read-only;
+Operators can select or clear an accessible checkbox for each current
+category. Interest is shared across operators in the applied broker
+environment, starts unchecked for a new category, and is saved with a shared
+revision. A revision conflict keeps the saved selection visible and asks the
+Operator to reload before another edit. Changing interest does not immediately
+collect provider data.
+
+Interested categories that have been removed from the current catalogue are
+shown as dormant. They are not collected while absent and can become eligible
+again if IG lists the category later. `Non-tradeable` is provider metadata,
+not a decision about trading permissions.
+
+Select a category code to open `/market-categories/{CategoryCode}/instruments`.
+The page reads the saved, versioned SQL snapshot only, and is protected for
+Viewers as well as Operators. It distinguishes not-yet-collected from a
+successfully completed empty snapshot, displays the platform's retrieval time
+in UTC, and pages by opaque cursor with Next and Previous controls. If a
+worker publishes a newer snapshot while browsing, the stale-cursor warning
+retains the visible page and offers a reload from the first page.
+
+Bid and offer values are saved provider snapshot values, not live prices,
+streaming quotes, or trading instructions. The provider's `updateTime` is
+shown as IG-supplied text. Collector status reports schedule, next wake-up,
+request budget, collection outcome, and safe failure state; it does not expose
+credentials or raw provider diagnostics. Failure to load status is shown
+separately and does not blank successfully loaded category or instrument data.
 
 ## Broker environment catalog
 
@@ -351,6 +384,29 @@ The page accepts comma-separated values for trading days and bank holidays.
 The save operation requires a later end time, at least one trading day, and a time zone known by the running platform. The selected environment combination is checked by the Application use case, so the `Test` platform cannot activate the `Live` broker.
 
 At runtime, reconciliation and manual retry use the same Application-owned schedule policy. An inactive schedule blocks activity before broker access, and an active Test platform targeting the Live broker is classified as blocked before provider transport runs.
+
+### Market-category instrument collection
+
+The collection section shows whether the collector is configured or paused,
+the applied IG market-data environment, effective and pending frequency, the
+next local trading day for a frequency change, the approved daily allowance,
+current usage, and the latest safe outcome/failure state.
+
+`InstrumentUpdatesPerDay` defaults to `1` and accepts `1` through `4`. A
+frequency change is applied from the next local trading day. Values above one
+require a sufficient, operator-approved allowance for that broker
+environment; the allowance is shared across category, session, and instrument
+HTTP requests and is not equivalent to the frequency setting. Setting the
+allowance to zero pauses provider requests. Leaving it unset also leaves the
+collector paused. Saving settings does not fetch provider data.
+
+The worker starts only for a supported applied IG market-data environment and
+inside its configured active schedule. It refreshes categories first, then
+collects only selected categories still present in that catalogue. Missed
+slots are gaps rather than after-hours catch-up. The UI reports safe status
+for unsupported context, schedule closure, quota exhaustion, provider
+unavailability, or invalid/incomplete data without showing payloads or
+credentials.
 
 ### Retry policy
 
