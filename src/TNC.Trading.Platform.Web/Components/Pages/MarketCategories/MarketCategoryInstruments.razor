@@ -18,27 +18,29 @@ else if (Presenter.IsLoading && Presenter.Page is null)
 }
 else
 {
-    <section class="panel platform-page-header">
-        <div>
+    <section class="panel">
+        <div class="platform-page-header">
             <h1>Saved instruments: @CategoryCode</h1>
-            @if (Presenter.Category is { } category)
+            <a class="market-category-link" href="/market-categories">Back to market categories</a>
+        </div>
+        @if (Presenter.Category is { } category)
+        {
+            <p data-testid="instrument-category-interest">Interest: @(category.Interested ? "Interested" : "Not interested")</p>
+            @if (category.NonTradeable)
             {
-                <p data-testid="instrument-category-interest">Interest: @(category.Interested ? "Interested" : "Not interested")</p>
-                @if (category.NonTradeable)
-                {
-                    <p class="hint">The provider marks this category as non-tradeable. This is provider metadata, not a trading-permission decision.</p>
-                }
-                @if (category.LastSuccessfulCollectionAtUtc is { } collectedAt)
-                {
-                    <p>Last successful collection: <time datetime="@collectedAt.ToString("O")">@collectedAt.ToUniversalTime().ToString("u") UTC</time></p>
-                }
+                <p class="hint">The provider marks this category as non-tradeable. This is provider metadata, not a trading-permission decision.</p>
+            }
+        }
+        <div class="instrument-collection-summary">
+            @if (Presenter.Category?.LastSuccessfulCollectionAtUtc is { } collectedAt)
+            {
+                <p>Last successful collection: <time datetime="@collectedAt.ToString("O")">@collectedAt.ToLocalTime().ToString("g")</time></p>
             }
             @if (Presenter.CollectionStatus?.NextWakeUpUtc is { } nextWakeUp)
             {
                 <p>Next scheduled collection check: <time datetime="@nextWakeUp.ToString("O")">@nextWakeUp.ToLocalTime().ToString("g")</time></p>
             }
         </div>
-        <a href="/market-categories">Back to market categories</a>
     </section>
 
     @if (Presenter.IsLoading)
@@ -74,51 +76,55 @@ else
             <h2>Saved snapshot</h2>
             @if (page.LastRetrievedAtUtc is { } retrievedAt)
             {
-                <p>Retrieved <time datetime="@retrievedAt.ToString("O")">@retrievedAt.ToUniversalTime().ToString("u") UTC</time>.</p>
+                <p>Retrieved <time datetime="@retrievedAt.ToString("O")">@retrievedAt.ToLocalTime().ToString("g")</time>.</p>
             }
             <p class="hint">Prices and market state are a saved provider snapshot; they may be delayed and are not a live quote or trading instruction.</p>
-            <table>
-                <caption>Saved instruments for @CategoryCode — page @Presenter.CurrentPageNumber</caption>
-                <thead>
-                    <tr>
-                        <th scope="col">Name</th><th scope="col">EPIC</th><th scope="col">Type</th>
-                        <th scope="col">Expiry</th><th scope="col">Bid</th><th scope="col">Offer</th>
-                        <th scope="col">Market status</th><th scope="col">IG update time</th><th scope="col">More</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var instrument in page.Instruments)
-                    {
-                        <tr @key="instrument.Epic">
-                            <td>@instrument.Name</td><td>@instrument.Epic</td><td>@instrument.InstrumentType</td>
-                            <td>@instrument.Expiry</td><td>@instrument.Bid</td><td>@instrument.Offer</td>
-                            <td>@instrument.MarketStatus</td><td>@instrument.UpdateTime</td>
-                            <td>
-                                <details>
-                                    <summary>Instrument details</summary>
-                                    <dl>
-                                        <dt>Underlying</dt><dd>@instrument.UnderlyingName</dd>
-                                        <dt>Lot size</dt><dd>@instrument.LotSize</dd>
-                                        <dt>OTC tradeable</dt><dd>@instrument.OtcTradeable</dd>
-                                        <dt>Scaling factor</dt><dd>@instrument.ScalingFactor</dd>
-                                        <dt>Expiry timestamp</dt><dd>@instrument.ExpiryTimestamp</dd>
-                                        <dt>Delay time</dt><dd>@instrument.DelayTime</dd>
-                                        <dt>High</dt><dd>@instrument.High</dd>
-                                        <dt>Low</dt><dd>@instrument.Low</dd>
-                                        <dt>Net change</dt><dd>@instrument.NetChange</dd>
-                                        <dt>Percentage change</dt><dd>@instrument.PercentageChange</dd>
-                                        <dt>Popularity</dt><dd>@instrument.Popularity</dd>
-                                    </dl>
-                                </details>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-            <nav aria-label="Saved instrument pages">
-                <button type="button" @onclick="LoadPreviousAsync" disabled="@(!Presenter.CanGoPrevious || Presenter.IsLoading)">Previous page</button>
-                <span>Page @Presenter.CurrentPageNumber</span>
-                <button type="button" @onclick="LoadNextAsync" disabled="@(!Presenter.CanGoNext || Presenter.IsLoading)">Next page</button>
+            <div class="instrument-tabs">
+                <RadzenTabs @bind-SelectedIndex="selectedIndex" Change="OnTabChanged" AriaLabel="Saved instruments">
+                    <Tabs>
+                        @foreach (var instrument in page.Instruments)
+                        {
+                            <RadzenTabsItem @key="instrument.Epic" Text="@instrument.Name">
+                                <article data-testid="market-category-instrument">
+                                    <h3>@instrument.Name</h3>
+                                    <RadzenRow>
+                                        <RadzenColumn Size="12" SizeMD="6">
+                                            <dl class="platform-key-value-grid">
+                                                <dt>EPIC</dt><dd>@instrument.Epic</dd>
+                                                <dt>Type</dt><dd>@instrument.InstrumentType</dd>
+                                                <dt>Expiry</dt><dd>@instrument.Expiry</dd>
+                                                <dt>Bid</dt><dd>@instrument.Bid</dd>
+                                                <dt>Offer</dt><dd>@instrument.Offer</dd>
+                                                <dt>Market status</dt><dd>@instrument.MarketStatus</dd>
+                                                <dt>IG update time</dt><dd>@instrument.UpdateTime</dd>
+                                            </dl>
+                                        </RadzenColumn>
+                                        <RadzenColumn Size="12" SizeMD="6">
+                                            <dl class="platform-key-value-grid">
+                                                <dt>Underlying</dt><dd>@instrument.UnderlyingName</dd>
+                                                <dt>Lot size</dt><dd>@instrument.LotSize</dd>
+                                                <dt>OTC tradeable</dt><dd>@instrument.OtcTradeable</dd>
+                                                <dt>Scaling factor</dt><dd>@instrument.ScalingFactor</dd>
+                                                <dt>Expiry timestamp</dt><dd>@instrument.ExpiryTimestamp</dd>
+                                                <dt>Delay time</dt><dd>@instrument.DelayTime</dd>
+                                                <dt>High</dt><dd>@instrument.High</dd>
+                                                <dt>Low</dt><dd>@instrument.Low</dd>
+                                                <dt>Net change</dt><dd>@instrument.NetChange</dd>
+                                                <dt>Percentage change</dt><dd>@instrument.PercentageChange</dd>
+                                                <dt>Popularity</dt><dd>@instrument.Popularity</dd>
+                                            </dl>
+                                        </RadzenColumn>
+                                    </RadzenRow>
+                                </article>
+                            </RadzenTabsItem>
+                        }
+                    </Tabs>
+                </RadzenTabs>
+            </div>
+            <nav class="instrument-pagination" aria-label="Saved instrument pages">
+                <button class="platform-primary-action" type="button" @onclick="LoadPreviousAsync" disabled="@(!Presenter.CanGoPrevious || Presenter.IsLoading)">Previous page</button>
+                <span>Page @Presenter.CurrentPageNumber of @Presenter.PageCountDescription</span>
+                <button class="platform-primary-action" type="button" @onclick="LoadNextAsync" disabled="@(!Presenter.CanGoNext || Presenter.IsLoading)">Next page</button>
             </nav>
         </section>
     }
@@ -149,12 +155,56 @@ else
         if (hasRequiredScope)
         {
             await Presenter.LoadAsync(CategoryCode, requestLifetime.Token);
+            ReconcileSelectedInstrument();
         }
     }
 
-    private Task LoadPreviousAsync() => Presenter.LoadPreviousAsync(CategoryCode, requestLifetime.Token);
-    private Task LoadNextAsync() => Presenter.LoadNextAsync(CategoryCode, requestLifetime.Token);
-    private Task ReloadAsync() => Presenter.ReloadAsync(CategoryCode, requestLifetime.Token);
+    private int selectedIndex;
+    private string? selectedEpic;
+
+    private void OnTabChanged(int index)
+    {
+        selectedIndex = index;
+        var instruments = Presenter.Page?.Instruments;
+        selectedEpic = instruments is not null && index >= 0 && index < instruments.Count
+            ? instruments[index].Epic : null;
+    }
+
+    private void ReconcileSelectedInstrument()
+    {
+        var instruments = Presenter.Page?.Instruments;
+        selectedIndex = 0;
+        if (instruments is not null)
+        {
+            for (var index = 0; index < instruments.Count; index++)
+            {
+                if (string.Equals(instruments[index].Epic, selectedEpic, StringComparison.Ordinal))
+                {
+                    selectedIndex = index;
+                    break;
+                }
+            }
+        }
+        selectedEpic = instruments is { Count: > 0 } ? instruments[selectedIndex].Epic : null;
+    }
+
+    private async Task LoadPreviousAsync()
+    {
+        await Presenter.LoadPreviousAsync(CategoryCode, requestLifetime.Token);
+        ReconcileSelectedInstrument();
+    }
+
+    private async Task LoadNextAsync()
+    {
+        await Presenter.LoadNextAsync(CategoryCode, requestLifetime.Token);
+        ReconcileSelectedInstrument();
+    }
+
+    private async Task ReloadAsync()
+    {
+        await Presenter.ReloadAsync(CategoryCode, requestLifetime.Token);
+        ReconcileSelectedInstrument();
+    }
 
     public void Dispose()
     {

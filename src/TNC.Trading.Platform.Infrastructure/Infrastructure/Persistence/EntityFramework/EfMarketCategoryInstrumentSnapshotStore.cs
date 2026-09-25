@@ -273,12 +273,12 @@ internal sealed class EfMarketCategoryInstrumentSnapshotStore(
             || provenance.LeaseFence < 1
             || metadata.PageSize is < 1 or > MaximumPageSize
             || metadata.ProviderTotalPages is < 1 or > MaximumPages
-            || metadata.ProviderTotalResults is < 1 or > MaximumResults
-            || collection.Instruments.Count is < 1 or > MaximumResults
+            || metadata.ProviderTotalResults is < 0 or > MaximumResults
+            || collection.Instruments.Count > MaximumResults
             || metadata.ProviderTotalPages != metadata.PageNumbersFetched.Count
             || metadata.ProviderTotalResults != collection.Instruments.Count
-            || metadata.PageNumbersFetched.Where((page, index) => page != index + 1).Any()
-            || metadata.ProviderTotalPages != (int)Math.Ceiling((double)metadata.ProviderTotalResults / metadata.PageSize))
+            || metadata.PageNumbersFetched.Where((page, index) => page != index).Any()
+            || metadata.ProviderTotalPages != Math.Max(1, (int)Math.Ceiling((double)metadata.ProviderTotalResults / metadata.PageSize)))
         {
             throw new InvalidOperationException("The instrument collection is incomplete or has invalid provenance.");
         }

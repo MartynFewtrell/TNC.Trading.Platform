@@ -455,7 +455,7 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.ToTable("MarketCategoryInstrumentCollectionRuns", table =>
             {
                 table.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_CompleteCounts",
-                    "[IsComplete] = 0 OR ([PageCount] > 0 AND [ResultCount] > 0 AND [ResultCount] = [ProviderTotalResults] AND [PageCount] = [ProviderTotalPages])");
+                    "[IsComplete] = 0 OR ([PageCount] > 0 AND [ResultCount] >= 0 AND [ResultCount] = [ProviderTotalResults] AND [PageCount] = [ProviderTotalPages])");
                 table.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_EndpointProfile", "LEN(LTRIM(RTRIM([EndpointProfile]))) > 0");
                 table.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_CategoryCode", "LEN(LTRIM(RTRIM([CategoryCode]))) > 0");
                 table.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_Slot", "[ScheduledSlot] BETWEEN 0 AND 3");

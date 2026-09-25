@@ -85,12 +85,31 @@ quota. An unset or zero allowance pauses provider collection. The status API
 and UI report used/approved request counts, due/next slot, outcomes and safe
 failure categories without provider response bodies or credentials.
 
+To retry a slot with a failed category during its trading window, apply pending database
+migrations, restart the API with the current build, then run the guarded
+[instrument slot reset script](../../infra/scripts/reset-instrument-collection-slot.sql)
+against `platformdb` after setting its trading day and zero-based slot. The
+script requires the applied IG Demo environment, an expired lease, no
+successful collection in that slot, and remaining approved daily allowance.
+The cycle may have outcome `Completed` even when every category attempt
+failed (`CompletedWithCategoryFailures`); the script accepts that case but
+never replays a slot with a successful category.
+It resets failed attempt counters but preserves the actual number of provider
+requests already used. The collector rechecks the schedule approximately
+every 30 seconds; resetting outside the active window does not replay a
+missed slot.
+
 Instrument calls use the IG category instruments resource v1 with page numbers
-starting at zero and a bounded provider page size of 150. A collection is
-accepted only after every expected page and consistent total metadata have
-been validated; caps are 100 pages and 15,000 instruments per category/run.
-Partial, empty-by-default, inconsistent, malformed, or over-cap results never
-replace the last-good SQL snapshot. The saved current projection is versioned
+starting at zero and a bounded provider page size of 150. Publication checks
+the same zero-based page sequence and accepts an explicitly reported empty
+category only when its single page, zero total results, and empty instrument
+list agree. The SQL collection-run constraint is updated by the
+`AllowEmptyMarketCategoryInstrumentCollections` migration; existing databases
+must apply it before an empty collection can publish. A collection is accepted
+only after every expected page and consistent total metadata have been
+validated; caps are 100 pages and 15,000
+instruments per category/run. Partial, empty-by-default, inconsistent,
+malformed, or over-cap results never replace the last-good SQL snapshot. The saved current projection is versioned
 for keyset paging, and each complete run plus its observations is retained
 online in SQL indefinitely. There is no automatic deletion or archive job for
 this analysis history; storage growth requires operational monitoring.

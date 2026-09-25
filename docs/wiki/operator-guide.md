@@ -43,13 +43,23 @@ The left navigation still changes based on the signed-in operator role.
 ## Market categories and saved instruments
 
 `/market-categories` reads the current applied environment's saved SQL
-catalogue. It does not call IG. Viewers see category interest as read-only;
-Operators can select or clear an accessible checkbox for each current
+catalogue. It does not call IG or offer a manual category refresh; the
+schedule-gated worker refreshes categories automatically. The instrument
+collection status appears above saved categories. Category codes are links to
+their saved instruments without an additional suffix or underline. Viewers
+see category interest as a disabled checkbox; Operators can select or clear an
+accessible, visually unlabelled checkbox for each current
 category. Interest is shared across operators in the applied broker
 environment, starts unchecked for a new category, and is saved with a shared
 revision. A revision conflict keeps the saved selection visible and asks the
 Operator to reload before another edit. Changing interest does not immediately
 collect provider data.
+
+The Instrument collection and Saved categories panels can each be collapsed
+or expanded; both start open. Instrument collection places the next scheduled
+check beside the daily request quota when space permits. If no allowance is
+configured, it explains that collection is paused. The panel does not display
+the internal collector state or scheduling reason.
 
 Interested categories that have been removed from the current catalogue are
 shown as dormant. They are not collected while absent and can become eligible
@@ -59,8 +69,16 @@ not a decision about trading permissions.
 Select a category code to open `/market-categories/{CategoryCode}/instruments`.
 The page reads the saved, versioned SQL snapshot only, and is protected for
 Viewers as well as Operators. It distinguishes not-yet-collected from a
-successfully completed empty snapshot, displays the platform's retrieval time
-in UTC, and pages by opaque cursor with Next and Previous controls. If a
+successfully completed empty snapshot. Collection and retrieval times use the
+same local short date/time format as the scheduled check and account details;
+the saved UTC instant remains available in the time element. Each saved
+instrument on the current page has a named tab
+with its market data and provider details below; the tab strip scrolls
+horizontally when names exceed the available width. Next and Previous load
+further pages by opaque cursor, without fetching the full category. Pagination
+shows the exact page count when the current page is the last page; while a
+next-page cursor exists, it shows a lower bound (for example,
+`Page 1 of at least 2`) because the API does not provide a total page count. If a
 worker publishes a newer snapshot while browsing, the stale-cursor warning
 retains the visible page and offers a reload from the first page.
 

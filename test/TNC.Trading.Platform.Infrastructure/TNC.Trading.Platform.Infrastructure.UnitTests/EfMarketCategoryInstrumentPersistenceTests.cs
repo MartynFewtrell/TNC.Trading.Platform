@@ -87,7 +87,7 @@ public sealed class EfMarketCategoryInstrumentPersistenceTests
         var store = new EfMarketCategoryInstrumentSnapshotStore(context, resolver);
         var invalidCollection = Collection("CAT", [Instrument("EPIC-1")]) with
         {
-            Metadata = new MarketCategoryInstrumentCollectionMetadata(50, [1], 2, 1)
+            Metadata = new MarketCategoryInstrumentCollectionMetadata(50, [0], 2, 1)
         };
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -95,6 +95,28 @@ public sealed class EfMarketCategoryInstrumentPersistenceTests
 
         Assert.Empty(await context.MarketCategoryInstrumentCollectionRuns.ToListAsync());
         Assert.Empty(await context.MarketCategoryInstruments.ToListAsync());
+    }
+
+    /// <summary>
+    /// Trace: Market Category Instruments Work Item 2.
+    /// Verifies: one-based page evidence is rejected before any snapshot is written.
+    /// Expected: the store throws for page 1 when the only provider page should be page 0.
+    /// Why: a mismatched page sequence must not be mistaken for a complete provider collection.
+    /// </summary>
+    [Fact]
+    public async Task SaveCompleteAsync_ShouldRejectOneBasedPageEvidence_WhenProviderReportsOnePage()
+    {
+        await using var context = InfrastructureReflection.CreateDbContext();
+        var store = new EfMarketCategoryInstrumentSnapshotStore(context);
+        var invalidCollection = Collection("CAT", [Instrument("EPIC-1")]) with
+        {
+            Metadata = new MarketCategoryInstrumentCollectionMetadata(50, [1], 1, 1)
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.SaveCompleteAsync(invalidCollection, Provenance("CAT", 1), CancellationToken.None));
+
+        Assert.Empty(context.ChangeTracker.Entries<MarketCategoryInstrumentCollectionRunEntity>());
     }
 
     /// <summary>Trace: Market Category Instruments Work Item 2. Verifies lease expiry increments the fencing token and durable request reservations cannot be spent twice or by an expired owner.</summary>
@@ -150,12 +172,12 @@ public sealed class EfMarketCategoryInstrumentPersistenceTests
         new(codes.Select(code => new MarketCategory(code, false)).ToArray(), DateTimeOffset.UtcNow);
 
     private static MarketCategoryInstrumentCollection Collection(string categoryCode, IReadOnlyList<MarketCategoryInstrument> instruments) =>
-        new(BrokerEnvironmentKind.Demo, categoryCode, new(50, [1], 1, instruments.Count), instruments);
+        new(BrokerEnvironmentKind.Demo, categoryCode, new(50, [0], 1, instruments.Count), instruments);
 
     private static MarketCategoryInstrumentRunProvenance Provenance(string categoryCode, int resultCount) =>
         new(Guid.NewGuid(), BrokerEnvironmentKind.Demo, "Test", categoryCode, 1, new(2026, 9, 24), 0, 1,
             new DateTimeOffset(2026, 9, 24, 12, 0, 0, TimeSpan.Zero),
-            new(50, [1], 1, resultCount),
+            new(50, [0], 1, resultCount),
             new(MarketCategoryInstrumentDataQualityStatus.CompleteValidated, resultCount, 0),
             Guid.NewGuid(),
             1);

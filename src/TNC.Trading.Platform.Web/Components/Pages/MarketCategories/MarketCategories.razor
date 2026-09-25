@@ -21,13 +21,33 @@ else
 {
     <section class="panel platform-page-header">
         <div><h1>Market categories</h1><p class="hint">Saved market categories from the configured IG environment.</p></div>
-        @if (canRefresh)
-        {
-            <button class="platform-primary-action" type="button" data-testid="market-categories-refresh" @onclick="RefreshAsync" disabled="@(Presenter.IsRefreshing || Presenter.SavingInterestCategoryCode is not null)">
-                @(Presenter.IsRefreshing ? "Refreshing..." : "Refresh")
-            </button>
-        }
     </section>
+
+    @if (Presenter.CollectionStatus is { } collectionStatus)
+    {
+        <PlatformAccordionSection Title="Instrument collection" IsOpen="true">
+            <section class="panel" aria-label="Instrument collection schedule" data-testid="market-category-collection-status">
+                <div class="market-category-collection-summary">
+                    @if (collectionStatus.NextWakeUpUtc is { } nextWakeUp)
+                    {
+                        <p>Next scheduled check: <time datetime="@nextWakeUp.ToString("O")">@nextWakeUp.ToLocalTime().ToString("g")</time></p>
+                    }
+                    @if (collectionStatus.ApprovedDailyRequestAllowance is { } allowance)
+                    {
+                        <p>Daily request quota: @collectionStatus.UsedRequestBudget used of @allowance.</p>
+                    }
+                    else
+                    {
+                        <p>Daily request allowance is not configured; collection is paused.</p>
+                    }
+                </div>
+            </section>
+        </PlatformAccordionSection>
+    }
+    @if (!string.IsNullOrWhiteSpace(Presenter.CollectionStatusError))
+    {
+        <p class="error" role="status" data-testid="market-category-collection-status-error">@Presenter.CollectionStatusError</p>
+    }
 
     @if (Presenter.State is null)
     {
@@ -39,83 +59,60 @@ else
     }
     else
     {
-        <section class="panel" data-testid="market-categories-saved">
-            <h2>Saved categories</h2>
-            <p>Last refreshed <time datetime="@Presenter.State.LastRefreshedAtUtc!.Value.ToString("O")">@Presenter.State.LastRefreshedAtUtc.Value.ToLocalTime().ToString("g")</time></p>
-            @if (Presenter.State.InterestRevision is { } interestRevision)
-            {
-                <p data-testid="market-category-interest-revision">Interest revision: @interestRevision</p>
-            }
-            <table>
-                <caption>Saved market categories and instrument collection state</caption>
-                <thead><tr><th scope="col">Category</th><th scope="col">Non-tradeable</th><th scope="col">Interest</th><th scope="col">Last collection</th><th scope="col">Collection result</th></tr></thead>
-                <tbody>
-                    @foreach (var (category, index) in Presenter.State.Categories.Select((item, index) => (item, index)))
-                    {
-                        var checkboxId = $"category-interest-{index}";
-                        <tr @key="category.Code">
-                            <td><a href="@($"/market-categories/{Uri.EscapeDataString(category.Code)}/instruments")">@category.Code instruments</a></td>
-                            <td>@(category.NonTradeable ? "Non-tradeable (provider fact)" : "Tradeable")</td>
-                            <td>
-                                @if (canRefresh)
-                                {
-                                    <label for="@checkboxId">Interested in @category.Code</label>
-                                    <input id="@checkboxId" type="checkbox" checked="@category.Interested"
-                                           disabled="@(Presenter.SavingInterestCategoryCode is not null || Presenter.IsRefreshing)"
-                                           @onchange="args => SetInterestAsync(category, args)" />
-                                }
-                                else
-                                {
-                                    <span>@(category.Interested ? "Interested" : "Not interested")</span>
-                                }
-                            </td>
-                            <td>
-                                @if (category.LastSuccessfulCollectionAtUtc is { } collectedAt)
-                                {
-                                    <time datetime="@collectedAt.ToString("O")">@collectedAt.ToLocalTime().ToString("g")</time>
-                                }
-                                else
-                                {
-                                    <span>Never collected</span>
-                                }
-                            </td>
-                            <td>
-                                @(category.CollectionOutcome ?? "No collection")
-                                @if (!string.IsNullOrWhiteSpace(category.SafeFailure))
-                                {
-                                    <span class="warning"> — @category.SafeFailure</span>
-                                }
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </section>
+        <PlatformAccordionSection Title="Saved categories" IsOpen="true">
+            <section class="panel" data-testid="market-categories-saved">
+                <p>Last refreshed <time datetime="@Presenter.State.LastRefreshedAtUtc!.Value.ToString("O")">@Presenter.State.LastRefreshedAtUtc.Value.ToLocalTime().ToString("g")</time></p>
+                @if (Presenter.State.InterestRevision is { } interestRevision)
+                {
+                    <p data-testid="market-category-interest-revision">Interest revision: @interestRevision</p>
+                }
+                <table>
+                    <caption>Saved market categories and instrument collection state</caption>
+                    <thead><tr><th scope="col">Category</th><th scope="col">Non-tradeable</th><th scope="col">Interest</th><th scope="col">Last collection</th><th scope="col">Collection result</th></tr></thead>
+                    <tbody>
+                        @foreach (var (category, index) in Presenter.State.Categories.Select((item, index) => (item, index)))
+                        {
+                            var checkboxId = $"category-interest-{index}";
+                            <tr @key="category.Code">
+                                <td><a class="market-category-link" href="@($"/market-categories/{Uri.EscapeDataString(category.Code)}/instruments")">@category.Code</a></td>
+                                <td>@(category.NonTradeable ? "Non-tradeable (provider fact)" : "Tradeable")</td>
+                                <td>
+                                    @if (canEditInterest)
+                                    {
+                                        <input id="@checkboxId" type="checkbox" aria-label="@($"Interested in {category.Code}")" checked="@category.Interested"
+                                               disabled="@(Presenter.SavingInterestCategoryCode is not null)"
+                                               @onchange="args => SetInterestAsync(category, args)" />
+                                    }
+                                    else
+                                    {
+                                        <input id="@checkboxId" type="checkbox" aria-label="@($"Interested in {category.Code}")" checked="@category.Interested" disabled />
+                                    }
+                                </td>
+                                <td>
+                                    @if (category.LastSuccessfulCollectionAtUtc is { } collectedAt)
+                                    {
+                                        <time datetime="@collectedAt.ToString("O")">@collectedAt.ToLocalTime().ToString("g")</time>
+                                    }
+                                    else
+                                    {
+                                        <span>Never collected</span>
+                                    }
+                                </td>
+                                <td>
+                                    @(category.CollectionOutcome ?? "No collection")
+                                    @if (!string.IsNullOrWhiteSpace(category.SafeFailure))
+                                    {
+                                        <span class="warning"> — @category.SafeFailure</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        </PlatformAccordionSection>
     }
 
-    @if (Presenter.CollectionStatus is { } collectionStatus)
-    {
-        <section class="panel" aria-label="Instrument collection schedule" data-testid="market-category-collection-status">
-            <h2>Instrument collection</h2>
-            <p>Collector: @collectionStatus.State@(string.IsNullOrWhiteSpace(collectionStatus.PauseReason) ? string.Empty : $" — {collectionStatus.PauseReason}")</p>
-            @if (collectionStatus.NextWakeUpUtc is { } nextWakeUp)
-            {
-                <p>Next scheduled check: <time datetime="@nextWakeUp.ToString("O")">@nextWakeUp.ToLocalTime().ToString("g")</time></p>
-            }
-            @if (collectionStatus.ApprovedDailyRequestAllowance is { } allowance)
-            {
-                <p>Daily request quota: @collectionStatus.UsedRequestBudget used of @allowance.</p>
-            }
-            else
-            {
-                <p>Daily request allowance is not configured; collection is paused.</p>
-            }
-        </section>
-    }
-    @if (!string.IsNullOrWhiteSpace(Presenter.CollectionStatusError))
-    {
-        <p class="error" role="status" data-testid="market-category-collection-status-error">@Presenter.CollectionStatusError</p>
-    }
     @if (Presenter.State?.DormantInterests.Count > 0)
     {
         <section class="panel" data-testid="market-category-dormant-interests">
@@ -137,19 +134,11 @@ else
     {
         <p class="error" role="alert" data-testid="market-category-interest-error">@Presenter.InterestError</p>
     }
-    @if (Presenter.IsRefreshing)
-    {
-        <p role="status" data-testid="market-categories-refreshing">Refreshing market categories...</p>
-    }
-    @if (!string.IsNullOrWhiteSpace(Presenter.Error) && Presenter.State is not null)
-    {
-        <p class="error" role="alert" data-testid="market-categories-stale-failure">The saved categories are still shown. @Presenter.Error</p>
-    }
 }
 
 @code {
     private bool hasRequiredScope;
-    private bool canRefresh;
+    private bool canEditInterest;
     private readonly CancellationTokenSource requestLifetime = new();
 
     protected override async Task OnInitializedAsync()
@@ -157,12 +146,10 @@ else
         hasRequiredScope = await NavigationAccessCoordinator.EnsureRequiredScopesAsync("/market-categories", PlatformAuthenticationDefaults.Scopes.Viewer);
         if (hasRequiredScope)
         {
-            canRefresh = (await OperatorContextAccessor.GetCurrentAsync()).IsOperator;
+            canEditInterest = (await OperatorContextAccessor.GetCurrentAsync()).IsOperator;
             await Presenter.LoadAsync(requestLifetime.Token);
         }
     }
-
-    private async Task RefreshAsync() => await Presenter.RefreshAsync(requestLifetime.Token);
 
     private Task SetInterestAsync(MarketCategoryViewModel category, ChangeEventArgs args) =>
         Presenter.SetInterestAsync(category.Code, args.Value is bool interested && interested, requestLifetime.Token);

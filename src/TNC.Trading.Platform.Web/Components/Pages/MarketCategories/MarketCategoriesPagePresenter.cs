@@ -3,21 +3,18 @@ using TNC.Trading.Platform.Web.Authentication;
 namespace TNC.Trading.Platform.Web.Components.Pages;
 
 /// <summary>
-/// Coordinates market-category loading and operator refreshes while retaining the last saved view on failure.
+/// Coordinates saved market-category loading and operator interest updates.
 /// </summary>
 internal sealed class MarketCategoriesPagePresenter(PlatformApiClient platformApiClient)
 {
     /// <summary>Gets the most recently saved market-category snapshot.</summary>
     public MarketCategoriesViewModel? State { get; private set; }
 
-    /// <summary>Gets the current load or refresh failure message.</summary>
+    /// <summary>Gets the current load failure message.</summary>
     public string? Error { get; private set; }
 
     /// <summary>Gets whether the initial snapshot is being loaded.</summary>
     public bool IsLoading { get; private set; }
-
-    /// <summary>Gets whether an operator refresh is in progress.</summary>
-    public bool IsRefreshing { get; private set; }
 
     /// <summary>Gets the safe SQL-only collection status.</summary>
     public MarketCategoryInstrumentCollectionStatusViewModel? CollectionStatus { get; private set; }
@@ -54,34 +51,6 @@ internal sealed class MarketCategoriesPagePresenter(PlatformApiClient platformAp
         finally
         {
             IsLoading = false;
-        }
-    }
-
-    /// <summary>Refreshes the provider snapshot and preserves saved data when the refresh fails.</summary>
-    public async Task RefreshAsync(CancellationToken cancellationToken)
-    {
-        if (IsRefreshing || SavingInterestCategoryCode is not null)
-        {
-            return;
-        }
-
-        IsRefreshing = true;
-        Error = null;
-        try
-        {
-            State = await platformApiClient.RefreshMarketCategoriesAsync(cancellationToken);
-            await LoadCollectionStatusAsync(cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception) when (exception is HttpRequestException or PlatformApiException or PlatformScopeChallengeRequiredException or InvalidOperationException)
-        {
-            Error = CreateErrorMessage("Unable to refresh market categories", exception);
-        }
-        finally
-        {
-            IsRefreshing = false;
         }
     }
 

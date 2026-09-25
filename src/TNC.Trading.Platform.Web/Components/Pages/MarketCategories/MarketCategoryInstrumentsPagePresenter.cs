@@ -17,6 +17,7 @@ internal sealed class MarketCategoryInstrumentsPagePresenter(PlatformApiClient p
     public bool IsLoading { get; private set; }
     public bool IsStale { get; private set; }
     public int CurrentPageNumber => currentPageIndex + 1;
+    public string PageCountDescription => CanGoNext ? $"at least {CurrentPageNumber + 1}" : CurrentPageNumber.ToString();
     public bool CanGoPrevious => currentPageIndex > 0;
     public bool CanGoNext => !string.IsNullOrWhiteSpace(Page?.NextCursor);
 

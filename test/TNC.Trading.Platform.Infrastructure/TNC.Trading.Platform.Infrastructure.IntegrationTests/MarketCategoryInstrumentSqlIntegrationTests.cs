@@ -151,6 +151,98 @@ public sealed class MarketCategoryInstrumentSqlIntegrationTests(SqlServerDatabas
         Assert.Equal(2, await verificationContext.MarketCategoryInstrumentObservations.CountAsync());
     }
 
+    /// <summary>
+    /// Trace: Market Category Instruments Work Items 2 and 3.
+    /// Verifies: a complete IG-style collection with pages 0 and 1 publishes all 151 instruments and their paging evidence.
+    /// Expected: a fresh reader sees all instruments and the retained run records both provider pages.
+    /// Why: a zero-based gateway result must not be rejected or partially saved by the SQL publication boundary.
+    /// </summary>
+    [Fact]
+    public async Task SaveCompleteAsync_ShouldPublishAllResults_WhenProviderPagesStartAtZero()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        await context.Database.MigrateAsync();
+        var environmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(context, fixture.CancellationToken);
+        var resolver = new FakeResolver(environmentId);
+        await new EfMarketCategorySnapshotStore(context, resolver).ReplaceAsync(CategorySnapshot("CAT"), fixture.CancellationToken);
+        var day = DateOnly.FromDateTime(DateTime.UtcNow);
+        var lease = await PrepareCycleAsync(context, resolver, BrokerEnvironmentKind.Demo, day, 0);
+        var instruments = Enumerable.Range(0, 151).Select(index => Instrument($"EPIC-{index:D3}")).ToArray();
+        var collection = Collection("CAT", instruments) with
+        {
+            Metadata = new MarketCategoryInstrumentCollectionMetadata(150, [0, 1], 2, 151)
+        };
+
+        var saved = await new EfMarketCategoryInstrumentSnapshotStore(context, resolver)
+            .SaveCompleteAsync(
+                collection,
+                Provenance("CAT", day, 0, Guid.NewGuid(), 151, lease.Owner, lease.Fence) with
+                {
+                    CollectionMetadata = collection.Metadata
+                },
+                fixture.CancellationToken);
+
+        Assert.Equal(151, saved.Instruments.Count);
+        await using var verificationContext = fixture.CreateDbContext();
+        var reader = new EfMarketCategoryInstrumentSnapshotStore(verificationContext, resolver);
+        var firstPage = await reader
+            .ReadPageAsync(new(BrokerEnvironmentKind.Demo, "CAT", saved.SnapshotVersion, null, 100), fixture.CancellationToken);
+        Assert.NotNull(firstPage);
+        Assert.Equal(instruments.Take(100).Select(item => item.Epic), firstPage.Instruments.Select(item => item.Epic));
+        Assert.Equal("EPIC-099", firstPage.NextEpic);
+        var secondPage = await reader
+            .ReadPageAsync(new(BrokerEnvironmentKind.Demo, "CAT", saved.SnapshotVersion, firstPage.NextEpic, 100), fixture.CancellationToken);
+        Assert.NotNull(secondPage);
+        Assert.Equal(instruments.Skip(100).Select(item => item.Epic), secondPage.Instruments.Select(item => item.Epic));
+        Assert.Null(secondPage.NextEpic);
+        Assert.Equal(151, await verificationContext.MarketCategoryInstruments.CountAsync());
+        Assert.Equal(151, await verificationContext.MarketCategoryInstrumentObservations.CountAsync());
+        var run = await verificationContext.MarketCategoryInstrumentCollectionRuns.SingleAsync();
+        Assert.Equal(2, run.PageCount);
+        Assert.Equal(150, run.PageSize);
+        Assert.Equal(2, run.ProviderTotalPages);
+        Assert.Equal(151, run.ProviderTotalResults);
+        Assert.Equal(151, run.ResultCount);
+    }
+
+    /// <summary>
+    /// Trace: Market Category Instruments Work Items 2 and 3.
+    /// Verifies: an explicit provider response with page 0, one page, and zero results publishes a complete empty snapshot.
+    /// Expected: a fresh reader sees a versioned empty page and the retained run has zero observations.
+    /// Why: a genuinely empty category must be distinguishable from one that was never collected.
+    /// </summary>
+    [Fact]
+    public async Task SaveCompleteAsync_ShouldPublishEmptySnapshot_WhenProviderReportsCompleteEmptyPage()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        await context.Database.MigrateAsync();
+        var environmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(context, fixture.CancellationToken);
+        var resolver = new FakeResolver(environmentId);
+        await new EfMarketCategorySnapshotStore(context, resolver).ReplaceAsync(CategorySnapshot("CAT"), fixture.CancellationToken);
+        var day = DateOnly.FromDateTime(DateTime.UtcNow);
+        var lease = await PrepareCycleAsync(context, resolver, BrokerEnvironmentKind.Demo, day, 0);
+
+        var saved = await new EfMarketCategoryInstrumentSnapshotStore(context, resolver)
+            .SaveCompleteAsync(
+                Collection("CAT"),
+                Provenance("CAT", day, 0, Guid.NewGuid(), 0, lease.Owner, lease.Fence),
+                fixture.CancellationToken);
+
+        Assert.Empty(saved.Instruments);
+        await using var verificationContext = fixture.CreateDbContext();
+        var page = await new EfMarketCategoryInstrumentSnapshotStore(verificationContext, resolver)
+            .ReadPageAsync(new(BrokerEnvironmentKind.Demo, "CAT", saved.SnapshotVersion, null, 50), fixture.CancellationToken);
+        Assert.NotNull(page);
+        Assert.Empty(page.Instruments);
+        Assert.Null(page.NextEpic);
+        var run = await verificationContext.MarketCategoryInstrumentCollectionRuns.SingleAsync();
+        Assert.Equal(0, run.ProviderTotalResults);
+        Assert.Equal(1, run.PageCount);
+        Assert.Empty(await verificationContext.MarketCategoryInstrumentObservations.ToListAsync());
+    }
+
     /// <summary>Trace: Market Category Instruments Work Item 2. Verifies page reads reject a replacement that commits between the version lookup and instrument query.</summary>
     [Fact]
     public async Task ReadPageAsync_ShouldRejectMixedVersions_WhenSnapshotChangesBetweenQueries()
@@ -441,7 +533,7 @@ public sealed class MarketCategoryInstrumentSqlIntegrationTests(SqlServerDatabas
         string categoryCode,
         BrokerEnvironmentKind environment,
         params MarketCategoryInstrument[] values) =>
-        new(environment, categoryCode, new(50, [1], 1, values.Length), values);
+        new(environment, categoryCode, new(50, [0], 1, values.Length), values);
 
     private static MarketCategoryInstrumentRunProvenance Provenance(
         string categoryCode,
@@ -455,7 +547,7 @@ public sealed class MarketCategoryInstrumentSqlIntegrationTests(SqlServerDatabas
         string endpointProfile = "IgDemo") =>
         new(runId, environment, endpointProfile, categoryCode, 1, day, slot, 1,
             DateTimeOffset.UtcNow,
-            new(50, [1], 1, resultCount),
+            new(50, [0], 1, resultCount),
             new(MarketCategoryInstrumentDataQualityStatus.CompleteValidated, resultCount, 0),
             leaseOwner,
             leaseFence);
