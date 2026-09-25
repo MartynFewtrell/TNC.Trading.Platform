@@ -43,6 +43,7 @@ builder.Services.AddScoped<UpdatePlatformConfigurationValidator>();
 builder.Services.AddSingleton<IPlatformAuthenticationSupervisorDelay, PlatformAuthenticationSupervisorDelay>();
 builder.Services.AddHostedService<PlatformAuthenticationSupervisor>();
 builder.Services.AddHostedService<AccountPreferencesReconciliationSupervisor>();
+builder.Services.AddHostedService<MarketCategoryInstrumentCollector>();
 
 var app = builder.Build();
 

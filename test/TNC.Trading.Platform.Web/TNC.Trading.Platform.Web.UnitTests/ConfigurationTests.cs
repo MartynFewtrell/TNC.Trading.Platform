@@ -26,6 +26,78 @@ public sealed class ConfigurationTests
         Assert.Equal("Monday,Tuesday,Wednesday,Thursday,Friday", result.Form.TradingDaysCsv);
     }
 
+    /// <summary>
+    /// Trace: Market Category Instruments Work Item 6, step 4.
+    /// Verifies: the Operator configuration surface displays current quota use, safe failure status, and a paused state when allowance is unset.
+    /// Expected: used/allowed counts are visible when configured and no allowance is described as paused.
+    /// Why: collection must never imply a provider-call allowance that an Operator has not approved.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldShowQuotaAndPausedState_WhenCollectionAllowanceIsConfiguredOrMissing()
+    {
+        using var configuredContext = new PlatformComponentTestContext(
+            "local-operator",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerCatalog()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerStatus()));
+        var configured = configuredContext.Render<Configuration>();
+        configured.WaitForAssertion(() =>
+        {
+            Assert.Contains("Daily request quota: 4 used of 25; 21 remaining.", configured.Markup, StringComparison.Ordinal);
+            Assert.Contains("Latest collection state: Partial", configured.Markup, StringComparison.Ordinal);
+            Assert.Contains("Collection needs attention: ProviderUnavailable", configured.Markup, StringComparison.Ordinal);
+        });
+
+        using var pausedContext = new PlatformComponentTestContext(
+            "local-operator",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration(allowance: null)),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerCatalog()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerStatus()));
+        var paused = pausedContext.Render<Configuration>();
+        paused.WaitForAssertion(() =>
+        {
+            Assert.Contains("Collector: Paused", paused.Markup, StringComparison.Ordinal);
+            Assert.Contains("leaving it unset also keeps collection paused", paused.Markup, StringComparison.Ordinal);
+        });
+    }
+
+    /// <summary>
+    /// Trace: Market Category Instruments Work Item 6, step 4.
+    /// Verifies: changing frequency and allowance in the existing form submits both new settings through the protected configuration API.
+    /// Expected: the PUT body contains the edited numeric values and the page renders the updated configuration response.
+    /// Why: collection settings must use the existing Operator save flow and must not initiate provider refresh.
+    /// </summary>
+    [Fact]
+    public void Save_ShouldSubmitInstrumentFrequencyAndAllowance_WhenOperatorEditsCollectionSettings()
+    {
+        using var context = new PlatformComponentTestContext(
+            "local-operator",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerCatalog()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerStatus()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration(
+                currentFrequency: 1,
+                pendingFrequency: 3,
+                allowance: 40)));
+
+        var cut = context.Render<Configuration>();
+        cut.WaitForElement("[data-testid='instrument-updates-per-day']");
+        cut.Find("[data-testid='instrument-updates-per-day']").Change(3);
+        cut.Find("[data-testid='approved-daily-request-allowance']").Change(40);
+        cut.Find("[data-testid='configuration-save-button']").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Contains("\"instrumentUpdatesPerDay\":3", context.ApiHandler.Requests[3].Content, StringComparison.Ordinal);
+            Assert.Contains("\"approvedNonTradingDailyRequestAllowance\":40", context.ApiHandler.Requests[3].Content, StringComparison.Ordinal);
+            Assert.Contains("Daily request quota: 4 used of 40; 36 remaining.", cut.Markup, StringComparison.Ordinal);
+        });
+        Assert.Equal(HttpMethod.Put, context.ApiHandler.Requests[3].Method);
+    }
+
     [Fact]
     public async Task SaveAsync_ShouldReturnRestartMessage_WhenProtectedSaveRequiresRestart()
     {

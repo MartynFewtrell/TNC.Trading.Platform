@@ -223,10 +223,10 @@ public class SqlPlatformConfigurationStoreTests
         var audits = GetConfigurationAudits(dbContext);
         Assert.Equal(2, audits.Length);
 
-        var demoAudit = Assert.Single(audits.Where(item =>
-            string.Equals(item.BrokerEnvironment, "Demo", StringComparison.Ordinal)));
-        var liveAudit = Assert.Single(audits.Where(item =>
-            string.Equals(item.BrokerEnvironment, "Live", StringComparison.Ordinal)));
+        var demoAudit = Assert.Single(audits, item =>
+            string.Equals(item.BrokerEnvironment, "Demo", StringComparison.Ordinal));
+        var liveAudit = Assert.Single(audits, item =>
+            string.Equals(item.BrokerEnvironment, "Live", StringComparison.Ordinal));
 
         Assert.Equal("demo-operator", demoAudit.ChangedBy);
         Assert.Equal("live-operator", liveAudit.ChangedBy);

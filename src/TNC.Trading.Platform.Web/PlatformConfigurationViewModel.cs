@@ -8,4 +8,5 @@ internal sealed record PlatformConfigurationViewModel(
     NotificationSettingsViewModel NotificationSettings,
     CredentialPresenceViewModel Credentials,
     bool RestartRequired,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    InstrumentCollectionConfigurationViewModel? InstrumentCollection = null);

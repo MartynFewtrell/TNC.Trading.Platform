@@ -37,6 +37,19 @@ internal static class GetPlatformConfigurationMapping
                 configuration.Credentials.IsAuthenticationReady,
                 configuration.Credentials.RequiresCredentialReentry),
             configuration.RestartRequired,
-            configuration.UpdatedAtUtc);
+            configuration.UpdatedAtUtc,
+            new(
+                response.InstrumentCollectionSettingsStatus is null
+                    && response.InstrumentCollectionFrequency is not null,
+                response.InstrumentCollectionSettingsStatus,
+                response.AppliedBrokerEnvironment?.ToString(),
+                response.InstrumentCollectionFrequency?.CurrentUpdatesPerDay,
+                response.InstrumentCollectionFrequency?.PendingUpdatesPerDay,
+                response.InstrumentCollectionFrequency?.PendingEffectiveTradingDay,
+                response.InstrumentCollectionFrequency?.ApprovedNonTradingDailyRequestAllowance,
+                response.InstrumentCollectionStatus?.UsedRequestBudget,
+                response.InstrumentCollectionStatus?.CycleOutcome
+                    ?? response.InstrumentCollectionStatus?.CategoryPrerequisiteOutcome,
+                response.InstrumentCollectionStatus?.SafeCategoryFailure));
     }
 }

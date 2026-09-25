@@ -13,6 +13,7 @@ using TNC.Trading.Platform.Application.Features.GetPlatformStatus.Ports;
 using TNC.Trading.Platform.Application.Features.AccountDetails;
 using TNC.Trading.Platform.Application.Features.AccountPreferences;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
+using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 using TNC.Trading.Platform.Application.Features.BrokerEnvironments;
 using TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent.Ports;
 using TNC.Trading.Platform.Application.Services;
@@ -104,14 +105,33 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         services.AddScoped<IAccountPreferencesReconciliationLease, SqlAccountPreferencesReconciliationLease>();
         services.AddScoped<IAccountDetailsRefreshLease, SqlAccountDetailsRefreshLease>();
         services.AddScoped<IMarketCategorySnapshotStore, EfMarketCategorySnapshotStore>();
+        services.AddScoped<EfMarketCategoryInstrumentSnapshotStore>();
+        services.AddScoped<TNC.Trading.Platform.Application.Features.MarketCategoryInstruments.IMarketCategoryInstrumentSnapshotReader>(
+            provider => provider.GetRequiredService<EfMarketCategoryInstrumentSnapshotStore>());
+        services.AddScoped<TNC.Trading.Platform.Application.Features.MarketCategoryInstruments.IMarketCategoryInstrumentSnapshotWriter>(
+            provider => provider.GetRequiredService<EfMarketCategoryInstrumentSnapshotStore>());
+        services.AddScoped<EfMarketCategoryInstrumentInterestStore>();
+        services.AddScoped<TNC.Trading.Platform.Application.Features.MarketCategoryInstruments.IMarketCategoryInstrumentInterestReader>(
+            provider => provider.GetRequiredService<EfMarketCategoryInstrumentInterestStore>());
+        services.AddScoped<TNC.Trading.Platform.Application.Features.MarketCategoryInstruments.IMarketCategoryInstrumentInterestWriter>(
+            provider => provider.GetRequiredService<EfMarketCategoryInstrumentInterestStore>());
+        services.AddScoped<EfMarketCategoryInstrumentFrequencyStore>();
+        services.AddScoped<TNC.Trading.Platform.Application.Features.MarketCategoryInstruments.IMarketCategoryInstrumentFrequencyReader>(
+            provider => provider.GetRequiredService<EfMarketCategoryInstrumentFrequencyStore>());
+        services.AddScoped<TNC.Trading.Platform.Application.Features.MarketCategoryInstruments.IMarketCategoryInstrumentFrequencyWriter>(
+            provider => provider.GetRequiredService<EfMarketCategoryInstrumentFrequencyStore>());
+        services.AddScoped<EfMarketCategoryInstrumentCycleStore>();
+        services.AddScoped<IMarketCategoryInstrumentCycleStore>(provider =>
+            provider.GetRequiredService<EfMarketCategoryInstrumentCycleStore>());
+        services.AddScoped<IMarketCategoryInstrumentRequestBudget, EfMarketCategoryInstrumentRequestBudget>();
+        services.AddScoped<IMarketCategoryInstrumentStatusReader, EfMarketCategoryInstrumentStatusReader>();
+        services.AddSingleton<IgProviderRequestThrottle>();
         services.AddHttpClient<IAccountDetailsGateway, IgAccountDetailsGateway>(client =>
         {
             client.BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/");
         });
-        services.AddHttpClient<IMarketCategoriesGateway, IgMarketCategoriesGateway>(client =>
-        {
-            client.BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/");
-        });
+        services.AddHttpClient<IMarketCategoriesGateway, IgMarketCategoriesGateway>();
+        services.AddHttpClient<IMarketCategoryInstrumentsGateway, IgMarketCategoryInstrumentsGateway>();
         var accountPreferencesBaseUrl = configuration["Ig:AccountPreferencesBaseUrl"];
         if (!Uri.TryCreate(accountPreferencesBaseUrl, UriKind.Absolute, out var parsedAccountPreferencesBaseUrl)
             || parsedAccountPreferencesBaseUrl.Scheme is not ("http" or "https")

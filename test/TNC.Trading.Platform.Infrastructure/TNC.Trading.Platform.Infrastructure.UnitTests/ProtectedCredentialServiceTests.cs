@@ -178,13 +178,13 @@ public class ProtectedCredentialServiceTests
         await dbContext.SaveChangesAsync();
 
         var originalCredentials = dbContext.ProtectedCredentials.ToArray();
-        var originalApiKeyProtectedValue = Assert.Single(originalCredentials.Where(item => item.CredentialType == "ApiKey")).ProtectedValue;
+        var originalApiKeyProtectedValue = Assert.Single(originalCredentials, item => item.CredentialType == "ApiKey").ProtectedValue;
 
         await service.UpdateAsync(BrokerEnvironmentKind.Demo, "rotated-api-key", "rotated-identifier", "rotated-password", "rotation-user", CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         var rotatedCredentials = dbContext.ProtectedCredentials.ToArray();
-        var rotatedApiKey = Assert.Single(rotatedCredentials.Where(item => item.CredentialType == "ApiKey"));
+        var rotatedApiKey = Assert.Single(rotatedCredentials, item => item.CredentialType == "ApiKey");
 
         Assert.Equal(3, rotatedCredentials.Length);
         Assert.Equal("rotation-user", rotatedApiKey.UpdatedBy);

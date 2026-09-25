@@ -7,6 +7,7 @@ using TNC.Trading.Platform.Application.Features.GetPlatformConfiguration;
 using TNC.Trading.Platform.Application.Features.GetPlatformEvents;
 using TNC.Trading.Platform.Application.Features.GetPlatformStatus;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
+using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 using TNC.Trading.Platform.Application.Features.ReconcilePlatformAuthentication;
 using TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent;
 using TNC.Trading.Platform.Application.Features.TriggerManualAuthRetry;
@@ -29,6 +30,14 @@ internal static class PlatformApplicationServiceCollectionExtensions
         services.AddSingleton<IPlatformApplicationLogger, PlatformApplicationLogger>();
         services.AddScoped<PlatformConfigurationService>();
         services.AddScoped<TradingScheduleGate>();
+        services.AddScoped<IMarketCategoryInstrumentClock, TimeProviderMarketCategoryInstrumentClock>();
+        services.AddScoped<MarketCategoryInstrumentSchedulePolicy>();
+        services.AddScoped<IMarketCategoryInstrumentScheduleGuard, MarketCategoryInstrumentScheduleGuard>();
+        services.AddSingleton<MarketCategoryInstrumentCyclePolicy>();
+        services.AddSingleton<MarketCategoryInstrumentRetryPolicy>();
+        services.AddScoped<MarketCategoryInstrumentCycleCoordinator>();
+        services.AddScoped<IMarketCategoryInstrumentCycleCoordinator>(provider =>
+            provider.GetRequiredService<MarketCategoryInstrumentCycleCoordinator>());
         services.AddScoped<PlatformAuthenticationReconciler>();
         services.AddScoped<IPlatformAuthenticationReconciler>(serviceProvider =>
             serviceProvider.GetRequiredService<PlatformAuthenticationReconciler>());
@@ -44,7 +53,12 @@ internal static class PlatformApplicationServiceCollectionExtensions
         services.AddScoped<GetAccountDetailsHandler>();
         services.AddScoped<RefreshAccountDetailsHandler>();
         services.AddScoped<GetMarketCategoriesHandler>();
+        services.AddScoped<GetMarketCategoriesWithInterestHandler>();
         services.AddScoped<RefreshMarketCategoriesHandler>();
+        services.AddScoped<RefreshMarketCategoriesManuallyHandler>();
+        services.AddScoped<GetMarketCategoryInstrumentPageHandler>();
+        services.AddScoped<GetMarketCategoryInstrumentStatusHandler>();
+        services.AddScoped<UpdateMarketCategoryInterestHandler>();
         services.AddScoped<GetAccountPreferencesHandler>();
         services.AddScoped<UpdateAccountPreferencesValidator>();
         services.AddScoped<UpdateAccountPreferencesHandler>();

@@ -15,4 +15,8 @@ internal sealed class UpdatePlatformConfigurationViewModel
     public UpdateCredentialsViewModel Credentials { get; set; } = new();
 
     public string ChangedBy { get; set; } = string.Empty;
+
+    public int? InstrumentUpdatesPerDay { get; set; }
+
+    public int? ApprovedNonTradingDailyRequestAllowance { get; set; }
 }

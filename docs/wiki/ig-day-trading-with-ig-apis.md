@@ -95,20 +95,58 @@ Your app must handle token expiry and re-authentication. IG Labs notes planned m
 
 ## Market discovery and instrument identifiers
 
-### Demo market-category reference data
+### Scheduled market-category and instrument reference data
 
-The platform's initial market-category catalogue is deliberately Demo-only
-and operator-triggered. An Operator refresh creates an IG v2 session and then
-requests `GET categories` with API version 1 and the session headers required
-by IG. A single fresh-session replay is allowed when that categories request
-returns `401`; other statuses are classified without blind retries.
+The collector uses the applied broker environment and supports only
+explicitly configured IG Demo or IG Live market-data endpoint profiles with
+protected credentials and market-data capability. It does not change broker
+selection, grant Live trading, or place or authorize orders. Unsupported,
+unavailable, or unconfigured applied profiles fail closed before provider
+transport. The separate IG authentication/account proof workflow remains
+Demo-only.
 
-The complete response is validated before it is stored. Missing or empty
-categories, blank or duplicate codes, overlong codes, and missing
-`nonTradeable` values are rejected as malformed provider data. The API and UI
-never expose credentials, session headers, raw provider payloads, or provider
-response content. Viewer reads use only the saved catalogue; page rendering
-does not refresh IG and no automatic or Live workflow is supported.
+The schedule-gated worker refreshes `GET categories` first and persists the
+complete validated category catalogue. It then selects the intersection of
+currently listed categories and environment-scoped Operator interest. A
+category refresh remains available to Operators, but the API requires an
+active trading schedule, request allowance, and cycle serialization before
+provider access and again before publication. Category pages and interest
+updates use SQL only. Interest changes affect a later scheduled slot and
+never trigger an IG call by themselves.
+
+For each selected category, Infrastructure creates an IG v2 session and
+requests the [IG Labs category instruments resource v1](https://labs.ig.com/reference/categories-category-id-instruments.html)
+with `pageNumber` starting at zero and a provider page size of 150. Pages are
+fetched sequentially. The implementation validates page number/size, stable
+totals, expected page counts, unique nonblank EPICs and names, field lengths,
+numeric/expiry ranges, and the complete final row count. The bounded limits
+are 100 pages and 15,000 instruments per category/run. Empty-by-default,
+malformed, incomplete, inconsistent, or over-cap results do not replace the
+last-good SQL snapshot. A resource-page `401` permits one new session and one
+replay of the failed page; other failures are classified without blind retry.
+
+The shared durable environment/day allowance counts category, session, and
+instrument HTTP requests, including bounded retries. Frequency is not an HTTP
+quota. `InstrumentUpdatesPerDay` defaults to one and supports one through
+four; a larger value requires an operator-provided allowance and measured
+capacity. Zero or missing allowance pauses collection. Schedule closure,
+quota exhaustion, restart, or an unsupported applied environment never
+causes after-hours catch-up or an unbounded retry.
+
+Viewer catalogue/status reads and instrument pages are SQL-only. Instrument
+pages use opaque protected cursors bound to the applied environment, exact
+category, snapshot version, and last EPIC; a stale cursor returns a conflict
+and the browser restarts from the first page. The complete run provenance and
+instrument observations are retained online in SQL indefinitely in this
+delivery, including after category removal. No automatic purge or archive is
+configured; monitor SQL row and storage growth before designing any future
+retention policy.
+
+Saved bid/offer values are snapshots, not live or streaming prices. The
+platform retrieval timestamp is UTC; IG's `updateTime` is retained and shown
+as provider-supplied text. The API, UI, Application outcomes, and logs never
+expose credentials, session headers, raw provider payloads, or raw diagnostic
+response content.
 
 Before you can trade or subscribe to prices you need to identify instruments.
 

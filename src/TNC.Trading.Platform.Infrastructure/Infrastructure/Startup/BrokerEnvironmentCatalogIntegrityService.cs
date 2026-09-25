@@ -57,6 +57,11 @@ internal sealed class BrokerEnvironmentCatalogIntegrityService(
                 UpdatedAtUtc = now
             };
             dbContext.BrokerEnvironments.Add(demo);
+            dbContext.InstrumentCollectionSettings.Add(new InstrumentCollectionSettingsEntity
+            {
+                BrokerEnvironmentId = demo.BrokerEnvironmentId,
+                CurrentUpdatesPerDay = 1
+            });
             changed = true;
         }
 

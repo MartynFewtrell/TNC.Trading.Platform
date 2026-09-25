@@ -172,8 +172,8 @@ public class NotificationProviderTests
         var record = Assert.Single(GetNotificationRecords(dbContext));
         var summary = record.Summary;
         var notificationEvent = Assert.Single(
-            GetOperationalEvents(dbContext).Where(item =>
-                string.Equals(item.Category, "notification", StringComparison.Ordinal)));
+            GetOperationalEvents(dbContext),
+            item => string.Equals(item.Category, "notification", StringComparison.Ordinal));
 
         Assert.Equal("AuthFailure", record.NotificationType);
         Assert.Equal("Live", record.PlatformEnvironment);
@@ -209,8 +209,8 @@ public class NotificationProviderTests
         var record = Assert.Single(GetNotificationRecords(dbContext));
         var summary = record.Summary;
         var notificationEvent = Assert.Single(
-            GetOperationalEvents(dbContext).Where(item =>
-                string.Equals(item.Category, "notification", StringComparison.Ordinal)));
+            GetOperationalEvents(dbContext),
+            item => string.Equals(item.Category, "notification", StringComparison.Ordinal));
 
         Assert.Equal("AuthRecovered", record.NotificationType);
         Assert.Equal("Live", record.PlatformEnvironment);
@@ -245,8 +245,8 @@ public class NotificationProviderTests
 
         var record = Assert.Single(GetNotificationRecords(dbContext));
         var notificationEvent = Assert.Single(
-            GetOperationalEvents(dbContext).Where(item =>
-                string.Equals(item.Category, "notification", StringComparison.Ordinal)));
+            GetOperationalEvents(dbContext),
+            item => string.Equals(item.Category, "notification", StringComparison.Ordinal));
 
         Assert.Equal("unconfigured", record.Recipient);
         Assert.Equal("Skipped", record.DispatchStatus);
@@ -278,8 +278,8 @@ public class NotificationProviderTests
 
         var record = Assert.Single(GetNotificationRecords(dbContext));
         var notificationEvent = Assert.Single(
-            GetOperationalEvents(dbContext).Where(item =>
-                string.Equals(item.Category, "notification", StringComparison.Ordinal)));
+            GetOperationalEvents(dbContext),
+            item => string.Equals(item.Category, "notification", StringComparison.Ordinal));
 
         Assert.Equal("Failed", record.DispatchStatus);
         Assert.Equal("MissingProvider", record.Provider);
@@ -312,8 +312,8 @@ public class NotificationProviderTests
 
         var record = Assert.Single(GetNotificationRecords(dbContext));
         var notificationEvent = Assert.Single(
-            GetOperationalEvents(dbContext).Where(item =>
-                string.Equals(item.Category, "notification", StringComparison.Ordinal)));
+            GetOperationalEvents(dbContext),
+            item => string.Equals(item.Category, "notification", StringComparison.Ordinal));
 
         Assert.Equal("Failed", record.DispatchStatus);
         Assert.Equal("ExplosiveProvider", record.Provider);

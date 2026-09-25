@@ -16,8 +16,11 @@ The implemented application is focused on:
 - protecting IG credentials through write-only update flows
 - exposing current runtime and retry state through protected API and Blazor surfaces
 - capturing and retaining secret-safe IG login snapshot data from successful backend auth transitions
+- collecting complete, schedule-gated IG market-category instrument snapshots
+  into SQL for protected browsing and future analysis
 - recording operational and notification history
-- preparing the platform for later broker, market-data, and trading features
+- keeping market-data collection separate from trading, recommendations, and
+  live streaming
 
 ## What is implemented today
 
@@ -35,6 +38,11 @@ The implemented application is focused on:
 - secret-safe latest IG login snapshot persistence plus one retained first-successful snapshot per trading day
 - retry-state tracking, retry-limit handling, and manual retry initiation
 - local notification validation through Mailpit when infrastructure containers are enabled
+- scheduled market-category and instrument collection for configured,
+  supported applied IG market-data environments, with per-environment
+  request budgets
+- Viewer browsing of saved snapshots and Operator-managed category interest
+  and collection frequency/allowance controls
 
 ### Current IG Demo connectivity and proof data
 
@@ -47,6 +55,13 @@ This workflow is read-only:
 - no trades are placed
 - no orders are submitted
 - no account-changing or write-capable IG operations are issued
+
+The separate market-data collector refreshes categories before instruments
+within the active local trading schedule. It collects only currently interested
+categories, validates every provider page before publishing a new SQL snapshot,
+and preserves the last complete snapshot on failure. Browsing and preference
+updates use SQL only. Complete observations are retained online in SQL without
+an automatic retention purge; this history is not yet an analytics API.
 
 The proof data includes the preferred account name, account ID, balance, open-position count, and retrieval timestamp. The platform also continues to expose the operational control plane needed around that connectivity:
 
@@ -163,10 +178,12 @@ When the platform is degraded during an active schedule, it tracks:
 
 ## Current user experience
 
-The operator UI currently has four main routes:
+The operator UI includes these principal routes:
 
 - `/` is the public landing page and signed-in operator home
 - `/status` shows environment, trading schedule, auth state, retry state, and recent auth events for viewer-capable operators
+- `/market-categories` shows saved categories and collector status; Operators can manage shared interest
+- `/market-categories/{CategoryCode}/instruments` browses a saved snapshot using protected keyset paging
 - `/configuration` shows editable configuration, secret-presence indicators, and write-only credential update fields for operator-capable users
 - `/administration/authentication` shows the admin-only auth summary surface
 
@@ -184,6 +201,8 @@ The current implementation persists or models the following record types:
 - operational events, including operator authentication audit history
 - configuration audits
 - notification records
+- market-category catalogue, shared interest, collection settings and cycle state
+- versioned current instrument snapshots and retained complete collection observations
 
 See [Architecture](architecture.md) and [Runtime behavior](runtime-behavior.md) for more detail.
 
@@ -191,9 +210,8 @@ See [Architecture](architecture.md) and [Runtime behavior](runtime-behavior.md) 
 
 The following capabilities are planned at the product level but are not implemented in the application today:
 
-- additional broker-provider capabilities beyond the supported IG Demo adapter
-- market-data acquisition and freshness enforcement
-- tracked instruments
+- broker-provider integrations beyond IG
+- streaming prices, live-price freshness enforcement, and on-demand instrument refresh
 - strategy execution
 - order submission and trade lifecycle management
 - end-of-day position flattening

@@ -1,0 +1,40 @@
+@baseUrl = http://localhost:5055/api/platform
+@viewerToken = replace-with-delegated-viewer-access-token
+@operatorToken = replace-with-delegated-operator-access-token
+@categoryCode = FX
+@interestRevision = 0
+@instrumentCursor = replace-with-nextCursor-from-first-page
+
+### Read the saved category catalogue, interest, and latest collection states (Viewer)
+GET {{baseUrl}}/market-categories
+Authorization: Bearer {{viewerToken}}
+
+### Read the first saved instrument page (Viewer; SQL snapshot only)
+GET {{baseUrl}}/market-categories/{{categoryCode}}/instruments?pageSize=50
+Authorization: Bearer {{viewerToken}}
+
+### Continue browsing the same versioned snapshot (Viewer; use nextCursor from the prior response)
+GET {{baseUrl}}/market-categories/{{categoryCode}}/instruments?pageSize=50&cursor={{instrumentCursor}}
+Authorization: Bearer {{viewerToken}}
+
+### Invalid page-size validation example (Viewer)
+GET {{baseUrl}}/market-categories/{{categoryCode}}/instruments?pageSize=0
+Authorization: Bearer {{viewerToken}}
+
+### Update shared category interest with the latest interestRevision (Operator)
+PUT {{baseUrl}}/market-categories/{{categoryCode}}/interest
+Authorization: Bearer {{operatorToken}}
+Content-Type: application/json
+
+{
+  "interested": true,
+  "expectedRevision": {{interestRevision}}
+}
+
+### Manually refresh the category catalogue during the active schedule (Operator; otherwise returns 409)
+POST {{baseUrl}}/market-categories/refresh
+Authorization: Bearer {{operatorToken}}
+
+### Read persisted collection status and the safe failure state (Viewer)
+GET {{baseUrl}}/instrument-collection/status
+Authorization: Bearer {{viewerToken}}

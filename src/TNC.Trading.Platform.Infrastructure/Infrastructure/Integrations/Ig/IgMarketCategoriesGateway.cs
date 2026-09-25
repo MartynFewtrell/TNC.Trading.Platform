@@ -4,39 +4,62 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
+using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 
 namespace TNC.Trading.Platform.Infrastructure.Integrations.Ig;
 
 internal sealed class IgMarketCategoriesGateway(
     HttpClient httpClient,
     IProtectedCredentialService protectedCredentialService,
-    IAppliedBrokerEnvironmentContextResolver? contextResolver = null) : IMarketCategoriesGateway
+    IAppliedBrokerEnvironmentContextResolver contextResolver,
+    IMarketCategoryInstrumentRequestBudget requestBudget,
+    IgProviderRequestThrottle throttle) : IMarketCategoriesGateway
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-    public async Task<MarketCategoriesGatewayResult> GetAsync(CancellationToken cancellationToken)
+    public Task<MarketCategoriesGatewayResult> GetAsync(CancellationToken cancellationToken) =>
+        GetCoreAsync(null, cancellationToken);
+
+    public Task<MarketCategoriesGatewayResult> GetAsync(
+        MarketCategoryInstrumentRequestBudgetContext requestBudgetContext,
+        CancellationToken cancellationToken) =>
+        GetCoreAsync(requestBudgetContext, cancellationToken);
+
+    private async Task<MarketCategoriesGatewayResult> GetCoreAsync(
+        MarketCategoryInstrumentRequestBudgetContext? requestBudgetContext,
+        CancellationToken cancellationToken)
     {
+        using var collectionCancellation = requestBudgetContext is null
+            ? null
+            : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, requestBudgetContext.ScheduleCancellationToken);
+        var collectionToken = collectionCancellation?.Token ?? cancellationToken;
+
         try
         {
-            var context = contextResolver is null ? null : await contextResolver.ResolveAppliedAsync(cancellationToken).ConfigureAwait(false);
-            if (context is not null && (!context.IsExecutable
-                || !string.Equals(context.Provider, "IG", StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(context.Kind, "Demo", StringComparison.OrdinalIgnoreCase)))
+            var context = await contextResolver.ResolveAppliedAsync(collectionToken).ConfigureAwait(false);
+            if (!IgEndpointProfileResolver.TryResolve(context, out var environment, out var baseAddress))
             {
                 return new MarketCategoriesGatewayResult.Failed(
                     MarketCategoriesFailureCategory.UnsupportedEnvironment,
                     "The applied broker environment is unavailable.");
             }
 
-            var credentials = context is null
-                ? await protectedCredentialService.GetCredentialsAsync(BrokerEnvironmentKind.Demo, cancellationToken).ConfigureAwait(false)
-                : await protectedCredentialService.GetCredentialsAsync(context.BrokerEnvironmentId, cancellationToken).ConfigureAwait(false);
-            var session = await CreateSessionAsync(credentials, cancellationToken).ConfigureAwait(false);
-            var response = await GetCategoriesAsync(credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);
+            var credentials = await protectedCredentialService.GetCredentialsAsync(context!.BrokerEnvironmentId, collectionToken).ConfigureAwait(false);
+            if (!HasCredentials(credentials))
+            {
+                return new MarketCategoriesGatewayResult.Failed(
+                    MarketCategoriesFailureCategory.UnsupportedEnvironment,
+                    "The applied broker environment is unavailable.");
+            }
+
+            var environmentId = context.BrokerEnvironmentId;
+            var endpointProfile = context.EndpointProfile;
+            var session = await CreateSessionAsync(credentials, environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, collectionToken).ConfigureAwait(false);
+            var response = await GetCategoriesAsync(credentials.ApiKey, session, environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, collectionToken).ConfigureAwait(false);
             if (response.Unauthorized)
             {
-                session = await CreateSessionAsync(credentials, cancellationToken).ConfigureAwait(false);
-                response = await GetCategoriesAsync(credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);
+                session = await CreateSessionAsync(credentials, environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, collectionToken).ConfigureAwait(false);
+                response = await GetCategoriesAsync(credentials.ApiKey, session, environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, collectionToken).ConfigureAwait(false);
             }
 
             return response.Result;
@@ -44,6 +67,10 @@ internal sealed class IgMarketCategoriesGateway(
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (OperationCanceledException) when (requestBudgetContext?.ScheduleCancellationToken.IsCancellationRequested == true)
+        {
+            return new MarketCategoriesGatewayResult.Failed(MarketCategoriesFailureCategory.ScheduleClosed, "IG market categories collection window closed.");
         }
         catch (TaskCanceledException)
         {
@@ -59,7 +86,11 @@ internal sealed class IgMarketCategoriesGateway(
         }
         catch (MarketCategoriesProviderException exception)
         {
-            return new MarketCategoriesGatewayResult.Failed(exception.Category, "IG market categories request was rejected.");
+            return new MarketCategoriesGatewayResult.Failed(
+                exception.Category,
+                exception.Category == MarketCategoriesFailureCategory.AllowanceExceeded
+                    ? "IG request allowance is unavailable."
+                    : "IG market categories request was rejected.");
         }
         catch (InvalidOperationException)
         {
@@ -67,9 +98,18 @@ internal sealed class IgMarketCategoriesGateway(
         }
     }
 
-    private async Task<Session> CreateSessionAsync(IgCredentials credentials, CancellationToken cancellationToken)
+    private async Task<Session> CreateSessionAsync(
+        IgCredentials credentials,
+        Guid environmentId,
+        string endpointProfile,
+        Uri baseAddress,
+        BrokerEnvironmentKind environment,
+        MarketCategoryInstrumentRequestBudgetContext? requestBudgetContext,
+        CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "session");
+        await throttle.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await ReserveRequestAsync(environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, cancellationToken).ConfigureAwait(false);
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(baseAddress, "session"));
         request.Headers.Add("X-IG-API-KEY", credentials.ApiKey);
         request.Headers.Add("Version", "2");
         request.Headers.Accept.ParseAdd("application/json; charset=UTF-8");
@@ -100,9 +140,16 @@ internal sealed class IgMarketCategoriesGateway(
     private async Task<(MarketCategoriesGatewayResult Result, bool Unauthorized)> GetCategoriesAsync(
         string apiKey,
         Session session,
+        Guid environmentId,
+        string endpointProfile,
+        Uri baseAddress,
+        BrokerEnvironmentKind environment,
+        MarketCategoryInstrumentRequestBudgetContext? requestBudgetContext,
         CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, "categories");
+        await throttle.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await ReserveRequestAsync(environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, cancellationToken).ConfigureAwait(false);
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(baseAddress, "categories"));
         request.Headers.Add("X-IG-API-KEY", apiKey);
         request.Headers.Add("CST", session.Cst);
         request.Headers.Add("X-SECURITY-TOKEN", session.SecurityToken);
@@ -156,6 +203,41 @@ internal sealed class IgMarketCategoriesGateway(
 
         return (new MarketCategoriesGatewayResult.Succeeded(mapped), false);
     }
+
+    private async Task ReserveRequestAsync(
+        Guid environmentId,
+        string endpointProfile,
+        Uri baseAddress,
+        BrokerEnvironmentKind environment,
+        MarketCategoryInstrumentRequestBudgetContext? requestBudgetContext,
+        CancellationToken cancellationToken)
+    {
+        if (!await IgEndpointProfileResolver.IsStillAppliedAsync(
+                contextResolver,
+                environmentId,
+                environment,
+                endpointProfile,
+                baseAddress,
+                cancellationToken).ConfigureAwait(false))
+        {
+            throw new MarketCategoriesProviderException(
+                MarketCategoriesFailureCategory.UnsupportedEnvironment,
+                "The applied broker environment changed during provider access.");
+        }
+
+        if (requestBudgetContext is not null
+            && !await requestBudget.TryReserveAsync(environment, requestBudgetContext, cancellationToken).ConfigureAwait(false))
+        {
+            throw new MarketCategoriesProviderException(
+                MarketCategoriesFailureCategory.AllowanceExceeded,
+                "IG provider request allowance is unavailable.");
+        }
+    }
+
+    private static bool HasCredentials(IgCredentials credentials) =>
+        !string.IsNullOrWhiteSpace(credentials.ApiKey)
+        && !string.IsNullOrWhiteSpace(credentials.Identifier)
+        && !string.IsNullOrWhiteSpace(credentials.Password);
 
     private sealed record Session(string Cst, string SecurityToken);
 

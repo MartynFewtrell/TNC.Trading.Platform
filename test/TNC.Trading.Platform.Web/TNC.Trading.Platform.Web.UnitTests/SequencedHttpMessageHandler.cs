@@ -20,7 +20,7 @@ internal sealed class SequencedHttpMessageHandler(params Func<HttpRequestMessage
 
         Requests.Add(new RecordedRequest(
             request.Method,
-            request.RequestUri?.ToString() ?? string.Empty,
+            request.RequestUri?.AbsoluteUri ?? string.Empty,
             request.Headers.Authorization?.ToString(),
             content));
 

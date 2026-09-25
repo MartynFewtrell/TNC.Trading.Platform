@@ -15,7 +15,9 @@ internal sealed class PlatformStartupInitializer(
     IPlatformEnvironmentContext platformEnvironmentContext,
     IHostEnvironment hostEnvironment,
     ILogger<PlatformStartupInitializer> logger,
-    BrokerEnvironmentCatalogIntegrityService? catalogIntegrityService = null)
+    BrokerEnvironmentCatalogIntegrityService? catalogIntegrityService = null,
+    IAppliedBrokerEnvironmentContextResolver? appliedEnvironmentResolver = null,
+    EfMarketCategoryInstrumentFrequencyStore? instrumentFrequencyStore = null)
 {
     private const string InitialMigrationId = "20260727202238_InitialPlatformSchema";
     private const string EfProductVersion = "10.0.5";
@@ -42,11 +44,28 @@ internal sealed class PlatformStartupInitializer(
             }
         }
         await configurationService.ApplyStartupConfigurationAsync(cancellationToken).ConfigureAwait(false);
+        await InitializeInstrumentCollectionSettingsAsync(cancellationToken).ConfigureAwait(false);
         await retentionProcessor.ApplyAsync(cancellationToken).ConfigureAwait(false);
 
         logger.LogInformation(
             "Platform startup initialization completed for {EnvironmentName}.",
             hostEnvironment.EnvironmentName);
+    }
+
+    private async Task InitializeInstrumentCollectionSettingsAsync(CancellationToken cancellationToken)
+    {
+        if (appliedEnvironmentResolver is null || instrumentFrequencyStore is null)
+        {
+            return;
+        }
+
+        var applied = await appliedEnvironmentResolver.ResolveAppliedAsync(cancellationToken).ConfigureAwait(false);
+        if (applied is not null
+            && string.Equals(applied.Provider, "IG", StringComparison.OrdinalIgnoreCase)
+            && Enum.TryParse<BrokerEnvironmentKind>(applied.Kind, true, out var environment))
+        {
+            await instrumentFrequencyStore.InitializeDefaultAsync(environment, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async Task ApplySchemaAsync(CancellationToken cancellationToken)

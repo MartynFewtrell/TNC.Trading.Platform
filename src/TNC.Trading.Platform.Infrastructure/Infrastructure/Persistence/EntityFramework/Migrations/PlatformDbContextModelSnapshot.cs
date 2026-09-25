@@ -1036,6 +1036,150 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                     b.ToTable("IgProofData");
                 });
 
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.InstrumentCollectionCategoryAttemptEntity", b =>
+                {
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("TradingDay")
+                        .HasColumnType("date");
+
+                    b.Property<int>("ScheduledSlot")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CategoryCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<long>("LeaseFence")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SafeError")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("BrokerEnvironmentId", "TradingDay", "ScheduledSlot", "CategoryCode");
+
+                    b.HasIndex("BrokerEnvironmentId", "TradingDay", "CategoryCode");
+
+                    b.ToTable("InstrumentCollectionCategoryAttempts", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_Attempts", "[Attempts] BETWEEN 0 AND 3");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_CategoryCode", "LEN(LTRIM(RTRIM([CategoryCode]))) > 0");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_LeaseFence", "[LeaseFence] >= 0");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_Slot", "[ScheduledSlot] BETWEEN 0 AND 3");
+                        });
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.InstrumentCollectionCycleStateEntity", b =>
+                {
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("TradingDay")
+                        .HasColumnType("date");
+
+                    b.Property<int>("ScheduledSlot")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CategoryPrerequisite")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<int>("CategoryPrerequisiteAttempts")
+                        .HasColumnType("int");
+
+                    b.Property<long>("CategoryPrerequisiteLeaseFence")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CategoryPrerequisiteSafeError")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("LeaseFence")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("LeaseOwner")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<long>("ScheduleRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("UsedRequestBudget")
+                        .HasColumnType("int");
+
+                    b.HasKey("BrokerEnvironmentId", "TradingDay", "ScheduledSlot");
+
+                    b.HasIndex("BrokerEnvironmentId", "TradingDay", "LeaseExpiresAtUtc");
+
+                    b.ToTable("InstrumentCollectionCycleStates", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_InstrumentCollectionCycleStates_LeaseFence", "[LeaseFence] >= 0");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionCycleStates_PrerequisiteAttempts", "[CategoryPrerequisiteAttempts] BETWEEN 0 AND 3");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionCycleStates_PrerequisiteLeaseFence", "[CategoryPrerequisiteLeaseFence] >= 0");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionCycleStates_ScheduleRevision", "[ScheduleRevision] >= 0");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionCycleStates_Slot", "[ScheduledSlot] BETWEEN 0 AND 3");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionCycleStates_UsedRequestBudget", "[UsedRequestBudget] >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.InstrumentCollectionSettingsEntity", b =>
+                {
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("ApprovedNonTradingDailyRequestAllowance")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CurrentUpdatesPerDay")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly?>("PendingEffectiveTradingDay")
+                        .HasColumnType("date");
+
+                    b.Property<int?>("PendingUpdatesPerDay")
+                        .HasColumnType("int");
+
+                    b.HasKey("BrokerEnvironmentId");
+
+                    b.ToTable("InstrumentCollectionSettings", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_InstrumentCollectionSettings_Allowance", "[ApprovedNonTradingDailyRequestAllowance] IS NULL OR [ApprovedNonTradingDailyRequestAllowance] >= 0");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionSettings_CurrentFrequency", "[CurrentUpdatesPerDay] BETWEEN 1 AND 4");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionSettings_PendingFrequency", "[PendingUpdatesPerDay] IS NULL OR [PendingUpdatesPerDay] BETWEEN 1 AND 4");
+                        });
+                });
+
             modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryCatalogStateEntity", b =>
                 {
                     b.Property<Guid>("BrokerEnvironmentId")
@@ -1044,9 +1188,16 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                     b.Property<DateTimeOffset>("LastRefreshedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
                     b.HasKey("BrokerEnvironmentId");
 
-                    b.ToTable("MarketCategoryCatalogStates");
+                    b.ToTable("MarketCategoryCatalogStates", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MarketCategoryCatalogStates_Revision", "[Revision] >= 0");
+                        });
                 });
 
             modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryEntity", b =>
@@ -1064,6 +1215,367 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                     b.HasKey("BrokerEnvironmentId", "Code");
 
                     b.ToTable("MarketCategories");
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInstrumentCatalogStateEntity", b =>
+                {
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CategoryCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("CollectionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("LastRefreshedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("SnapshotVersion")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("BrokerEnvironmentId", "CategoryCode");
+
+                    b.HasIndex("CollectionId");
+
+                    b.ToTable("MarketCategoryInstrumentCatalogStates", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MarketCategoryInstrumentCatalogStates_CategoryCode", "LEN(LTRIM(RTRIM([CategoryCode]))) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInstrumentCollectionRunEntity", b =>
+                {
+                    b.Property<Guid>("CollectionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CategoryCode")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long>("CategorySnapshotRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("EffectiveUpdatesPerDay")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EndpointProfile")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<bool>("IsComplete")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("MissingOptionalValueCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PageCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PageSize")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProviderTotalPages")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProviderTotalResults")
+                        .HasColumnType("int");
+
+                    b.Property<string>("QualityStatus")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("ResultCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("RetrievedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("ScheduledSlot")
+                        .HasColumnType("int");
+
+                    b.Property<long>("SnapshotVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateOnly>("TradingDay")
+                        .HasColumnType("date");
+
+                    b.HasKey("CollectionId");
+
+                    b.HasIndex("BrokerEnvironmentId", "CategoryCode", "RetrievedAtUtc");
+
+                    b.HasIndex("BrokerEnvironmentId", "CategoryCode", "SnapshotVersion");
+
+                    b.HasIndex("BrokerEnvironmentId", "CategoryCode", "TradingDay", "ScheduledSlot")
+                        .IsUnique()
+                        .HasFilter("[IsComplete] = 1");
+
+                    b.ToTable("MarketCategoryInstrumentCollectionRuns", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_CategoryCode", "LEN(LTRIM(RTRIM([CategoryCode]))) > 0");
+
+                            t.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_CategoryRevision", "[CategorySnapshotRevision] >= 0");
+
+                            t.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_CompleteCounts", "[IsComplete] = 0 OR ([PageCount] > 0 AND [ResultCount] >= 0 AND [ResultCount] = [ProviderTotalResults] AND [PageCount] = [ProviderTotalPages])");
+
+                            t.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_EndpointProfile", "LEN(LTRIM(RTRIM([EndpointProfile]))) > 0");
+
+                            t.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_Frequency", "[EffectiveUpdatesPerDay] BETWEEN 1 AND 4");
+
+                            t.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_Slot", "[ScheduledSlot] BETWEEN 0 AND 3");
+
+                            t.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_SnapshotVersion", "[SnapshotVersion] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInstrumentEntity", b =>
+                {
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CategoryCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Epic")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<decimal?>("Bid")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<Guid>("CollectionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("DelayTime")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Expiry")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<long?>("ExpiryTimestamp")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal?>("High")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<string>("InstrumentName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("InstrumentType")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<decimal?>("LotSize")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<decimal?>("Low")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<string>("MarketStatus")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<decimal?>("NetChange")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<decimal?>("Offer")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<bool?>("OtcTradeable")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("PercentageChange")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<long?>("Popularity")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal?>("ScalingFactor")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<long>("SnapshotVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("UnderlyingName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("UpdateTime")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("BrokerEnvironmentId", "CategoryCode", "Epic");
+
+                    b.ToTable("MarketCategoryInstruments", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MarketCategoryInstruments_Epic", "LEN(LTRIM(RTRIM([Epic]))) > 0");
+
+                            t.HasCheckConstraint("CK_MarketCategoryInstruments_InstrumentName", "LEN(LTRIM(RTRIM([InstrumentName]))) > 0");
+
+                            t.HasCheckConstraint("CK_MarketCategoryInstruments_SnapshotVersion", "[SnapshotVersion] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInstrumentObservationEntity", b =>
+                {
+                    b.Property<Guid>("CollectionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Epic")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<decimal?>("Bid")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CategoryCode")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int?>("DelayTime")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Expiry")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<long?>("ExpiryTimestamp")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal?>("High")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<string>("InstrumentName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("InstrumentType")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<decimal?>("LotSize")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<decimal?>("Low")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<string>("MarketStatus")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<decimal?>("NetChange")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<decimal?>("Offer")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<bool?>("OtcTradeable")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("PercentageChange")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<long?>("Popularity")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("RetrievedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal?>("ScalingFactor")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.Property<string>("UnderlyingName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("UpdateTime")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("CollectionId", "Epic");
+
+                    b.HasIndex("BrokerEnvironmentId", "CategoryCode", "Epic", "RetrievedAtUtc");
+
+                    b.ToTable("MarketCategoryInstrumentObservations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MarketCategoryInstrumentObservations_CategoryCode", "LEN(LTRIM(RTRIM([CategoryCode]))) > 0");
+
+                            t.HasCheckConstraint("CK_MarketCategoryInstrumentObservations_Epic", "LEN(LTRIM(RTRIM([Epic]))) > 0");
+
+                            t.HasCheckConstraint("CK_MarketCategoryInstrumentObservations_InstrumentName", "LEN(LTRIM(RTRIM([InstrumentName]))) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInterestEntity", b =>
+                {
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CategoryCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("SelectedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("BrokerEnvironmentId", "CategoryCode");
+
+                    b.ToTable("MarketCategoryInterests", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MarketCategoryInterests_CategoryCode", "LEN(LTRIM(RTRIM([CategoryCode]))) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInterestStateEntity", b =>
+                {
+                    b.Property<Guid>("BrokerEnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("BrokerEnvironmentId");
+
+                    b.ToTable("MarketCategoryInterestStates", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MarketCategoryInterestStates_Revision", "[Revision] >= 0");
+                        });
                 });
 
             modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.NotificationRecordEntity", b =>
@@ -1514,6 +2026,33 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.InstrumentCollectionCategoryAttemptEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.InstrumentCollectionCycleStateEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.InstrumentCollectionSettingsEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryCatalogStateEntity", b =>
                 {
                     b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
@@ -1524,6 +2063,62 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                 });
 
             modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInstrumentCatalogStateEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId", "CategoryCode")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInstrumentCollectionRunEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInstrumentEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInstrumentCatalogStateEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId", "CategoryCode")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInstrumentObservationEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInstrumentCollectionRunEntity", "Collection")
+                        .WithMany("Observations")
+                        .HasForeignKey("CollectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Collection");
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInterestEntity", b =>
+                {
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BrokerEnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInterestStateEntity", b =>
                 {
                     b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.BrokerEnvironmentEntity", null)
                         .WithMany()
@@ -1553,6 +2148,11 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
             modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.AccountDetailsRetrievalEntity", b =>
                 {
                     b.Navigation("Accounts");
+                });
+
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInstrumentCollectionRunEntity", b =>
+                {
+                    b.Navigation("Observations");
                 });
 #pragma warning restore 612, 618
         }

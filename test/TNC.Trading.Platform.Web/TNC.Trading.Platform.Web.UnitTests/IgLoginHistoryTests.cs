@@ -98,6 +98,7 @@ public sealed class IgLoginHistoryTests
         cut.WaitForAssertion(() =>
         {
             Assert.Contains("Version", cut.Markup, StringComparison.Ordinal);
+            Assert.NotNull(snapshot.LightstreamerEndpoint);
             Assert.Contains(snapshot.LightstreamerEndpoint, cut.Markup, StringComparison.Ordinal);
             Assert.Contains("ig-history-entry-payload-json", cut.Markup, StringComparison.Ordinal);
         });

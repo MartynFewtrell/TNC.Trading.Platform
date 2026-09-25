@@ -49,6 +49,10 @@ a {
     color: var(--platform-accent-color);
 }
 
+.market-category-link {
+    text-decoration: none;
+}
+
 h1,
 h2,
 h3,
@@ -245,6 +249,17 @@ form {
     padding: 1.25rem;
     box-shadow: var(--platform-shadow);
     margin-bottom: 1rem;
+}
+
+.market-category-collection-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 2rem;
+}
+
+.market-category-collection-summary p {
+    flex: 1 1 16rem;
+    margin-bottom: 0;
 }
 
 .platform-page-header {

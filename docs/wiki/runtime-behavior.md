@@ -45,20 +45,81 @@ The additive EF migration is applied before bootstrap configuration and
 retention; incompatible migration history remains fail-closed for operator
 correction.
 
-## Market Categories reference snapshot
+## Market-category instrument collection
 
-Market categories are stored as the current complete snapshot for the applied
-broker environment. A Viewer GET reads SQL only and returns categories in
-ordinal code order with the nullable last-successful-refresh timestamp. It
-does not contact IG or write data.
+Market-category and instrument reads use the applied broker environment's
+saved SQL data. Category interest, instrument browsing, and collector-status
+reads do not call IG. A new category starts unchecked. Interest is shared by
+operators within the environment; an interest whose category disappears is
+shown as dormant and becomes eligible again only if that category returns.
+Adding or removing interest affects a later slot and never starts a provider
+request immediately.
 
-Only an Operator can start the manual refresh. A successful refresh validates
-the entire Demo response and atomically replaces that environment's category
-rows and timestamp. If the provider is unavailable, rate-limited, times out,
-returns rejected data, or returns a malformed/empty/partial catalogue, the
-existing rows and timestamp remain unchanged. The Web page keeps showing that
-saved data and displays a safe stale-after-failure message. There is no
-startup, login, scheduled, or automatic category refresh.
+The independent API worker checks the currently due slot after persistence
+bootstrap without blocking API readiness. It uses the applied environment's
+trading schedule, time zone, active days, holidays, and start-inclusive /
+end-exclusive window. The active day is divided into the configured number of
+slots. Missed slots are recorded as gaps rather than replayed after restart;
+there is no after-hours catch-up. Frequency changes take effect on the next
+local trading day. Unsupported or unconfigured applied environments, a
+disabled/invalid schedule, and absent/invalid capacity pause collection before
+IG is called.
+
+For each due slot, a durable environment/day/slot lease coordinates replicas.
+The worker refreshes and validates the full category catalogue first, records
+that prerequisite, then intersects the current selection with currently
+listed categories. With no interested categories, the cycle records idle after
+the category refresh. Interested categories are collected independently and
+sequentially by provider page; a failure in one category does not invalidate
+another category's outcome. Schedule, applied environment, lease, and shared
+request allowance are rechecked around provider calls and before snapshot
+publication. The category prerequisite and each category have bounded retries;
+rate limiting or exhausted allowance pauses safely instead of retrying without
+limit.
+
+`InstrumentUpdatesPerDay` defaults to one and is bounded from one to four.
+Requests for higher frequency require an operator-approved, environment-
+specific non-trading allowance and measured capacity. The allowance is shared
+with category, session, and instrument requests; frequency is not an HTTP
+quota. An unset or zero allowance pauses provider collection. The status API
+and UI report used/approved request counts, due/next slot, outcomes and safe
+failure categories without provider response bodies or credentials.
+
+To retry a slot with a failed category during its trading window, apply pending database
+migrations, restart the API with the current build, then run the guarded
+[instrument slot reset script](../../infra/scripts/reset-instrument-collection-slot.sql)
+against `platformdb` after setting its trading day and zero-based slot. The
+script requires the applied IG Demo environment, an expired lease, no
+successful collection in that slot, and remaining approved daily allowance.
+The cycle may have outcome `Completed` even when every category attempt
+failed (`CompletedWithCategoryFailures`); the script accepts that case but
+never replays a slot with a successful category.
+It resets failed attempt counters but preserves the actual number of provider
+requests already used. The collector rechecks the schedule approximately
+every 30 seconds; resetting outside the active window does not replay a
+missed slot.
+
+Instrument calls use the IG category instruments resource v1 with page numbers
+starting at zero and a bounded provider page size of 150. Publication checks
+the same zero-based page sequence and accepts an explicitly reported empty
+category only when its single page, zero total results, and empty instrument
+list agree. The SQL collection-run constraint is updated by the
+`AllowEmptyMarketCategoryInstrumentCollections` migration; existing databases
+must apply it before an empty collection can publish. A collection is accepted
+only after every expected page and consistent total metadata have been
+validated; caps are 100 pages and 15,000
+instruments per category/run. Partial, empty-by-default, inconsistent,
+malformed, or over-cap results never replace the last-good SQL snapshot. The saved current projection is versioned
+for keyset paging, and each complete run plus its observations is retained
+online in SQL indefinitely. There is no automatic deletion or archive job for
+this analysis history; storage growth requires operational monitoring.
+
+Saved bid/offer values are snapshots, not streaming prices or trading
+instructions. The platform retrieval time is UTC; provider `updateTime` is
+displayed as IG-supplied text and is not converted into a platform timestamp.
+Category removal does not erase instrument observations. Manual Operator
+category refresh is also schedule- and allowance-gated before provider access
+and before publication, and shares cycle serialization with the worker.
 
 ## Runtime model summary
 

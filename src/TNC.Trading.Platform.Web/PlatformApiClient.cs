@@ -215,8 +215,72 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
         using var request = await CreateAuthorizedRequestAsync(HttpMethod.Post, "/api/platform/market-categories/refresh", [PlatformAuthenticationDefaults.Scopes.Operator], cancellationToken);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessStatusCodeAsync(response, cancellationToken);
-        return await response.Content.ReadFromJsonAsync<MarketCategoriesViewModel>(JsonOptions, cancellationToken)
-            ?? throw new InvalidOperationException("Market categories refresh response was empty.");
+        return await GetMarketCategoriesAsync(cancellationToken);
+    }
+
+    /// <summary>Reads one bounded page from a saved category instrument snapshot for a Viewer.</summary>
+    public async Task<MarketCategoryInstrumentPageViewModel> GetMarketCategoryInstrumentPageAsync(
+        string categoryCode,
+        int pageSize,
+        string? cursor,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(categoryCode);
+        if (pageSize is < 1 or > 100)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize), "Page size must be between 1 and 100.");
+        }
+
+        var url = $"/api/platform/market-categories/{Uri.EscapeDataString(categoryCode)}/instruments?pageSize={pageSize}";
+        if (!string.IsNullOrWhiteSpace(cursor))
+        {
+            url += $"&cursor={Uri.EscapeDataString(cursor)}";
+        }
+
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Get, url, [PlatformAuthenticationDefaults.Scopes.Viewer], cancellationToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<MarketCategoryInstrumentPageViewModel>(JsonOptions, cancellationToken)
+            ?? throw new InvalidOperationException("Market-category instrument page response was empty.");
+    }
+
+    /// <summary>Updates shared category interest using the operator scope and current set revision.</summary>
+    public async Task<long> UpdateMarketCategoryInterestAsync(
+        string categoryCode,
+        bool interested,
+        long expectedRevision,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(categoryCode);
+        if (expectedRevision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedRevision), "Interest revision cannot be negative.");
+        }
+
+        var url = $"/api/platform/market-categories/{Uri.EscapeDataString(categoryCode)}/interest";
+        using var request = await CreateAuthorizedRequestAsync(HttpMethod.Put, url, [PlatformAuthenticationDefaults.Scopes.Operator], cancellationToken);
+        request.Content = JsonContent.Create(
+            new { Interested = interested, ExpectedRevision = expectedRevision },
+            options: JsonOptions);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<UpdateMarketCategoryInterestViewModel>(JsonOptions, cancellationToken);
+        return result?.Revision ?? throw new InvalidOperationException("Category interest update response was empty.");
+    }
+
+    /// <summary>Reads the protected SQL-only collector status for a Viewer.</summary>
+    public async Task<MarketCategoryInstrumentCollectionStatusViewModel> GetInstrumentCollectionStatusAsync(
+        CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(
+            HttpMethod.Get,
+            "/api/platform/instrument-collection/status",
+            [PlatformAuthenticationDefaults.Scopes.Viewer],
+            cancellationToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<MarketCategoryInstrumentCollectionStatusViewModel>(JsonOptions, cancellationToken)
+            ?? throw new InvalidOperationException("Instrument collection status response was empty.");
     }
 
     public async Task<AccountPreferencesViewModel> GetAccountPreferencesAsync(CancellationToken cancellationToken)
