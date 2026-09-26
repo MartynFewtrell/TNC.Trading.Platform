@@ -55,11 +55,11 @@ internal sealed class IgMarketCategoriesGateway(
             var environmentId = context.BrokerEnvironmentId;
             var endpointProfile = context.EndpointProfile;
             var session = await CreateSessionAsync(credentials, environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, collectionToken).ConfigureAwait(false);
-            var response = await GetCategoriesAsync(credentials.ApiKey, session, environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, collectionToken).ConfigureAwait(false);
+            var response = await GetCategoriesAsync(credentials.ApiKey, credentials.Identifier, session, environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, collectionToken).ConfigureAwait(false);
             if (response.Unauthorized)
             {
                 session = await CreateSessionAsync(credentials, environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, collectionToken).ConfigureAwait(false);
-                response = await GetCategoriesAsync(credentials.ApiKey, session, environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, collectionToken).ConfigureAwait(false);
+                response = await GetCategoriesAsync(credentials.ApiKey, credentials.Identifier, session, environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, collectionToken).ConfigureAwait(false);
             }
 
             return response.Result;
@@ -107,7 +107,16 @@ internal sealed class IgMarketCategoriesGateway(
         MarketCategoryInstrumentRequestBudgetContext? requestBudgetContext,
         CancellationToken cancellationToken)
     {
-        await throttle.WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (!await throttle.WaitAsync(
+                credentials.ApiKey,
+                credentials.Identifier,
+                requestBudgetContext?.ScheduleWindowEndUtc ?? DateTimeOffset.MaxValue,
+                cancellationToken).ConfigureAwait(false))
+        {
+            throw new MarketCategoriesProviderException(
+                MarketCategoriesFailureCategory.ScheduleClosed,
+                "IG market categories collection window closed before request pacing completed.");
+        }
         await ReserveRequestAsync(environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, cancellationToken).ConfigureAwait(false);
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(baseAddress, "session"));
         request.Headers.Add("X-IG-API-KEY", credentials.ApiKey);
@@ -139,6 +148,7 @@ internal sealed class IgMarketCategoriesGateway(
 
     private async Task<(MarketCategoriesGatewayResult Result, bool Unauthorized)> GetCategoriesAsync(
         string apiKey,
+        string accountIdentifier,
         Session session,
         Guid environmentId,
         string endpointProfile,
@@ -147,7 +157,16 @@ internal sealed class IgMarketCategoriesGateway(
         MarketCategoryInstrumentRequestBudgetContext? requestBudgetContext,
         CancellationToken cancellationToken)
     {
-        await throttle.WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (!await throttle.WaitAsync(
+                apiKey,
+                accountIdentifier,
+                requestBudgetContext?.ScheduleWindowEndUtc ?? DateTimeOffset.MaxValue,
+                cancellationToken).ConfigureAwait(false))
+        {
+            throw new MarketCategoriesProviderException(
+                MarketCategoriesFailureCategory.ScheduleClosed,
+                "IG market categories collection window closed before request pacing completed.");
+        }
         await ReserveRequestAsync(environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, cancellationToken).ConfigureAwait(false);
         using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(baseAddress, "categories"));
         request.Headers.Add("X-IG-API-KEY", apiKey);

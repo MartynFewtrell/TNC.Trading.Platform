@@ -1,0 +1,374 @@
+@namespace TNC.Trading.Platform.Web.Components.Pages
+@page "/market-categories/{CategoryCode}/instruments/{Epic}/market-details"
+@implements IDisposable
+@attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Viewer)]
+@using TNC.Trading.Platform.Web.Authentication
+@inject MarketDetailsPagePresenter Presenter
+@inject PlatformNavigationAccessCoordinator NavigationAccessCoordinator
+
+<PageTitle>Saved market details — @Epic</PageTitle>
+
+@if (!hasRequiredScope)
+{
+    <p data-testid="market-details-access">Redirecting...</p>
+}
+else if (Presenter.IsLoading && Presenter.Detail is null)
+{
+    <section class="panel" data-testid="market-details-loading">
+        <p>Loading saved market details...</p>
+    </section>
+}
+else
+{
+    <section class="panel">
+        <div class="platform-page-header">
+            <div>
+                <h1>Saved market details</h1>
+                <p>@CategoryCode / @Epic</p>
+            </div>
+            <nav aria-label="Market details navigation">
+                <a class="market-category-link" href="@CategoryInstrumentsHref">Back to saved instruments</a>
+                <button class="platform-primary-action" type="button" data-testid="market-details-reload"
+                        @onclick="ReloadAsync" disabled="@Presenter.IsLoading">
+                    Reload saved data
+                </button>
+            </nav>
+        </div>
+    </section>
+
+    @if (Presenter.IsLoading)
+    {
+        <p role="status" data-testid="market-details-reloading">Loading saved market details...</p>
+    }
+    @if (!string.IsNullOrWhiteSpace(Presenter.Error))
+    {
+        <p class="error" role="alert" data-testid="market-details-error">@Presenter.Error</p>
+        @if (Presenter.IsStale)
+        {
+            <button class="platform-primary-action" type="button" data-testid="market-details-reload-current"
+                    @onclick="ReloadAsync" disabled="@Presenter.IsLoading">
+                Reload current saved details
+            </button>
+        }
+    }
+
+    @if (Presenter.Detail is { } detail)
+    {
+        <section class="panel market-detail-coverage" aria-labelledby="market-detail-coverage-heading" data-testid="market-detail-coverage">
+            <h2 id="market-detail-coverage-heading">Coverage and provenance</h2>
+            <dl class="platform-key-value-grid">
+                <dt>Instrument state</dt><dd>@FormatState(detail.State)</dd>
+                <dt>Category coverage</dt><dd>@FormatState(detail.Coverage.State)</dd>
+                <dt>Category followed</dt><dd>@FormatBoolean(detail.Coverage.IsFollowed)</dd>
+                <dt>Expected / completed</dt><dd>@FormatCount(detail.Coverage.CompletedCount) / @FormatCount(detail.Coverage.ExpectedCount)</dd>
+                <dt>Excluded / outstanding</dt><dd>@FormatCount(detail.Coverage.ExcludedCount) / @FormatCount(detail.Coverage.OutstandingCount)</dd>
+                <dt>Last complete coverage</dt>
+                <dd>@UtcTime(detail.Coverage.LastCompleteAtUtc)</dd>
+                <dt>Next scheduled check</dt>
+                <dd>@UtcTime(detail.Coverage.NextScheduledCheckUtc)</dd>
+                <dt>Coverage failure</dt><dd>@FormatText(detail.Coverage.SafeFailureCode)</dd>
+                <dt>Listing snapshot version</dt><dd>@FormatVersion(detail.ListingSnapshotVersion)</dd>
+                <dt>Listing retrieved</dt><dd>@UtcTime(detail.ListingRetrievedAtUtc)</dd>
+            </dl>
+        </section>
+
+        @if (detail.SavedObservation is not { } observation)
+        {
+            <section class="panel" data-testid="market-details-no-observation">
+                <h2>No saved market observation</h2>
+                <p>The current EPIC is known, but no validated market-detail observation has been saved.</p>
+                <p>Reload reads saved data only; it does not request a refresh from IG.</p>
+            </section>
+        }
+        else
+        {
+            <section class="panel" aria-labelledby="market-detail-snapshot-heading" data-testid="market-detail-snapshot">
+                <h2 id="market-detail-snapshot-heading">Saved quote snapshot — not live</h2>
+                <p class="hint">This is a historical provider snapshot from its retrieval time, not a streaming price or trading instruction.</p>
+                <dl class="platform-key-value-grid">
+                    <dt>Detail retrieved (UTC)</dt><dd>@UtcTime(observation.RetrievedAtUtc)</dd>
+                    <dt>Source</dt><dd>@observation.Source</dd>
+                    <dt>Source endpoint</dt><dd>@observation.SourceEndpoint</dd>
+                    <dt>Source API version</dt><dd>@observation.SourceVersion</dd>
+                    <dt>Market status</dt><dd>@FormatText(observation.Snapshot.MarketStatus)</dd>
+                    <dt>Bid</dt><dd>@FormatQuantity(observation.Snapshot.Bid)</dd>
+                    <dt>Offer</dt><dd>@FormatQuantity(observation.Snapshot.Offer)</dd>
+                    <dt>High</dt><dd>@FormatQuantity(observation.Snapshot.High)</dd>
+                    <dt>Low</dt><dd>@FormatQuantity(observation.Snapshot.Low)</dd>
+                    <dt>Net change</dt><dd>@FormatQuantity(observation.Snapshot.NetChange)</dd>
+                    <dt>Percentage change</dt><dd>@FormatQuantity(observation.Snapshot.PercentageChange)</dd>
+                    <dt>Delay time</dt><dd>@FormatQuantity(observation.Snapshot.DelayTime)</dd>
+                    <dt>IG update time (provider text)</dt><dd>@FormatText(observation.ProviderUpdateTimeText ?? observation.Snapshot.UpdateTimeText)</dd>
+                    <dt>Binary odds</dt><dd>@FormatQuantity(observation.Snapshot.BinaryOdds)</dd>
+                    <dt>Decimal places factor</dt><dd>@FormatQuantity(observation.Snapshot.DecimalPlacesFactor)</dd>
+                    <dt>Scaling factor</dt><dd>@FormatQuantity(observation.Snapshot.ScalingFactor)</dd>
+                    <dt>Controlled-risk extra spread</dt><dd>@FormatQuantity(observation.Snapshot.ControlledRiskExtraSpread)</dd>
+                </dl>
+            </section>
+
+            <section class="panel" aria-labelledby="market-detail-instrument-heading" data-testid="market-detail-instrument">
+                <h2 id="market-detail-instrument-heading">Instrument terms and capabilities</h2>
+                <dl class="platform-key-value-grid">
+                    <dt>Name</dt><dd>@observation.Instrument.Name</dd>
+                    <dt>EPIC</dt><dd>@observation.Instrument.Epic</dd>
+                    <dt>Market ID</dt><dd>@FormatText(observation.Instrument.MarketId)</dd>
+                    <dt>Type</dt><dd>@observation.Instrument.Type</dd>
+                    <dt>Expiry</dt><dd>@observation.Instrument.Expiry</dd>
+                    <dt>Unit</dt><dd>@observation.Instrument.Unit</dd>
+                    <dt>Lot size</dt><dd>@observation.Instrument.LotSize</dd>
+                    <dt>Force open allowed</dt><dd>@FormatBoolean(observation.Instrument.ForceOpenAllowed)</dd>
+                    <dt>Stops/limits allowed</dt><dd>@FormatBoolean(observation.Instrument.StopsLimitsAllowed)</dd>
+                    <dt>Controlled risk allowed</dt><dd>@FormatBoolean(observation.Instrument.ControlledRiskAllowed)</dd>
+                    <dt>Streaming prices available</dt><dd>@FormatBoolean(observation.Instrument.StreamingPricesAvailable)</dd>
+                    <dt>Margin factor</dt><dd>@FormatOptionalNumberWithUnit(observation.Instrument.MarginFactor, observation.Instrument.MarginFactorUnit)</dd>
+                    <dt>Slippage factor</dt><dd>@FormatQuantity(observation.Instrument.SlippageFactor)</dd>
+                    <dt>Limited-risk premium</dt><dd>@FormatQuantity(observation.Instrument.LimitedRiskPremium)</dd>
+                    <dt>Minimum sprint expiry</dt><dd>@FormatQuantity(observation.Instrument.SprintMarketsMinimumExpiryTime)</dd>
+                    <dt>Maximum sprint expiry</dt><dd>@FormatQuantity(observation.Instrument.SprintMarketsMaximumExpiryTime)</dd>
+                    <dt>Value of one pip</dt><dd>@FormatText(observation.Instrument.ValueOfOnePip)</dd>
+                    <dt>One pip means</dt><dd>@FormatText(observation.Instrument.OnePipMeans)</dd>
+                    <dt>Contract size</dt><dd>@FormatText(observation.Instrument.ContractSize)</dd>
+                    <dt>News code</dt><dd>@FormatText(observation.Instrument.NewsCode)</dd>
+                    <dt>Chart code</dt><dd>@FormatText(observation.Instrument.ChartCode)</dd>
+                    <dt>Country</dt><dd>@FormatText(observation.Instrument.Country)</dd>
+                </dl>
+            </section>
+
+            <section class="panel" aria-labelledby="market-detail-rules-heading" data-testid="market-detail-rules">
+                <h2 id="market-detail-rules-heading">Dealing rules</h2>
+                <dl class="platform-key-value-grid">
+                    <dt>Minimum step distance</dt><dd>@FormatQuantity(observation.DealingRules.MinStepDistance)</dd>
+                    <dt>Minimum deal size</dt><dd>@FormatQuantity(observation.DealingRules.MinDealSize)</dd>
+                    <dt>Minimum controlled-risk stop distance</dt><dd>@FormatQuantity(observation.DealingRules.MinControlledRiskStopDistance)</dd>
+                    <dt>Minimum normal stop/limit distance</dt><dd>@FormatQuantity(observation.DealingRules.MinNormalStopOrLimitDistance)</dd>
+                    <dt>Maximum stop/limit distance</dt><dd>@FormatQuantity(observation.DealingRules.MaxStopOrLimitDistance)</dd>
+                    <dt>Controlled-risk spacing</dt><dd>@FormatQuantity(observation.DealingRules.ControlledRiskSpacing)</dd>
+                    <dt>Market order preference</dt><dd>@observation.DealingRules.MarketOrderPreference</dd>
+                    <dt>Trailing stops preference</dt><dd>@observation.DealingRules.TrailingStopsPreference</dd>
+                </dl>
+            </section>
+
+            <section class="panel" aria-labelledby="market-detail-currencies-heading" data-testid="market-detail-currencies">
+                <h2 id="market-detail-currencies-heading">Currencies</h2>
+                @if (observation.Instrument.Currencies.Count == 0)
+                {
+                    <p>Not supplied by IG</p>
+                }
+                else
+                {
+                    <div class="market-detail-table-scroll">
+                        <table>
+                            <caption>Saved market currencies and provider exchange-rate values</caption>
+                            <thead><tr><th scope="col">Code</th><th scope="col">Symbol</th><th scope="col">Base exchange rate</th><th scope="col">Exchange rate</th><th scope="col">Default</th></tr></thead>
+                            <tbody>
+                                @foreach (var currency in observation.Instrument.Currencies)
+                                {
+                                    <tr @key="currency.Code">
+                                        <td>@currency.Code</td>
+                                        <td>@currency.Symbol</td>
+                                        <td>@FormatOptionalNumber(currency.BaseExchangeRate)</td>
+                                        <td>@FormatOptionalNumber(currency.ExchangeRate)</td>
+                                        <td>@FormatBoolean(currency.IsDefault)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+
+            <section class="panel" aria-labelledby="market-detail-margin-heading" data-testid="market-detail-margin-bands">
+                <h2 id="market-detail-margin-heading">Margin deposit bands</h2>
+                @if (observation.Instrument.MarginDepositBands.Count == 0)
+                {
+                    <p>Not supplied by IG</p>
+                }
+                else
+                {
+                    <div class="market-detail-table-scroll">
+                        <table>
+                            <caption>Saved provider margin deposit bands</caption>
+                            <thead><tr><th scope="col">Minimum</th><th scope="col">Maximum</th><th scope="col">Margin</th><th scope="col">Currency</th></tr></thead>
+                            <tbody>
+                                @foreach (var band in observation.Instrument.MarginDepositBands)
+                                {
+                                    <tr>
+                                        <td>@band.Minimum</td>
+                                        <td>@FormatMaximum(band.Maximum)</td>
+                                        <td>@band.Margin</td>
+                                        <td>@band.Currency</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+
+            <section class="panel" aria-labelledby="market-detail-notices-heading" data-testid="market-detail-notices">
+                <h2 id="market-detail-notices-heading">Provider notices</h2>
+                @if (observation.Instrument.SpecialInfo.Count == 0)
+                {
+                    <p>Not supplied by IG</p>
+                }
+                else
+                {
+                    <ul>
+                        @foreach (var notice in observation.Instrument.SpecialInfo)
+                        {
+                            <li>@notice</li>
+                        }
+                    </ul>
+                }
+            </section>
+
+            <PlatformAccordionSection Title="Optional technical terms" IsOpen="false">
+                <section class="market-detail-technical-source" data-testid="market-detail-technical-source">
+                    <dl class="platform-key-value-grid">
+                        <dt>Opening hours</dt><dd><pre>@FormatText(observation.Instrument.OpeningHoursJson)</pre></dd>
+                        <dt>Expiry details</dt><dd><pre>@FormatText(observation.Instrument.ExpiryDetailsJson)</pre></dd>
+                        <dt>Rollover details</dt><dd><pre>@FormatText(observation.Instrument.RolloverDetailsJson)</pre></dd>
+                    </dl>
+                </section>
+            </PlatformAccordionSection>
+        }
+    }
+}
+
+@code {
+    [Parameter]
+    public string CategoryCode { get; set; } = string.Empty;
+
+    [Parameter]
+    public string Epic { get; set; } = string.Empty;
+
+    [SupplyParameterFromQuery(Name = "listingVersion")]
+    public string? ListingVersion { get; set; }
+
+    private bool hasRequiredScope;
+    private CancellationTokenSource? requestLifetime;
+    private string CategoryInstrumentsHref =>
+        $"/market-categories/{Uri.EscapeDataString(CategoryCode)}/instruments";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        requestLifetime?.Cancel();
+        requestLifetime?.Dispose();
+        requestLifetime = new CancellationTokenSource();
+        var cancellationToken = requestLifetime.Token;
+
+        var returnUrl = $"/market-categories/{Uri.EscapeDataString(CategoryCode)}/instruments/{Uri.EscapeDataString(Epic)}/market-details";
+        if (ListingVersion is not null)
+        {
+            returnUrl += $"?listingVersion={Uri.EscapeDataString(ListingVersion)}";
+        }
+
+        hasRequiredScope = await NavigationAccessCoordinator.EnsureRequiredScopesAsync(
+            returnUrl,
+            PlatformAuthenticationDefaults.Scopes.Viewer);
+        if (!hasRequiredScope || cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        long? listingVersion = null;
+        if (ListingVersion is not null)
+        {
+            listingVersion = long.TryParse(
+                ListingVersion,
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var parsedVersion)
+                ? parsedVersion
+                : 0;
+        }
+
+        await Presenter.LoadAsync(CategoryCode, Epic, listingVersion, cancellationToken);
+    }
+
+    private Task ReloadAsync() =>
+        Presenter.ReloadAsync(CategoryCode, Epic, requestLifetime?.Token ?? CancellationToken.None);
+
+    private static string FormatState(string state) => state switch
+    {
+        "OutOfDate" => "Out of date",
+        "NotCollected" => "Not collected",
+        "NotFollowed" => "Not followed",
+        "NeverCollected" => "Never collected",
+        _ => state
+    };
+
+    private static string FormatCount(int? value) =>
+        value?.ToString(System.Globalization.CultureInfo.CurrentCulture) ?? "Not available";
+
+    private static string FormatVersion(long? value) =>
+        value?.ToString(System.Globalization.CultureInfo.CurrentCulture) ?? "Not available";
+
+    private static string FormatBoolean(bool? value) =>
+        value?.ToString() ?? "Not supplied by IG";
+
+    private static string FormatOptionalNumber(decimal? value) =>
+        value?.ToString(System.Globalization.CultureInfo.CurrentCulture) ?? "Not supplied by IG";
+
+    private static string FormatOptionalNumberWithUnit(decimal? value, string? unit)
+    {
+        if (value is not { } number)
+        {
+            return "Not supplied by IG";
+        }
+
+        return unit is null
+            ? number.ToString(System.Globalization.CultureInfo.CurrentCulture)
+            : $"{number.ToString(System.Globalization.CultureInfo.CurrentCulture)} {unit}";
+    }
+
+    private static string FormatText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "Not supplied by IG" : value;
+
+    private static string FormatUtcTime(DateTimeOffset? value) =>
+        value is { } timestamp
+            ? timestamp.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss 'UTC'", System.Globalization.CultureInfo.InvariantCulture)
+            : "Not available";
+
+    private static RenderFragment UtcTime(DateTimeOffset? value) => builder =>
+    {
+        if (value is { } timestamp)
+        {
+            var utcTimestamp = timestamp.ToUniversalTime();
+            builder.OpenElement(0, "time");
+            builder.AddAttribute(1, "datetime", utcTimestamp.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+            builder.AddContent(2, FormatUtcTime(utcTimestamp));
+            builder.CloseElement();
+        }
+        else
+        {
+            builder.AddContent(0, "Not available");
+        }
+    };
+
+    private static string FormatQuantity(
+        MarketDetailViewModel.QuantityViewModel quantity,
+        string? unitOverride = null)
+    {
+        if (quantity.Presence != "Value" || quantity.Value is not { } value)
+        {
+            return "Not supplied by IG";
+        }
+
+        var unit = unitOverride ?? quantity.Unit;
+        return unit is null
+            ? value.ToString(System.Globalization.CultureInfo.CurrentCulture)
+            : $"{value.ToString(System.Globalization.CultureInfo.CurrentCulture)} {unit}";
+    }
+
+    private static string FormatMaximum(MarketDetailViewModel.QuantityViewModel quantity) =>
+        quantity.Presence == "ExplicitNull"
+            ? "No upper bound"
+            : FormatQuantity(quantity);
+
+    public void Dispose()
+    {
+        requestLifetime?.Cancel();
+        requestLifetime?.Dispose();
+    }
+}

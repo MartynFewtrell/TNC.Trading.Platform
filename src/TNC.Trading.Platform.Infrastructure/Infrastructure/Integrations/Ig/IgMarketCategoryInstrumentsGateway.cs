@@ -62,6 +62,7 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
                 .ConfigureAwait(false);
             var firstPage = await GetPageAsync(
                 credentials.ApiKey,
+                credentials.Identifier,
                 session,
                 environmentId,
                 endpointProfile,
@@ -77,6 +78,7 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
                     .ConfigureAwait(false);
                 firstPage = await GetPageAsync(
                     credentials.ApiKey,
+                    credentials.Identifier,
                     session,
                     environmentId,
                     endpointProfile,
@@ -124,6 +126,7 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
                 {
                     var pageResult = await GetPageAsync(
                         credentials.ApiKey,
+                        credentials.Identifier,
                         session,
                         environmentId,
                         endpointProfile,
@@ -139,6 +142,7 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
                             .ConfigureAwait(false);
                         pageResult = await GetPageAsync(
                             credentials.ApiKey,
+                            credentials.Identifier,
                             session,
                             environmentId,
                             endpointProfile,
@@ -254,7 +258,14 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
         MarketCategoryInstrumentRequestBudgetContext requestBudgetContext,
         CancellationToken cancellationToken)
     {
-        await throttle.WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (!await throttle.WaitAsync(
+                credentials.ApiKey,
+                credentials.Identifier,
+                requestBudgetContext.ScheduleWindowEndUtc ?? DateTimeOffset.MaxValue,
+                cancellationToken).ConfigureAwait(false))
+        {
+            throw new ProviderRequestException(MarketCategoryInstrumentFailureCategory.ScheduleClosed, retryable: false);
+        }
         await ReserveRequestAsync(environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, cancellationToken).ConfigureAwait(false);
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(baseAddress, "session"));
         request.Headers.Add("X-IG-API-KEY", credentials.ApiKey);
@@ -289,6 +300,7 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
 
     private async Task<PageResult> GetPageAsync(
         string apiKey,
+        string accountIdentifier,
         Session session,
         Guid environmentId,
         string endpointProfile,
@@ -299,7 +311,14 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
         MarketCategoryInstrumentRequestBudgetContext requestBudgetContext,
         CancellationToken cancellationToken)
     {
-        await throttle.WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (!await throttle.WaitAsync(
+                apiKey,
+                accountIdentifier,
+                requestBudgetContext.ScheduleWindowEndUtc ?? DateTimeOffset.MaxValue,
+                cancellationToken).ConfigureAwait(false))
+        {
+            throw new ProviderRequestException(MarketCategoryInstrumentFailureCategory.ScheduleClosed, retryable: false);
+        }
         await ReserveRequestAsync(environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, cancellationToken).ConfigureAwait(false);
         var resource = $"categories/{Uri.EscapeDataString(categoryCode)}/instruments?pageNumber={pageNumber}&pageSize={pageSize}";
         using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(baseAddress, resource));

@@ -1,0 +1,79 @@
+.market-detail-coverage,
+.market-detail-snapshot,
+.market-detail-instrument,
+.market-detail-rules,
+.market-detail-currencies,
+.market-detail-margin-bands,
+.market-detail-notices,
+.market-detail-technical-source {
+    margin-top: 1rem;
+}
+
+.market-detail-coverage .platform-key-value-grid,
+.market-detail-snapshot .platform-key-value-grid,
+.market-detail-instrument .platform-key-value-grid,
+.market-detail-rules .platform-key-value-grid,
+.market-detail-technical-source .platform-key-value-grid {
+    margin-bottom: 0;
+}
+
+.market-detail-table-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.market-detail-table-scroll table {
+    width: 100%;
+    min-width: 36rem;
+    border-collapse: collapse;
+}
+
+.market-detail-table-scroll th,
+.market-detail-table-scroll td {
+    border-bottom: 1px solid var(--platform-border-color);
+    padding: 0.625rem 0.75rem;
+    text-align: start;
+    vertical-align: top;
+}
+
+.market-detail-table-scroll th {
+    color: var(--platform-text-color);
+}
+
+.market-detail-table-scroll td {
+    color: var(--platform-muted-text-color);
+}
+
+.market-detail-technical-source pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 0;
+}
+
+.market-detail-coverage + .panel {
+    margin-top: 1rem;
+}
+
+.panel .platform-page-header nav {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.panel .platform-page-header .platform-primary-action {
+    margin-bottom: 0;
+}
+
+@media (max-width: 40rem) {
+    .market-detail-table-scroll table {
+        min-width: 32rem;
+    }
+
+    .market-detail-coverage .platform-key-value-grid,
+    .market-detail-snapshot .platform-key-value-grid,
+    .market-detail-instrument .platform-key-value-grid,
+    .market-detail-rules .platform-key-value-grid {
+        grid-template-columns: minmax(7rem, 1fr) minmax(8rem, 1.5fr);
+    }
+}

@@ -2,7 +2,7 @@
 title: Day trading with IG APIs
 description: Implementation-oriented guidance for IG REST and Streaming API integration
 author: TNC Trading
-ms.date: 2026-07-27
+ms.date: 2026-09-25
 ms.topic: concept
 ---
 
@@ -133,14 +133,95 @@ capacity. Zero or missing allowance pauses collection. Schedule closure,
 quota exhaustion, restart, or an unsupported applied environment never
 causes after-hours catch-up or an unbounded retry.
 
-Viewer catalogue/status reads and instrument pages are SQL-only. Instrument
-pages use opaque protected cursors bound to the applied environment, exact
-category, snapshot version, and last EPIC; a stale cursor returns a conflict
-and the browser restarts from the first page. The complete run provenance and
-instrument observations are retained online in SQL indefinitely in this
-delivery, including after category removal. No automatic purge or archive is
-configured; monitor SQL row and storage growth before designing any future
-retention policy.
+### Market-detail requests and shared rate limits
+
+The market-detail adapter uses the applied IG Demo or Live profile, an
+operation-scoped v2 session, and
+[IG's bulk markets resource](https://labs.ig.com/reference/markets.html) with
+`Version: 2` and `filter=ALL`. It encodes the requested EPICs, sends no more
+than 50 per batch, and splits batches when the encoded request would exceed
+the configured URL bound. The verified contract is the v2 `marketDetails`
+array: an observation is accepted only for its exact requested EPIC and when
+`instrument`, `dealingRules`, and `snapshot` validate together. The supplied
+ADAUSD Demo response and the two-EPIC ETHUSD/LTCUSD response are retained as
+fixtures. No unverified single-market v3/v4 fallback is used. Saved snapshots
+are observations from their retrieval time, not streaming quotes, permission
+to trade, or authorization to place an order.
+
+Every session and market HTTP attempt consumes one unit from the existing
+environment/day operator-approved allowance, including failed requests and
+the one permitted 401 reauthentication replay. IG's documented rolling limits
+are additionally coordinated across application replicas and all IG HTTP
+consumers: 30 requests per account per minute and 60 per application per
+minute. SQL stores only SHA-256 scope hashes for account identifiers and API
+keys, never the raw values. The local 250 ms request spacing is retained as an
+additional guard. A documented allowance-exhaustion 403 is distinct from
+other authorization 403 responses; 429 remains rate-limited. Mixed, missing,
+duplicate, or unexpected EPIC rows cannot be treated as confirmed provider
+unavailability or as successful observations.
+
+The scheduled detail coordinator runs only after the listing collector has
+processed the same due slot. It freezes complete current listing sources for
+selected categories, then stages a distinct EPIC universe with category
+membership provenance. Each worker tick handles at most 50 outstanding EPICs;
+later ticks and lease recovery resume only targets that have not succeeded.
+Stale or failed listing sources block the detail run rather than substituting
+last-good membership. Before a request, the coordinator checks estimated
+remaining retries/reauthentication, the shared daily allowance, rate pacing,
+and time left in the active trading window. Insufficient capacity leaves
+coverage visibly blocked or incomplete. Catalogue, interest, schedule,
+applied profile, lease, and source revisions are checked around requests and
+before publication; revision drift supersedes aggregate coverage without
+discarding successful historical observations. Worker checks retain the
+existing maximum 30-second cadence and stop at the active slot boundary.
+
+The request estimator is a safety preflight, not a capacity guarantee. A
+synthetic 15,000-target universe that fits the current 50-EPIC URL chunks
+requires 300 market requests plus 300 sessions (600 requests with no retries);
+the configured three-attempt/one-401-replay reserve raises that estimate to
+2,700 requests (including retries, replay, and associated sessions). At the
+documented account limit of 30 requests per minute, those counts have
+theoretical lower bounds of 20 minutes and 90 minutes respectively before
+allowance consumed by category/listing collection, actual spacing, SQL work,
+or slot closure. The application/app limit is 60 requests per minute. EPIC
+length can split URL batches further, multiple selected categories can make
+the distinct universe larger than one category's listing cap, and retries
+consume allowance. These calculations do not establish that a configured
+daily allowance or active slot is sufficient; operational sizing requires
+representative end-to-end SQL/provider-double measurements.
+
+Viewer catalogue/status reads, instrument pages, and saved market-detail
+requests are SQL-only. Instrument pages use opaque protected cursors bound to
+the applied environment, exact category, snapshot version, and last EPIC; a
+stale cursor returns a conflict and the browser restarts from the first page.
+The direct market-detail route is scoped to current category/EPIC membership
+in the applied environment and does not depend on a listing cursor. It returns
+the saved observation (when present), detail retrieval time and source
+endpoint/version separately from the listing snapshot version and retrieval
+time, plus independent category coverage. A current listed EPIC with no
+observation is `NotCollected`; missing current membership is `404`, and an
+optional stale listing version is `409`. Listing pages expose only compact,
+batched availability, not the nested market terms or quote snapshot. None of
+these reads refreshes data from IG. The complete run provenance and instrument
+observations are retained online in SQL indefinitely in this delivery,
+including after category removal. No automatic purge or archive is configured;
+monitor SQL row and storage growth before designing any future retention
+policy.
+
+The market-detail run, source, target, membership, and observation records have
+no automatic purge or archive in this delivery. Broker-environment retirement
+removes current and eligibility projections but preserves immutable history.
+The applicable market-data/API agreement has not been verified as authorizing
+indefinite internal retention or redistribution. Treat production reliance on
+that retention or any redistribution as a release/compliance blocker until
+the responsible owner confirms the applicable terms; do not infer permission
+from API access or fixture tests.
+
+The Web detail view is a read-only drill-down from an instrument tab or a
+direct Viewer deep link. It uses the saved API response once for the selected
+EPIC, keeps the listing and detail retrieval timestamps separate, and labels
+the stored bid/offer and other market values as a historical snapshot. Its
+Reload action repeats the SQL-backed Viewer read only; it does not call IG.
 
 Saved bid/offer values are snapshots, not live or streaming prices. The
 platform retrieval timestamp is UTC; IG's `updateTime` is retained and shown

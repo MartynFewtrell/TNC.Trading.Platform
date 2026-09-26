@@ -23,4 +23,9 @@
     <ProjectReference Include="..\..\..\src\TNC.Trading.Platform.Infrastructure\TNC.Trading.Platform.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Fixtures\market-details-v2-filter-all-adausd.json" />
+    <EmbeddedResource Include="Fixtures\market-details-v2-filter-all-eth-ltc.json" />
+  </ItemGroup>
+
 </Project>

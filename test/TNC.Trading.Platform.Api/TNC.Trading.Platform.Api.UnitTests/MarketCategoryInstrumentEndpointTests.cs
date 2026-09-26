@@ -40,6 +40,7 @@ public sealed class MarketCategoryInstrumentEndpointTests
 
         AssertPolicy(endpoints, "/api/platform/market-categories", PlatformAuthenticationDefaults.Policies.Viewer);
         AssertPolicy(endpoints, "/api/platform/market-categories/{categoryCode}/instruments", PlatformAuthenticationDefaults.Policies.Viewer);
+        AssertPolicy(endpoints, "/api/platform/market-categories/{categoryCode}/instruments/{epic}/market-details", PlatformAuthenticationDefaults.Policies.Viewer);
         AssertPolicy(endpoints, "/api/platform/instrument-collection/status", PlatformAuthenticationDefaults.Policies.Viewer);
         AssertPolicy(endpoints, "/api/platform/market-categories/{categoryCode}/interest", PlatformAuthenticationDefaults.Policies.Operator);
         AssertPolicy(endpoints, "/api/platform/market-categories/refresh", PlatformAuthenticationDefaults.Policies.Operator);

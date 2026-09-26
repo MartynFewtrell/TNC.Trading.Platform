@@ -7,4 +7,5 @@ internal sealed record MarketCategoryViewModel(
     DateTimeOffset? LastSuccessfulCollectionAtUtc = null,
     int Attempts = 0,
     string? CollectionOutcome = null,
-    string? SafeFailure = null);
+    string? SafeFailure = null,
+    MarketDetailCoverageViewModel? DetailCoverage = null);

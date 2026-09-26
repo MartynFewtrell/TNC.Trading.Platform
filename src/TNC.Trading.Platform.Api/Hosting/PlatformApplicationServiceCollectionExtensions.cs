@@ -8,6 +8,7 @@ using TNC.Trading.Platform.Application.Features.GetPlatformEvents;
 using TNC.Trading.Platform.Application.Features.GetPlatformStatus;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDetails;
 using TNC.Trading.Platform.Application.Features.ReconcilePlatformAuthentication;
 using TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent;
 using TNC.Trading.Platform.Application.Features.TriggerManualAuthRetry;
@@ -38,6 +39,11 @@ internal static class PlatformApplicationServiceCollectionExtensions
         services.AddScoped<MarketCategoryInstrumentCycleCoordinator>();
         services.AddScoped<IMarketCategoryInstrumentCycleCoordinator>(provider =>
             provider.GetRequiredService<MarketCategoryInstrumentCycleCoordinator>());
+        services.AddSingleton<MarketDetailUniversePolicy>();
+        services.AddSingleton<MarketDetailCapacityPolicy>();
+        services.AddScoped<MarketDetailCollectionCoordinator>();
+        services.AddScoped<IMarketDetailCollectionCoordinator>(provider =>
+            provider.GetRequiredService<MarketDetailCollectionCoordinator>());
         services.AddScoped<PlatformAuthenticationReconciler>();
         services.AddScoped<IPlatformAuthenticationReconciler>(serviceProvider =>
             serviceProvider.GetRequiredService<PlatformAuthenticationReconciler>());
@@ -58,6 +64,7 @@ internal static class PlatformApplicationServiceCollectionExtensions
         services.AddScoped<RefreshMarketCategoriesManuallyHandler>();
         services.AddScoped<GetMarketCategoryInstrumentPageHandler>();
         services.AddScoped<GetMarketCategoryInstrumentStatusHandler>();
+        services.AddScoped<GetMarketDetailHandler>();
         services.AddScoped<UpdateMarketCategoryInterestHandler>();
         services.AddScoped<GetAccountPreferencesHandler>();
         services.AddScoped<UpdateAccountPreferencesValidator>();

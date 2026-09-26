@@ -16,10 +16,17 @@ internal sealed class MarketCategoryInstrumentsPagePresenter(PlatformApiClient p
     public string? MetadataError { get; private set; }
     public bool IsLoading { get; private set; }
     public bool IsStale { get; private set; }
+    public string? SelectedEpic { get; private set; }
+    public MarketDetailCoverageViewModel? DetailCoverage =>
+        Category?.DetailCoverage
+        ?? CollectionStatus?.Categories.FirstOrDefault(item =>
+            string.Equals(item.CategoryCode, activeCategoryCode, StringComparison.Ordinal))?.DetailCoverage;
     public int CurrentPageNumber => currentPageIndex + 1;
     public string PageCountDescription => CanGoNext ? $"at least {CurrentPageNumber + 1}" : CurrentPageNumber.ToString();
     public bool CanGoPrevious => currentPageIndex > 0;
     public bool CanGoNext => !string.IsNullOrWhiteSpace(Page?.NextCursor);
+
+    public void SelectInstrument(string? epic) => SelectedEpic = epic;
 
     public async Task LoadAsync(string categoryCode, CancellationToken cancellationToken)
     {
@@ -32,6 +39,7 @@ internal sealed class MarketCategoryInstrumentsPagePresenter(PlatformApiClient p
             cursors.Clear();
             cursors.Add(null);
             currentPageIndex = 0;
+            SelectedEpic = null;
         }
 
         if (await LoadPageAsync(categoryCode, cursors[currentPageIndex], cancellationToken).ConfigureAwait(false))

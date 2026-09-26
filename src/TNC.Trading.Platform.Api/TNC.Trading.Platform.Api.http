@@ -2,7 +2,9 @@
 @viewerToken = replace-with-delegated-viewer-access-token
 @operatorToken = replace-with-delegated-operator-access-token
 @categoryCode = FX
+@epic = CS.D.ADAUSD.CFD.IP
 @interestRevision = 0
+@listingVersion = 1
 @instrumentCursor = replace-with-nextCursor-from-first-page
 
 ### Read the saved category catalogue, interest, and latest collection states (Viewer)
@@ -15,6 +17,14 @@ Authorization: Bearer {{viewerToken}}
 
 ### Continue browsing the same versioned snapshot (Viewer; use nextCursor from the prior response)
 GET {{baseUrl}}/market-categories/{{categoryCode}}/instruments?pageSize=50&cursor={{instrumentCursor}}
+Authorization: Bearer {{viewerToken}}
+
+### Read saved detail and independent category coverage (Viewer; SQL only)
+GET {{baseUrl}}/market-categories/{{categoryCode}}/instruments/{{epic}}/market-details?listingVersion={{listingVersion}}
+Authorization: Bearer {{viewerToken}}
+
+### Read saved detail without a listing-version precondition (Viewer; direct link)
+GET {{baseUrl}}/market-categories/{{categoryCode}}/instruments/{{epic}}/market-details
 Authorization: Bearer {{viewerToken}}
 
 ### Invalid page-size validation example (Viewer)

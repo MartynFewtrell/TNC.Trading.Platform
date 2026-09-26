@@ -27,6 +27,9 @@ public sealed class MarketCategoriesTests
             Assert.Contains("FX", cut.Markup, StringComparison.Ordinal);
             Assert.Contains("Tradeable", cut.Markup, StringComparison.Ordinal);
             Assert.Contains("Non-tradeable", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Market details coverage", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Partial", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Last complete:", cut.Markup, StringComparison.Ordinal);
             Assert.NotEmpty(cut.FindAll("table[aria-label], table"));
             Assert.NotEmpty(cut.FindAll("a[href='/market-categories/FX/instruments']"));
             Assert.Equal("Interested in FX", cut.Find("#category-interest-0").GetAttribute("aria-label"));
@@ -284,7 +287,19 @@ public sealed class MarketCategoriesTests
                 LastSuccessfulCollectionAtUtc = (DateTimeOffset?)null,
                 Attempts = 0,
                 CollectionOutcome = (string?)null,
-                SafeFailure = (string?)null
+                SafeFailure = (string?)null,
+                DetailCoverage = new
+                {
+                    IsFollowed = true,
+                    State = "Partial",
+                    ExpectedCount = 2,
+                    CompletedCount = 1,
+                    ExcludedCount = 0,
+                    OutstandingCount = 1,
+                    LastCompleteAtUtc = new DateTimeOffset(2026, 9, 25, 9, 0, 0, TimeSpan.Zero),
+                    NextScheduledCheckUtc = (DateTimeOffset?)null,
+                    SafeFailureCode = (string?)null
+                }
             }
         },
         LastRefreshedAtUtc = DateTimeOffset.UtcNow,

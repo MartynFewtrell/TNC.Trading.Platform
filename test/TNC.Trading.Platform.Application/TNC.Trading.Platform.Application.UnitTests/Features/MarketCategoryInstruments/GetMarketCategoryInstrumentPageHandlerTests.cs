@@ -1,6 +1,7 @@
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDetails;
 
 namespace TNC.Trading.Platform.Application.UnitTests.Features.MarketCategoryInstruments;
 
@@ -69,7 +70,8 @@ public sealed class GetMarketCategoryInstrumentPageHandlerTests
         new(
             new AppliedEnvironmentResolver(),
             new CategoryStore(),
-            reader);
+            reader,
+            new DetailReader());
 
     private sealed class AppliedEnvironmentResolver : IAppliedBrokerEnvironmentContextResolver
     {
@@ -111,5 +113,42 @@ public sealed class GetMarketCategoryInstrumentPageHandlerTests
             LastRequest = request;
             return Task.FromResult(Page);
         }
+    }
+
+    private sealed class DetailReader : IMarketDetailReader
+    {
+        public Task<MarketDetailReadResult> ReadAsync(
+            MarketDetailReadRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<MarketDetailAvailabilityReadResult> ReadAvailabilityAsync(
+            MarketDetailAvailabilityReadRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new MarketDetailAvailabilityReadResult(
+                true,
+                true,
+                request.ExpectedListingVersion,
+                DateTimeOffset.UtcNow,
+                new(
+                    request.CategoryCode,
+                    true,
+                    MarketDetailRunStatus.NeverCollected,
+                    null,
+                    null,
+                    null,
+                    null),
+                request.Epics.Select(epic => new MarketDetailAvailability(
+                    epic,
+                    true,
+                    true,
+                    MarketDetailTargetStatus.NotCollected,
+                    null,
+                    null)).ToArray()));
+
+        public Task<IReadOnlyList<MarketDetailCategoryCoverage>> ReadCategoryCoverageAsync(
+            BrokerEnvironmentKind appliedEnvironment,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 }

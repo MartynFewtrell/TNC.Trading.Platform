@@ -41,6 +41,36 @@ else
                 <p>Next scheduled collection check: <time datetime="@nextWakeUp.ToString("O")">@nextWakeUp.ToLocalTime().ToString("g")</time></p>
             }
         </div>
+        @if (Presenter.DetailCoverage is { } detailCoverage)
+        {
+            <div class="market-detail-category-coverage" data-testid="market-detail-category-coverage">
+                <strong>Market details coverage:</strong> @detailCoverage.State
+                @if (detailCoverage.ExpectedCount is { } expected
+                    && detailCoverage.CompletedCount is { } completed)
+                {
+                    <span> (@completed of @expected expected complete</span>
+                    @if (detailCoverage.ExcludedCount is { } excluded)
+                    {
+                        <span>, @excluded excluded</span>
+                    }
+                    <span>)</span>
+                }
+                @if (detailCoverage.LastCompleteAtUtc is { } lastCompleteAt)
+                {
+                    <span> — Last complete: <time datetime="@lastCompleteAt.ToUniversalTime().ToString("O")">@FormatUtc(lastCompleteAt)</time></span>
+                }
+                @if (!string.IsNullOrWhiteSpace(detailCoverage.SafeFailureCode))
+                {
+                    <p class="warning" role="status">@detailCoverage.SafeFailureCode</p>
+                }
+            </div>
+        }
+        else if (!string.IsNullOrWhiteSpace(Presenter.MetadataError))
+        {
+            <p class="warning" role="status" data-testid="market-detail-category-coverage-unavailable">
+                Market details coverage is unavailable; the saved instrument page remains available.
+            </p>
+        }
     </section>
 
     @if (Presenter.IsLoading)
@@ -87,6 +117,18 @@ else
                             <RadzenTabsItem @key="instrument.Epic" Text="@instrument.Name">
                                 <article data-testid="market-category-instrument">
                                     <h3>@instrument.Name</h3>
+                                    <div class="market-detail-availability" data-testid="market-detail-availability">
+                                        <strong>Market details:</strong> @FormatDetailState(instrument.MarketDetails?.State)
+                                        @if (instrument.MarketDetails?.DetailRetrievedAtUtc is { } detailRetrievedAt)
+                                        {
+                                            <span> — Retrieved: <time datetime="@detailRetrievedAt.ToString("O")">@FormatUtc(detailRetrievedAt)</time></span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(instrument.MarketDetails?.SafeFailureCode))
+                                        {
+                                            <span class="warning"> — @instrument.MarketDetails.SafeFailureCode</span>
+                                        }
+                                        <a class="market-category-link" href="@GetMarketDetailsHref(instrument.Epic)">View saved market details</a>
+                                    </div>
                                     <RadzenRow>
                                         <RadzenColumn Size="12" SizeMD="6">
                                             <dl class="platform-key-value-grid">
@@ -160,14 +202,14 @@ else
     }
 
     private int selectedIndex;
-    private string? selectedEpic;
 
     private void OnTabChanged(int index)
     {
         selectedIndex = index;
         var instruments = Presenter.Page?.Instruments;
-        selectedEpic = instruments is not null && index >= 0 && index < instruments.Count
+        var selectedEpic = instruments is not null && index >= 0 && index < instruments.Count
             ? instruments[index].Epic : null;
+        Presenter.SelectInstrument(selectedEpic);
     }
 
     private void ReconcileSelectedInstrument()
@@ -178,14 +220,14 @@ else
         {
             for (var index = 0; index < instruments.Count; index++)
             {
-                if (string.Equals(instruments[index].Epic, selectedEpic, StringComparison.Ordinal))
+                if (string.Equals(instruments[index].Epic, Presenter.SelectedEpic, StringComparison.Ordinal))
                 {
                     selectedIndex = index;
                     break;
                 }
             }
         }
-        selectedEpic = instruments is { Count: > 0 } ? instruments[selectedIndex].Epic : null;
+        Presenter.SelectInstrument(instruments is { Count: > 0 } ? instruments[selectedIndex].Epic : null);
     }
 
     private async Task LoadPreviousAsync()
@@ -205,6 +247,28 @@ else
         await Presenter.ReloadAsync(CategoryCode, requestLifetime.Token);
         ReconcileSelectedInstrument();
     }
+
+    private string GetMarketDetailsHref(string epic)
+    {
+        var path = $"/market-categories/{Uri.EscapeDataString(CategoryCode)}/instruments/{Uri.EscapeDataString(epic)}/market-details";
+        return Presenter.Page?.SnapshotVersion is { } version
+            ? $"{path}?listingVersion={version.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+            : path;
+    }
+
+    private static string FormatDetailState(string? state) => state switch
+    {
+        "Complete" => "Complete",
+        "OutOfDate" => "Out of date",
+        "NotCollected" => "Not collected",
+        "Excluded" => "Excluded",
+        "NotFollowed" => "Not followed",
+        null => "Availability unavailable",
+        _ => state
+    };
+
+    private static string FormatUtc(DateTimeOffset value) =>
+        value.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss 'UTC'", System.Globalization.CultureInfo.InvariantCulture);
 
     public void Dispose()
     {

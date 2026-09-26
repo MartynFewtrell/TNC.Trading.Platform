@@ -41,6 +41,35 @@ public class PlatformProtectedRouteFunctionalTests
         Assert.Contains("returnUrl=%2Fconfiguration", response.Headers.Location?.OriginalString, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Trace: Market Details Work Item 6, steps 2 and 6.
+    /// Verifies: a Viewer can open the protected market-detail deep link directly and the read leaves the controlled IG provider untouched.
+    /// Expected: the saved-detail page is rendered for the Viewer without any provider request.
+    /// Why: bookmarked links must work independently of prior listing navigation, and Viewer reads must never trigger collection.
+    /// </summary>
+    [Fact]
+    public async Task MarketDetailsRoute_ShouldRenderForViewerWithoutProviderCalls_WhenOpenedAsDeepLink()
+    {
+        const string detailPath = "/market-categories/FX/instruments/CS.D.ADAUSD.CFD.IP/market-details";
+        var webBaseUri = fixture.WebBaseUri;
+        var cookies = new CookieContainer();
+        await RealAuthenticationSessionFactory.AuthenticateBrowserSessionAsync(
+            webBaseUri,
+            cookies,
+            "local-viewer",
+            detailPath,
+            "platform.viewer");
+
+        fixture.Provider.ClearRequests();
+        using var httpClient = FunctionalBrowserClientFactory.Create(webBaseUri, allowAutoRedirect: false, cookies);
+        using var response = await GetApplicationResponseAsync(httpClient, detailPath);
+        var html = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("Saved market details", html, StringComparison.Ordinal);
+        Assert.Empty(fixture.Provider.Requests);
+    }
+
     private static async Task<HttpResponseMessage> GetApplicationResponseAsync(HttpClient httpClient, string path)
     {
         var response = await FunctionalHttpRequestRetry.GetAsync(httpClient, path);

@@ -1,0 +1,33 @@
+namespace TNC.Trading.Platform.Api.Features.Platform;
+
+/// <summary>Validated instrument identity, trading capabilities, currencies, margin bands, and optional terms.</summary>
+internal sealed record MarketDetailInstrumentResponse(
+    string Epic,
+    string Expiry,
+    string Name,
+    string? MarketId,
+    string Type,
+    string Unit,
+    decimal LotSize,
+    bool? ForceOpenAllowed,
+    bool? StopsLimitsAllowed,
+    bool? ControlledRiskAllowed,
+    bool? StreamingPricesAvailable,
+    IReadOnlyList<MarketDetailCurrencyResponse> Currencies,
+    IReadOnlyList<MarketDetailMarginDepositBandResponse> MarginDepositBands,
+    decimal? MarginFactor,
+    string? MarginFactorUnit,
+    MarketDetailQuantityResponse SlippageFactor,
+    MarketDetailQuantityResponse LimitedRiskPremium,
+    MarketDetailQuantityResponse SprintMarketsMinimumExpiryTime,
+    MarketDetailQuantityResponse SprintMarketsMaximumExpiryTime,
+    string? OpeningHoursJson,
+    string? ExpiryDetailsJson,
+    string? RolloverDetailsJson,
+    string? NewsCode,
+    string? ChartCode,
+    string? Country,
+    string? ValueOfOnePip,
+    string? OnePipMeans,
+    string? ContractSize,
+    IReadOnlyList<string> SpecialInfo);

@@ -68,7 +68,7 @@ else
                 }
                 <table>
                     <caption>Saved market categories and instrument collection state</caption>
-                    <thead><tr><th scope="col">Category</th><th scope="col">Non-tradeable</th><th scope="col">Interest</th><th scope="col">Last collection</th><th scope="col">Collection result</th></tr></thead>
+                    <thead><tr><th scope="col">Category</th><th scope="col">Non-tradeable</th><th scope="col">Interest</th><th scope="col">Last collection</th><th scope="col">Collection result</th><th scope="col">Market details coverage</th></tr></thead>
                     <tbody>
                         @foreach (var (category, index) in Presenter.State.Categories.Select((item, index) => (item, index)))
                         {
@@ -103,6 +103,24 @@ else
                                     @if (!string.IsNullOrWhiteSpace(category.SafeFailure))
                                     {
                                         <span class="warning"> — @category.SafeFailure</span>
+                                    }
+                                </td>
+                                <td data-testid="market-detail-category-coverage">
+                                    @if (category.DetailCoverage is { } coverage)
+                                    {
+                                        <span>@coverage.State</span>
+                                        @if (coverage.LastCompleteAtUtc is { } lastCompleteAt)
+                                        {
+                                            <span> — Last complete: <time datetime="@lastCompleteAt.ToUniversalTime().ToString("O")">@FormatUtc(lastCompleteAt)</time></span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(coverage.SafeFailureCode))
+                                        {
+                                            <span class="warning"> — @coverage.SafeFailureCode</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span>Coverage unavailable</span>
                                     }
                                 </td>
                             </tr>
@@ -153,6 +171,9 @@ else
 
     private Task SetInterestAsync(MarketCategoryViewModel category, ChangeEventArgs args) =>
         Presenter.SetInterestAsync(category.Code, args.Value is bool interested && interested, requestLifetime.Token);
+
+    private static string FormatUtc(DateTimeOffset value) =>
+        value.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss 'UTC'", System.Globalization.CultureInfo.InvariantCulture);
 
     public void Dispose()
     {

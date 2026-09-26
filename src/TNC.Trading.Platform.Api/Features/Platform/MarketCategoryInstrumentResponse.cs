@@ -20,4 +20,5 @@ internal sealed record MarketCategoryInstrumentResponse(
     decimal? NetChange,
     decimal? PercentageChange,
     string? UpdateTime,
-    long? Popularity);
+    long? Popularity,
+    MarketDetailAvailabilityResponse MarketDetails);

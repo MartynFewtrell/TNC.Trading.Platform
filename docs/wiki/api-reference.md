@@ -32,6 +32,7 @@ The Blazor UI talks to the API over service discovery using the internal `https+
 | `GET` | `/api/platform/market-categories` | Read the saved applied-environment category catalogue, shared interest, and latest collection status (Viewer). |
 | `POST` | `/api/platform/market-categories/refresh` | Refresh the saved category catalogue inside the active schedule and allowance (Operator). |
 | `GET` | `/api/platform/market-categories/{categoryCode}/instruments?pageSize=50&cursor={opaque}` | Read one page from the versioned saved instrument snapshot (Viewer). |
+| `GET` | `/api/platform/market-categories/{categoryCode}/instruments/{epic}/market-details?listingVersion={version}` | Read one saved market-detail observation and independent coverage (Viewer). |
 | `PUT` | `/api/platform/market-categories/{categoryCode}/interest` | Update shared category interest using the expected interest revision (Operator). |
 | `GET` | `/api/platform/instrument-collection/status` | Read persisted collector schedule, budget, and safe outcomes (Viewer). |
 | `POST` | `/api/platform/auth/manual-retry` | Trigger a manual retry cycle when allowed for operator-capable users. |
@@ -135,6 +136,27 @@ schedule is inactive or another cycle owns the prerequisite, and safe
 `429`, `502`, `503`, or `504` Problem Details for allowance, provider-data,
 availability, or timeout failures. The saved catalogue and last-good
 instrument snapshots remain available after failure.
+
+### Saved market details
+
+`GET /api/platform/market-categories/{categoryCode}/instruments/{epic}/market-details`
+is Viewer-protected and reads SQL only for the applied broker environment.
+The optional `listingVersion` guards a link against a changed saved listing:
+the API returns `409 Conflict` when that supplied version is stale. A current
+category/EPIC membership with no validated observation returns a typed
+`NotCollected` result; a genuine absence from current membership returns
+`404 Not Found`; an unsupported applied environment returns a safe `503`.
+The response separates listing snapshot version/retrieval time from detail
+retrieval time, source endpoint/version, individual observation state, and
+aggregate/source coverage. An existing last-good observation remains
+available while its current status reports states such as `OutOfDate` or
+`Excluded`.
+
+Category/listing reads expose only compact, batched availability; they do not
+embed nested provider terms or quote snapshots. A saved detail response is an
+observation, not a live quote or trading instruction. It contains the
+validated instrument, dealing rules and snapshot, with explicit nullable vs.
+zero values and original provider units/text. No Viewer read refreshes IG.
 
 ## GET /
 

@@ -615,6 +615,10 @@ The current `PlatformDbContext` stores these entities:
 | `MarketCategoryInstrumentCollectionRunEntity` and `MarketCategoryInstrumentObservationEntity` | Complete run provenance and immutable instrument observations retained for analysis. |
 | `MarketCategoryInterestEntity` and `MarketCategoryInterestStateEntity` | Environment-scoped category interest and optimistic-concurrency revision. |
 | `InstrumentCollectionSettingsEntity`, `InstrumentCollectionCycleStateEntity`, and `InstrumentCollectionCategoryAttemptEntity` | Applied-environment frequency/allowance, durable cycle lease and request budget, and per-category retry/outcome state. |
+| `MarketDetailCollectionRunEntity`, `MarketDetailRunSourceEntity`, `MarketDetailRunTargetEntity`, and `MarketDetailRunMembershipEntity` | Frozen per-slot detail-run provenance, distinct EPIC targets, category memberships, leases, and retry outcomes. |
+| `MarketDetailObservationEntity` and `MarketDetailCurrentEntity` | Immutable validated provider observations and a mutable latest-good pointer, partitioned by broker environment. |
+| `MarketDetailEligibilityEntity` | Current exclusion/eligibility state; it is not a substitute for a successful observation. |
+| `IgProviderRateReservationEntity` | Shared rolling per-account and per-application IG request reservations; only scope hashes are retained. |
 | `DataProtectionKey` | Shared host key-ring material; not broker-environment retirement data. |
 
 ### Persistence relationships by responsibility
@@ -627,6 +631,8 @@ relationship classification is:
 | --- | --- |
 | Broker environment to protected credentials, schedule/retry/notification profiles, runtime state, retry cycles, proof data, latest login projection, retained login history, Account Preferences current state, and Account Preferences operation journal | **Mutable and purgeable**. Delete explicitly within the retired broker scope before marking the catalog record retired. |
 | Broker environment to configuration audits, operational events, notification records, Account Preferences desired-state audits, account retrieval headers, and account retrieval child accounts | **Historical evidence**. Retain under ordinary retention; do not cascade from catalog retirement. |
+| Broker environment to market-detail collection runs, sources, targets, memberships, and observations | **Historical analysis evidence**. Retain online in SQL indefinitely for this delivery, including after catalog retirement; no automatic purge or archive is configured. |
+| Broker environment to market-detail current and eligibility projections | **Mutable projections**. Explicitly purge during broker-environment retirement; this does not delete retained detail run history or observations. |
 | Account retrieval header to account retrieval child accounts | **Historical parent/child record**. Preserve both as a unit under ordinary retention; any future expiry operation must explicitly delete the approved parent and children together. |
 | Broker environment selection references and retained evidence references | **Restricted reference**. Do not cascade or silently rewrite history; retirement must leave the catalog identity addressable for diagnostics and audit. |
 | Defaults template and shared Data Protection keys | **Shared infrastructure state**. Retain independently of any broker-environment retirement. |

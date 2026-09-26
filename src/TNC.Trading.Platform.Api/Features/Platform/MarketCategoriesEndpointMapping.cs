@@ -30,7 +30,8 @@ internal static class MarketCategoriesEndpointMapping
                         categoryStatus?.LastSuccessfulCollectionAtUtc,
                         categoryStatus?.Attempts ?? 0,
                         categoryStatus?.Outcome,
-                        categoryStatus?.SafeFailure);
+                        categoryStatus?.SafeFailure,
+                        categoryStatus?.DetailCoverage?.ToResponse());
                 })
                 .ToList(),
             response.Snapshot?.LastRefreshedAtUtc,
@@ -99,4 +100,5 @@ internal sealed record MarketCategoryResponse(
     DateTimeOffset? LastSuccessfulCollectionAtUtc = null,
     int Attempts = 0,
     string? CollectionOutcome = null,
-    string? SafeFailure = null);
+    string? SafeFailure = null,
+    MarketDetailCoverageResponse? DetailCoverage = null);

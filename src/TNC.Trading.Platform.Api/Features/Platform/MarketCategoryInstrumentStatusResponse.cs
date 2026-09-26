@@ -24,4 +24,5 @@ internal sealed record MarketCategoryCollectionStatusResponse(
     DateTimeOffset? LastSuccessfulCollectionAtUtc,
     int Attempts,
     string? Outcome,
-    string? SafeFailure);
+    string? SafeFailure,
+    MarketDetailCoverageResponse? DetailCoverage);

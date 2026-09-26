@@ -105,6 +105,65 @@ Use the repository's [local development guide](local-development.md) for
 build, test, and Aspire run commands rather than duplicating setup instructions
 here.
 
+### Market-detail provider and request-budget coverage
+
+Infrastructure unit tests use sanitized IG v2 `filter=ALL` fixtures for the
+supplied ADAUSD and two-EPIC responses. They verify exact EPIC matching,
+complete typed section mapping, nullable and zero values, ordered nested
+terms, bounded/encoded batches, and safe rejection of malformed rows,
+overlength persisted values, and oversized JSON. Controlled HTTP tests also
+cover applied Demo/Live profile isolation, v2 session and market headers,
+one-time 401 replay, exact allowance-versus-auth 403 classification,
+rate-limit/transient outcomes, bounded timeout behavior, and the absence of
+single-market fallback for an unverified contract.
+
+SQL Server integration tests verify that each attempted IG request reserves
+the shared environment/day allowance, detail work is fenced independently
+from listing leases, failed EPIC attempts remain bounded across restarts, and
+independent rate-limit instances coordinate the 30-per-account and
+60-per-application rolling limits while persisting only scope hashes. The
+fixture-backed tests use controlled provider doubles; no real IG credentials
+or provider network access are used.
+
+### Market-detail SQL read and API coverage
+
+Application and SQL Server tests cover current category/EPIC membership,
+applied-environment isolation, optional listing-version checks, known
+not-collected targets, exclusions, last-good/out-of-date observations,
+category coverage counts, and bounded batched availability. API mapping tests
+protect the saved response shape, including separate listing/detail timestamps,
+source endpoint/version, typed instrument/dealing-rule/snapshot data and safe
+coverage fields. Route-policy and integration tests verify anonymous requests
+are challenged and both Viewer and Operator roles can use the Viewer-protected
+read. These reads use persisted SQL data only; they do not call IG, include
+nested details in listing rows, or expose provider headers, credentials or raw
+errors.
+
+Web component tests cover category and per-instrument coverage labels,
+not-collected deep links, detailed saved terms, UTC timestamps, zero and
+explicit-null formatting, multi-currency/margin-band tables, escaped provider
+notices, stale-version Reload, rapid route changes, and preservation of the
+selected listing page/EPIC on return. They assert one detail GET per selected
+EPIC, keep displayed snapshots when independent collection metadata fails,
+and verify accessible headings, status/alert roles, semantic times and
+responsive table overflow. A real-runtime functional deep-link test signs in
+as a Viewer and verifies that the controlled IG provider receives no request.
+
+`MarketDetailCapacityPolicyTests` exercises both a 384-target workload and a
+synthetic 15,000-target category-bound workload. For the latter, the current
+policy estimates 300 first-attempt bulk market calls, 600 no-retry requests
+including sessions, and 2,700 requests under its bounded three-attempt/401-
+replay reserve. This 2,700 total includes the market calls and associated
+session/replay work.
+This validates request-cost accounting only; it is not a SQL-scale benchmark
+or a guarantee that the configured allowance/window covers a real selected
+universe. SQL integration coverage verifies migration/index shape, a saved
+observation's serialized storage bounds, duplicate-membership deduplication,
+SQL-only reads, retirement history preservation, and shared limiter
+coordination. No full 15,000-row SQL write/history-latency benchmark has been
+run. Production capacity and retention remain release checks, not inferred
+from these fixture-based tests.
+
 | Project | Test type | Focus |
 | --- | --- | --- |
 | `test/TNC.Trading.Platform.Application/TNC.Trading.Platform.Application.UnitTests` | Unit | Pure retry timing, schedule evaluation, auth-state policy, use-case handlers, and application logic using fakes and in-memory state only. |

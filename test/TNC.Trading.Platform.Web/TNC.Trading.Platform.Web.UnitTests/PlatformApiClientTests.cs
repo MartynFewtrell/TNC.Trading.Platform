@@ -88,6 +88,80 @@ public sealed class PlatformApiClientTests
     }
 
     /// <summary>
+    /// Trace: Market Details Work Item 6, steps 2 and 6.
+    /// Verifies: the client performs one Viewer-scoped saved-detail GET and escapes both route values while preserving the optional listing-version precondition.
+    /// Expected: the typed saved state is parsed and the request uses the exact escaped route and version query.
+    /// Why: deep links must address the selected EPIC without relying on a listing cursor or initiating provider collection.
+    /// </summary>
+    [Fact]
+    public async Task GetMarketDetailAsync_ShouldEscapeRouteValuesAndSendListingVersion_WhenReadingSavedDetails()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            userName: "local-viewer",
+            apiResponses: _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, new
+            {
+                State = "NotCollected",
+                CategoryCode = "FX & CFDs",
+                Epic = "CS.D.ADA+USD.CFD.IP",
+                ListingSnapshotVersion = 7L,
+                ListingRetrievedAtUtc = DateTimeOffset.UtcNow,
+                Coverage = new
+                {
+                    IsFollowed = true,
+                    State = "Partial",
+                    ExpectedCount = 3,
+                    CompletedCount = 1,
+                    ExcludedCount = 0,
+                    OutstandingCount = 2,
+                    LastCompleteAtUtc = (DateTimeOffset?)null,
+                    NextScheduledCheckUtc = (DateTimeOffset?)null,
+                    SafeFailureCode = (string?)null
+                },
+                SavedObservation = (object?)null
+            }));
+        var client = context.Services.GetRequiredService<PlatformApiClient>();
+
+        var result = await client.GetMarketDetailAsync(
+            "FX & CFDs",
+            "CS.D.ADA+USD.CFD.IP",
+            7,
+            CancellationToken.None);
+
+        Assert.Equal("NotCollected", result.State);
+        Assert.Null(result.SavedObservation);
+        Assert.Single(context.ApiHandler.Requests);
+        var request = context.ApiHandler.Requests[0];
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Contains(
+            "/api/platform/market-categories/FX%20%26%20CFDs/instruments/CS.D.ADA%2BUSD.CFD.IP/market-details?listingVersion=7",
+            request.RequestUri,
+            StringComparison.Ordinal);
+        Assert.StartsWith("Bearer ", request.AuthorizationHeader, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: Market Details Work Item 6, step 5.
+    /// Verifies: stale-listing Problem Details remain a typed conflict at the Web API client boundary.
+    /// Expected: the presenter can offer a reload rather than displaying a successful stale selection.
+    /// Why: a detail link opened from an older listing page must not silently resolve against changed membership.
+    /// </summary>
+    [Fact]
+    public async Task GetMarketDetailAsync_ShouldPreserveConflictStatus_WhenListingVersionIsStale()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            userName: "local-viewer",
+            apiResponses: _ => PlatformWebTestData.CreateProblemResponse(
+                HttpStatusCode.Conflict,
+                new { title = "Conflict", detail = "Reload the current listing." }));
+        var client = context.Services.GetRequiredService<PlatformApiClient>();
+
+        var exception = await Assert.ThrowsAsync<PlatformApiException>(() =>
+            client.GetMarketDetailAsync("FX", "EPIC", 4, CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Conflict, exception.StatusCode);
+    }
+
+    /// <summary>
     /// Trace: Market Category Instruments Work Item 6, step 2.
     /// Verifies: shared interest updates use the protected Operator route and serialize the expected set revision.
     /// Expected: the returned revision is parsed and the PUT body contains both requested values.

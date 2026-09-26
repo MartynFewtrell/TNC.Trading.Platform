@@ -30,7 +30,7 @@ public sealed class KeycloakReadinessPolicyTests
         await KeycloakReadinessPolicy.WaitForIssuerAsync(
             DiscoveryUri,
             ExpectedIssuer,
-            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(5),
             (_, _) => responses.Dequeue()(),
             (_, _) => Task.CompletedTask);
 

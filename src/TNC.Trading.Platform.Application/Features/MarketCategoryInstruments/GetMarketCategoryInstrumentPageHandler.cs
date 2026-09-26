@@ -1,12 +1,14 @@
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
+using TNC.Trading.Platform.Application.Features.MarketDetails;
 
 namespace TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 
 internal sealed class GetMarketCategoryInstrumentPageHandler(
     IAppliedBrokerEnvironmentContextResolver appliedEnvironmentResolver,
     IMarketCategorySnapshotStore categorySnapshotStore,
-    IMarketCategoryInstrumentSnapshotReader snapshotReader)
+    IMarketCategoryInstrumentSnapshotReader snapshotReader,
+    IMarketDetailReader detailReader)
 {
     public async Task<GetMarketCategoryInstrumentPageResponse> HandleAsync(
         GetMarketCategoryInstrumentPageRequest request,
@@ -61,6 +63,29 @@ internal sealed class GetMarketCategoryInstrumentPageHandler(
                 null);
         }
 
-        return new(MarketCategoryInstrumentPageReadStatus.Page, environment, request.CategoryCode, page);
+        var availability = await detailReader.ReadAvailabilityAsync(
+            new(
+                environment,
+                request.CategoryCode,
+                page.Instruments.Select(item => item.Epic).ToArray(),
+                page.SnapshotVersion),
+            cancellationToken).ConfigureAwait(false);
+        if (!availability.ListingSnapshotExists
+            || !availability.ListingVersionMatches
+            || availability.Instruments.Count != page.Instruments.Count
+            || availability.Instruments.Any(item => !item.CurrentMembershipExists))
+        {
+            return new(
+                MarketCategoryInstrumentPageReadStatus.StaleCursor,
+                environment,
+                request.CategoryCode,
+                null);
+        }
+
+        return new(
+            MarketCategoryInstrumentPageReadStatus.Page,
+            environment,
+            request.CategoryCode,
+            page with { DetailAvailability = availability.Instruments });
     }
 }

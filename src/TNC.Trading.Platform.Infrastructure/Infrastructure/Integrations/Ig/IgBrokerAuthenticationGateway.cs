@@ -10,7 +10,8 @@ namespace TNC.Trading.Platform.Infrastructure.Integrations.Ig;
 internal sealed class IgBrokerAuthenticationGateway(
     HttpClient httpClient,
     IProtectedCredentialService protectedCredentialService,
-    IAppliedBrokerEnvironmentContextResolver? contextResolver = null) : IBrokerAuthenticationGateway
+    IAppliedBrokerEnvironmentContextResolver? contextResolver = null,
+    IgProviderRequestThrottle? throttle = null) : IBrokerAuthenticationGateway
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -50,6 +51,18 @@ internal sealed class IgBrokerAuthenticationGateway(
             var credentials = context is null
                 ? await protectedCredentialService.GetCredentialsAsync(request.Environment, cancellationToken).ConfigureAwait(false)
                 : await protectedCredentialService.GetCredentialsAsync(context.BrokerEnvironmentId, cancellationToken).ConfigureAwait(false);
+            if (throttle is not null
+                && !await throttle.WaitAsync(
+                    credentials.ApiKey,
+                    credentials.Identifier,
+                    DateTimeOffset.MaxValue,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                return BrokerAuthenticationOutcome.Failed(new BrokerAuthenticationFailure(
+                    BrokerAuthenticationFailureKind.RateLimited,
+                    "IG authentication failed: request pacing deadline elapsed."));
+            }
+
             using var sessionRequest = new HttpRequestMessage(HttpMethod.Post, "session");
             sessionRequest.Headers.Add("X-IG-API-KEY", credentials.ApiKey);
             sessionRequest.Headers.Accept.ParseAdd("application/json; charset=UTF-8");
@@ -94,6 +107,7 @@ internal sealed class IgBrokerAuthenticationGateway(
                 clientSessionToken,
                 accountSecurityToken,
                 credentials.ApiKey,
+                credentials.Identifier,
                 cancellationToken).ConfigureAwait(false);
 
             return BrokerAuthenticationOutcome.Succeeded(evidence, proof);
@@ -132,10 +146,21 @@ internal sealed class IgBrokerAuthenticationGateway(
         string clientSessionToken,
         string accountSecurityToken,
         string clientCredential,
+        string accountIdentifier,
         CancellationToken cancellationToken)
     {
         try
         {
+            if (throttle is not null
+                && !await throttle.WaitAsync(
+                    clientCredential,
+                    accountIdentifier,
+                    DateTimeOffset.MaxValue,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
             using var accountsRequest = CreateSessionRequest(
                 "accounts", "1", clientSessionToken, accountSecurityToken, clientCredential);
             using var accountsResponse = await httpClient.SendAsync(accountsRequest, cancellationToken).ConfigureAwait(false);
@@ -147,6 +172,16 @@ internal sealed class IgBrokerAuthenticationGateway(
             var accounts = await accountsResponse.Content
                 .ReadFromJsonAsync<IgAccountsResponseBody>(JsonOptions, cancellationToken)
                 .ConfigureAwait(false);
+
+            if (throttle is not null
+                && !await throttle.WaitAsync(
+                    clientCredential,
+                    accountIdentifier,
+                    DateTimeOffset.MaxValue,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
 
             using var positionsRequest = CreateSessionRequest(
                 "positions", "2", clientSessionToken, accountSecurityToken, clientCredential);

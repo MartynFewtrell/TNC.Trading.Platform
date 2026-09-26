@@ -26,7 +26,9 @@ public sealed class AccountPreferencesFunctionalTests
         currentState.TryGetProperty("desiredRevision", out var currentRevision);
         using var response = await SendAsync(client, HttpMethod.Put, "/api/platform/account-preferences", new { trailingStopsEnabled = true, expectedRevision = currentRevision.ValueKind == JsonValueKind.Number ? currentRevision.GetInt64() : (long?)null }, Guid.NewGuid().ToString("N"));
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(
+            response.StatusCode == HttpStatusCode.OK,
+            $"Expected OK but received {response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
         var state = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(fixture.Provider.AccountId, state.GetProperty("accountId").GetString());
         Assert.True(state.GetProperty("desiredTrailingStopsEnabled").GetBoolean());

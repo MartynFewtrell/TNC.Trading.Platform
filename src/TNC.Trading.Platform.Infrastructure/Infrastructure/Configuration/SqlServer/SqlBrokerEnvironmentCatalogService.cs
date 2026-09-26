@@ -168,6 +168,17 @@ internal sealed class SqlBrokerEnvironmentCatalogService(
         await dbContext.IgLoginSnapshots.Where(item => item.BrokerEnvironmentId == command.BrokerEnvironmentId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
         await dbContext.AccountPreferencesCurrentStates.Where(item => item.BrokerEnvironmentId == command.BrokerEnvironmentId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
         await dbContext.AccountPreferencesOperations.Where(item => item.BrokerEnvironmentId == command.BrokerEnvironmentId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
+        await dbContext.MarketDetailCurrent.Where(item => item.BrokerEnvironmentId == command.BrokerEnvironmentId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
+        await dbContext.MarketDetailEligibility.Where(item => item.BrokerEnvironmentId == command.BrokerEnvironmentId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
+        await dbContext.MarketDetailCollectionRuns
+            .Where(item => item.BrokerEnvironmentId == command.BrokerEnvironmentId && (item.Status == "Collecting" || item.Status == "Paused"))
+            .ExecuteUpdateAsync(update => update
+                .SetProperty(item => item.Status, "Superseded")
+                .SetProperty(item => item.LeaseOwner, (Guid?)null)
+                .SetProperty(item => item.LeaseExpiresAtUtc, (DateTimeOffset?)null)
+                .SetProperty(item => item.SafeReasonCode, "EnvironmentRetired")
+                .SetProperty(item => item.UpdatedAtUtc, timeProvider.GetUtcNow()), cancellationToken)
+            .ConfigureAwait(false);
         entity.Lifecycle = "Retired";
         entity.Availability = "Unavailable";
         entity.AvailabilityReason = "Retired by an administrator.";
@@ -193,7 +204,9 @@ internal sealed class SqlBrokerEnvironmentCatalogService(
         ["ProofData"] = await dbContext.IgProofData.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false),
         ["LoginSnapshots"] = await dbContext.IgLoginSnapshots.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false),
         ["AccountPreferencesCurrentState"] = await dbContext.AccountPreferencesCurrentStates.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false),
-        ["AccountPreferencesOperations"] = await dbContext.AccountPreferencesOperations.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false)
+        ["AccountPreferencesOperations"] = await dbContext.AccountPreferencesOperations.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false),
+        ["MarketDetailCurrent"] = await dbContext.MarketDetailCurrent.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false),
+        ["MarketDetailEligibility"] = await dbContext.MarketDetailEligibility.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false)
     };
 
     private async Task<Dictionary<string, int>> GetRetainedCountsAsync(BrokerEnvironmentEntity entity, Guid id, CancellationToken cancellationToken) => new()
@@ -204,7 +217,12 @@ internal sealed class SqlBrokerEnvironmentCatalogService(
         ["AccountRetrievals"] = await dbContext.AccountDetailsRetrievals.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false),
         ["AccountDetailsAccounts"] = await dbContext.AccountDetailsAccounts.CountAsync(item => item.Retrieval.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false),
         ["PreferenceObservations"] = await dbContext.TrailingStopsPreferenceObservations.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false),
-        ["DesiredStateAudits"] = await dbContext.AccountPreferencesDesiredStateAudits.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false)
+        ["DesiredStateAudits"] = await dbContext.AccountPreferencesDesiredStateAudits.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false),
+        ["MarketDetailCollectionRuns"] = await dbContext.MarketDetailCollectionRuns.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false),
+        ["MarketDetailRunSources"] = await dbContext.MarketDetailRunSources.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false),
+        ["MarketDetailRunTargets"] = await dbContext.MarketDetailRunTargets.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false),
+        ["MarketDetailRunMemberships"] = await dbContext.MarketDetailRunMemberships.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false),
+        ["MarketDetailObservations"] = await dbContext.MarketDetailObservations.CountAsync(item => item.BrokerEnvironmentId == id, cancellationToken).ConfigureAwait(false)
     };
 
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));

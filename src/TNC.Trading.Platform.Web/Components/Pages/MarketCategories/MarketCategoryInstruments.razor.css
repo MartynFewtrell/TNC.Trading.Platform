@@ -9,6 +9,26 @@
     margin-bottom: 0;
 }
 
+.market-detail-category-coverage,
+.market-detail-availability {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem 0.75rem;
+    flex-wrap: wrap;
+}
+
+.market-detail-category-coverage {
+    margin-top: 0.75rem;
+}
+
+.market-detail-availability {
+    margin-bottom: 1rem;
+}
+
+.market-detail-availability a {
+    margin-inline-start: auto;
+}
+
 .platform-page-header {
     flex-wrap: wrap;
     gap: 0.5rem 1rem;

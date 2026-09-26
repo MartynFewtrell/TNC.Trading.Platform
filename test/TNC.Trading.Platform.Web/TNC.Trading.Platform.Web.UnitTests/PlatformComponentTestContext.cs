@@ -123,6 +123,7 @@ internal sealed class PlatformComponentTestContext : Bunit.BunitContext
         Services.AddScoped<AccountDetailsPagePresenter>();
         Services.AddScoped<MarketCategoriesPagePresenter>();
         Services.AddScoped<MarketCategoryInstrumentsPagePresenter>();
+        Services.AddScoped<MarketDetailsPagePresenter>();
         Services.AddScoped<AccountPreferencesPagePresenter>();
 
         var shellContextProvider = new PlatformShellContextProvider(

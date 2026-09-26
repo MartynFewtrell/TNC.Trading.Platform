@@ -37,6 +37,11 @@ public sealed class MarketCategoryInstrumentsTests
             Assert.Contains("FX &amp; CFD", cut.Markup, StringComparison.Ordinal);
             Assert.Contains("EPIC-1", cut.Markup, StringComparison.Ordinal);
             Assert.Contains("10:15:00", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Market details coverage:", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Not collected", cut.Find("[data-testid='market-detail-availability']").TextContent, StringComparison.Ordinal);
+            Assert.Equal(
+                "/market-categories/FX/instruments/EPIC-1/market-details?listingVersion=4",
+                cut.Find("a[href*='/market-details']").GetAttribute("href"));
             Assert.Equal(["FX & CFD"], cut.FindAll("[role='tab']").Select(tab => tab.TextContent.Trim()).ToArray());
             Assert.Empty(cut.FindAll("table"));
             Assert.Contains("Underlying", cut.Find("[data-testid='market-category-instrument']").TextContent, StringComparison.Ordinal);
@@ -72,14 +77,19 @@ public sealed class MarketCategoryInstrumentsTests
             Assert.Contains("Last successful collection:", summary.TextContent, StringComparison.Ordinal);
             Assert.Contains("Next scheduled collection check:", summary.TextContent, StringComparison.Ordinal);
             var times = cut.FindAll("time");
-            Assert.Equal(3, times.Count);
+            Assert.Equal(4, times.Count);
             Assert.Equal(2, summary.QuerySelectorAll("time").Length);
-            Assert.All(times, time =>
+            var localSnapshotTimes = cut.FindAll(".instrument-collection-summary time")
+                .Concat(cut.FindAll("[data-testid='market-category-instruments-saved'] time"));
+            Assert.All(localSnapshotTimes, time =>
             {
                 Assert.Equal(SnapshotTime.ToString("O"), time.GetAttribute("datetime"));
                 Assert.Equal(SnapshotTime.ToLocalTime().ToString("g"), time.TextContent);
                 Assert.DoesNotContain(" UTC", time.TextContent, StringComparison.Ordinal);
             });
+            Assert.Equal(
+                "2026-09-25 09:34:47 UTC",
+                cut.Find("[data-testid='market-detail-category-coverage'] time").TextContent);
         });
     }
 
@@ -198,6 +208,8 @@ public sealed class MarketCategoryInstrumentsTests
         {
             Assert.Contains("EPIC-1", cut.Markup, StringComparison.Ordinal);
             Assert.Contains("Unable to load category details", cut.Find("[data-testid='market-category-instruments-metadata-error']").TextContent, StringComparison.Ordinal);
+            Assert.Contains("Not collected", cut.Find("[data-testid='market-detail-availability']").TextContent, StringComparison.Ordinal);
+            Assert.NotEmpty(cut.FindAll("a[href*='/market-details']"));
         });
     }
 
@@ -290,7 +302,13 @@ public sealed class MarketCategoryInstrumentsTests
         NetChange = 0.1m,
         PercentageChange = 1m,
         UpdateTime = "10:15:00",
-        Popularity = 20L
+        Popularity = 20L,
+        MarketDetails = new
+        {
+            State = "NotCollected",
+            DetailRetrievedAtUtc = (DateTimeOffset?)null,
+            SafeFailureCode = (string?)null
+        }
     };
 
     private static object CreateCategories() => new
@@ -305,7 +323,19 @@ public sealed class MarketCategoryInstrumentsTests
                 LastSuccessfulCollectionAtUtc = SnapshotTime,
                 Attempts = 1,
                 CollectionOutcome = "Complete",
-                SafeFailure = (string?)null
+                SafeFailure = (string?)null,
+                DetailCoverage = new
+                {
+                    IsFollowed = true,
+                    State = "Partial",
+                    ExpectedCount = 2,
+                    CompletedCount = 1,
+                    ExcludedCount = 0,
+                    OutstandingCount = 1,
+                    LastCompleteAtUtc = SnapshotTime,
+                    NextScheduledCheckUtc = (DateTimeOffset?)null,
+                    SafeFailureCode = (string?)null
+                }
             }
         },
         LastRefreshedAtUtc = DateTimeOffset.UtcNow,

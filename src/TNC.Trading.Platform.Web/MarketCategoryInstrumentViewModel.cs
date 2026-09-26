@@ -19,4 +19,5 @@ internal sealed record MarketCategoryInstrumentViewModel(
     decimal? NetChange,
     decimal? PercentageChange,
     string? UpdateTime,
-    long? Popularity);
+    long? Popularity,
+    MarketDetailAvailabilityViewModel? MarketDetails = null);

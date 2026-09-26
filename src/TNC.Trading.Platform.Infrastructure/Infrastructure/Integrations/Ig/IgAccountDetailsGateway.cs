@@ -11,7 +11,8 @@ namespace TNC.Trading.Platform.Infrastructure.Integrations.Ig;
 internal sealed class IgAccountDetailsGateway(
     HttpClient httpClient,
     IProtectedCredentialService protectedCredentialService,
-    IAppliedBrokerEnvironmentContextResolver? contextResolver = null) : IAccountDetailsGateway
+    IAppliedBrokerEnvironmentContextResolver? contextResolver = null,
+    IgProviderRequestThrottle? throttle = null) : IAccountDetailsGateway
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
@@ -26,11 +27,11 @@ internal sealed class IgAccountDetailsGateway(
                 ? await protectedCredentialService.GetCredentialsAsync(BrokerEnvironmentKind.Demo, cancellationToken).ConfigureAwait(false)
                 : await protectedCredentialService.GetCredentialsAsync(context.BrokerEnvironmentId, cancellationToken).ConfigureAwait(false);
             var session = await CreateSessionAsync(credentials, cancellationToken).ConfigureAwait(false);
-            var response = await GetAccountsAsync(credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);
+            var response = await GetAccountsAsync(credentials.ApiKey, credentials.Identifier, session, cancellationToken).ConfigureAwait(false);
             if (response.Unauthorized)
             {
                 session = await CreateSessionAsync(credentials, cancellationToken).ConfigureAwait(false);
-                response = await GetAccountsAsync(credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);
+                response = await GetAccountsAsync(credentials.ApiKey, credentials.Identifier, session, cancellationToken).ConfigureAwait(false);
             }
             return response.Result;
         }
@@ -42,6 +43,12 @@ internal sealed class IgAccountDetailsGateway(
 
     private async Task<Session> CreateSessionAsync(IgCredentials credentials, CancellationToken cancellationToken)
     {
+        if (throttle is not null
+            && !await throttle.WaitAsync(credentials.ApiKey, credentials.Identifier, DateTimeOffset.MaxValue, cancellationToken).ConfigureAwait(false))
+        {
+            throw new HttpRequestException("IG session request could not be paced before its deadline.");
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, "session");
         request.Headers.Add("X-IG-API-KEY", credentials.ApiKey);
         request.Headers.Add("Version", "2");
@@ -56,8 +63,18 @@ internal sealed class IgAccountDetailsGateway(
         return new(cst, securityToken);
     }
 
-    private async Task<(AccountDetailsGatewayResult Result, bool Unauthorized)> GetAccountsAsync(string apiKey, Session session, CancellationToken cancellationToken)
+    private async Task<(AccountDetailsGatewayResult Result, bool Unauthorized)> GetAccountsAsync(
+        string apiKey,
+        string accountIdentifier,
+        Session session,
+        CancellationToken cancellationToken)
     {
+        if (throttle is not null
+            && !await throttle.WaitAsync(apiKey, accountIdentifier, DateTimeOffset.MaxValue, cancellationToken).ConfigureAwait(false))
+        {
+            throw new HttpRequestException("IG account-details request could not be paced before its deadline.");
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Get, "accounts");
         request.Headers.Add("X-IG-API-KEY", apiKey);
         request.Headers.Add("CST", session.Cst);

@@ -1,0 +1,249 @@
+{
+  "marketDetails": [
+    {
+      "instrument": {
+        "epic": "CS.D.ETHUSD.CFD.IP",
+        "expiry": "-",
+        "name": "Ether ($1)",
+        "forceOpenAllowed": true,
+        "stopsLimitsAllowed": true,
+        "lotSize": 1.0,
+        "unit": "CONTRACTS",
+        "type": "CURRENCIES",
+        "controlledRiskAllowed": true,
+        "streamingPricesAvailable": true,
+        "marketId": "ETHUSD",
+        "currencies": [
+          {
+            "code": "USD",
+            "symbol": "$",
+            "baseExchangeRate": 1.3245565,
+            "exchangeRate": 0.66,
+            "isDefault": false
+          }
+        ],
+        "sprintMarketsMinimumExpiryTime": null,
+        "sprintMarketsMaximumExpiryTime": null,
+        "marginDepositBands": [
+          {
+            "min": 0,
+            "max": 299,
+            "margin": 100,
+            "currency": "USD"
+          },
+          {
+            "min": 299,
+            "max": 598,
+            "margin": 100,
+            "currency": "USD"
+          },
+          {
+            "min": 598,
+            "max": 897,
+            "margin": 100,
+            "currency": "USD"
+          },
+          {
+            "min": 897,
+            "max": null,
+            "margin": 100,
+            "currency": "USD"
+          }
+        ],
+        "marginFactor": 100,
+        "marginFactorUnit": "PERCENTAGE",
+        "slippageFactor": {
+          "unit": "pct",
+          "value": 100.0
+        },
+        "limitedRiskPremium": {
+          "value": 3,
+          "unit": "POINTS"
+        },
+        "openingHours": null,
+        "expiryDetails": null,
+        "rolloverDetails": null,
+        "newsCode": "ETH=",
+        "chartCode": "ETH",
+        "country": null,
+        "valueOfOnePip": "1.00",
+        "onePipMeans": "1",
+        "contractSize": "1",
+        "specialInfo": [
+          "DEFAULT KNOCK OUT LEVEL DISTANCE",
+          "MIN KNOCK OUT LEVEL DISTANCE",
+          "MAX KNOCK OUT LEVEL DISTANCE",
+          "Daily funding 7 days a week - pay 0.0753% when long, receive 0.0342% when short.",
+          "There is a limit of £5,000,000 notional value per client across all cryptocurrencies.",
+          "Any client with a notional size above this limit is at risk of having their cryptocurrency positions reduced.",
+          "Quoted 24/7"
+        ]
+      },
+      "dealingRules": {
+        "minStepDistance": {
+          "unit": "POINTS",
+          "value": 10.0
+        },
+        "minDealSize": {
+          "unit": "POINTS",
+          "value": 1.0E-4
+        },
+        "minControlledRiskStopDistance": {
+          "unit": "PERCENTAGE",
+          "value": 10.0
+        },
+        "minNormalStopOrLimitDistance": {
+          "unit": "PERCENTAGE",
+          "value": 1.0
+        },
+        "maxStopOrLimitDistance": {
+          "unit": "PERCENTAGE",
+          "value": 90.0
+        },
+        "controlledRiskSpacing": {
+          "unit": "POINTS",
+          "value": 20.0
+        },
+        "marketOrderPreference": "AVAILABLE_DEFAULT_OFF",
+        "trailingStopsPreference": "AVAILABLE"
+      },
+      "snapshot": {
+        "marketStatus": "TRADEABLE",
+        "netChange": 3.2,
+        "percentageChange": 0.12,
+        "updateTime": "18:27:53",
+        "delayTime": 0,
+        "bid": 2689.3,
+        "offer": 2690.7,
+        "high": 2742.5,
+        "low": 2666.7,
+        "binaryOdds": null,
+        "decimalPlacesFactor": 1,
+        "scalingFactor": 1,
+        "controlledRiskExtraSpread": null
+      }
+    },
+    {
+      "instrument": {
+        "epic": "CS.D.LTCUSD.CFD.IP",
+        "expiry": "-",
+        "name": "Litecoin ($1)",
+        "forceOpenAllowed": true,
+        "stopsLimitsAllowed": true,
+        "lotSize": 1.0,
+        "unit": "CONTRACTS",
+        "type": "CURRENCIES",
+        "controlledRiskAllowed": true,
+        "streamingPricesAvailable": true,
+        "marketId": "LTCUSD",
+        "currencies": [
+          {
+            "code": "USD",
+            "symbol": "$",
+            "baseExchangeRate": 1.3245565,
+            "exchangeRate": 0.66,
+            "isDefault": false
+          }
+        ],
+        "sprintMarketsMinimumExpiryTime": null,
+        "sprintMarketsMaximumExpiryTime": null,
+        "marginDepositBands": [
+          {
+            "min": 0,
+            "max": 2375,
+            "margin": 100,
+            "currency": "USD"
+          },
+          {
+            "min": 2375,
+            "max": 4750,
+            "margin": 100,
+            "currency": "USD"
+          },
+          {
+            "min": 4750,
+            "max": 7125,
+            "margin": 100,
+            "currency": "USD"
+          },
+          {
+            "min": 7125,
+            "max": null,
+            "margin": 100,
+            "currency": "USD"
+          }
+        ],
+        "marginFactor": 100,
+        "marginFactorUnit": "PERCENTAGE",
+        "slippageFactor": {
+          "unit": "pct",
+          "value": 100.0
+        },
+        "limitedRiskPremium": {
+          "value": 0.9,
+          "unit": "POINTS"
+        },
+        "openingHours": null,
+        "expiryDetails": null,
+        "rolloverDetails": null,
+        "newsCode": "LTC=",
+        "chartCode": null,
+        "country": null,
+        "valueOfOnePip": "1.00",
+        "onePipMeans": "1",
+        "contractSize": "1",
+        "specialInfo": [
+          "DEFAULT KNOCK OUT LEVEL DISTANCE",
+          "MIN KNOCK OUT LEVEL DISTANCE",
+          "MAX KNOCK OUT LEVEL DISTANCE",
+          "There is a limit of £5,000,000 notional value per client across all cryptocurrencies.",
+          "Any client with a notional size above this limit is at risk of having their cryptocurrency positions reduced.",
+          "Quoted 24/7"
+        ]
+      },
+      "dealingRules": {
+        "minStepDistance": {
+          "unit": "POINTS",
+          "value": 1.0
+        },
+        "minDealSize": {
+          "unit": "POINTS",
+          "value": 0.1
+        },
+        "minControlledRiskStopDistance": {
+          "unit": "PERCENTAGE",
+          "value": 10.0
+        },
+        "minNormalStopOrLimitDistance": {
+          "unit": "PERCENTAGE",
+          "value": 2.5
+        },
+        "maxStopOrLimitDistance": {
+          "unit": "PERCENTAGE",
+          "value": 75.0
+        },
+        "controlledRiskSpacing": {
+          "unit": "POINTS",
+          "value": 10.0
+        },
+        "marketOrderPreference": "AVAILABLE_DEFAULT_OFF",
+        "trailingStopsPreference": "AVAILABLE"
+      },
+      "snapshot": {
+        "marketStatus": "TRADEABLE",
+        "netChange": -0.6,
+        "percentageChange": -0.84,
+        "updateTime": "18:27:55",
+        "delayTime": 0,
+        "bid": 70.53,
+        "offer": 70.83,
+        "high": 72.50,
+        "low": 68.90,
+        "binaryOdds": null,
+        "decimalPlacesFactor": 2,
+        "scalingFactor": 1,
+        "controlledRiskExtraSpread": null
+      }
+    }
+  ]
+}

@@ -2,6 +2,7 @@ using System.Data;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.MarketDetails;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 
@@ -430,6 +431,168 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         return true;
     }
 
+    internal async Task<bool> IsDetailRequestLeaseActiveAsync(
+        MarketDetailRequestBudgetContext context,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        if (!IsValidDetailBudgetContext(context, nowUtc))
+        {
+            return false;
+        }
+
+        var environmentId = await ResolveEnvironmentIdAsync(context.Environment, cancellationToken).ConfigureAwait(false);
+        var run = await dbContext.MarketDetailCollectionRuns.AsNoTracking()
+            .SingleOrDefaultAsync(item =>
+                item.RunId == context.RunId
+                && item.BrokerEnvironmentId == environmentId
+                && item.TradingDay == context.TradingDay
+                && item.ScheduledSlot == context.SlotIndex
+                && item.Status == "Collecting"
+                && item.EndpointProfile == context.AppliedEndpointProfile
+                && item.ScheduleRevision == context.ScheduleRevision
+                && item.WindowEndUtc == context.WindowEndUtc
+                && item.LeaseOwner == context.LeaseOwner
+                && item.LeaseFence == context.LeaseFence
+                && item.LeaseExpiresAtUtc > nowUtc,
+                cancellationToken).ConfigureAwait(false);
+        if (run is null)
+        {
+            return false;
+        }
+
+        var cycle = await FindCycleAsync(
+            environmentId, context.TradingDay, context.SlotIndex, cancellationToken).ConfigureAwait(false);
+        if (cycle is null
+            || cycle.ScheduleRevision != context.ScheduleRevision
+            || cycle.CategoryPrerequisite != "Succeeded"
+            || !await EfMarketDetailSourceRevisionGuard.IsCurrentAsync(
+                dbContext, environmentId, run, cycle, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        await EfMarketCategoryInstrumentEnvironmentResolver.VerifyAppliedAtCommitAsync(
+            dbContext,
+            contextResolver,
+            environmentId,
+            context.Environment,
+            context.AppliedEndpointProfile,
+            cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    internal async Task<int?> GetRemainingDetailRequestBudgetAsync(
+        MarketDetailRequestBudgetContext context,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        if (!await IsDetailRequestLeaseActiveAsync(context, nowUtc, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var environmentId = await ResolveEnvironmentIdAsync(context.Environment, cancellationToken).ConfigureAwait(false);
+        var allowance = await dbContext.InstrumentCollectionSettings.AsNoTracking()
+            .Where(item => item.BrokerEnvironmentId == environmentId)
+            .Select(item => item.ApprovedNonTradingDailyRequestAllowance)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (allowance is null)
+        {
+            return null;
+        }
+
+        var used = await dbContext.InstrumentCollectionCycleStates.AsNoTracking()
+            .Where(item => item.BrokerEnvironmentId == environmentId && item.TradingDay == context.TradingDay)
+            .SumAsync(item => (int?)item.UsedRequestBudget, cancellationToken).ConfigureAwait(false) ?? 0;
+        return (int)Math.Max(0L, (long)allowance.Value - used);
+    }
+
+    internal async Task<bool> TryConsumeDetailRequestBudgetAsync(
+        MarketDetailRequestBudgetContext context,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        if (!IsValidDetailBudgetContext(context, nowUtc))
+        {
+            return false;
+        }
+
+        var environmentId = await ResolveEnvironmentIdAsync(context.Environment, cancellationToken).ConfigureAwait(false);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        await MarketCategoryInstrumentSqlLock.AcquireAsync(
+            dbContext,
+            GetBudgetLockResource(environmentId, context.TradingDay),
+            "Exclusive",
+            cancellationToken).ConfigureAwait(false);
+
+        var allowance = await dbContext.InstrumentCollectionSettings
+            .Where(item => item.BrokerEnvironmentId == environmentId)
+            .Select(item => item.ApprovedNonTradingDailyRequestAllowance)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (allowance is null or <= 0)
+        {
+            return false;
+        }
+
+        var run = await dbContext.MarketDetailCollectionRuns.SingleOrDefaultAsync(item =>
+            item.RunId == context.RunId
+            && item.BrokerEnvironmentId == environmentId
+            && item.TradingDay == context.TradingDay
+            && item.ScheduledSlot == context.SlotIndex
+            && item.Status == "Collecting"
+            && item.EndpointProfile == context.AppliedEndpointProfile
+            && item.ScheduleRevision == context.ScheduleRevision
+            && item.WindowEndUtc == context.WindowEndUtc
+            && item.LeaseOwner == context.LeaseOwner
+            && item.LeaseFence == context.LeaseFence
+            && item.LeaseExpiresAtUtc > nowUtc,
+            cancellationToken).ConfigureAwait(false);
+        var cycle = await FindCycleAsync(
+            environmentId, context.TradingDay, context.SlotIndex, cancellationToken).ConfigureAwait(false);
+        if (run is null
+            || cycle is null
+            || cycle.ScheduleRevision != context.ScheduleRevision
+            || cycle.CategoryPrerequisite != "Succeeded")
+        {
+            return false;
+        }
+
+        if (!await EfMarketDetailSourceRevisionGuard.IsCurrentAsync(
+                dbContext, environmentId, run, cycle, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        var usedToday = await dbContext.InstrumentCollectionCycleStates
+            .Where(item => item.BrokerEnvironmentId == environmentId && item.TradingDay == context.TradingDay)
+            .SumAsync(item => (int?)item.UsedRequestBudget, cancellationToken).ConfigureAwait(false) ?? 0;
+        if ((long)usedToday + 1 > allowance.Value)
+        {
+            return false;
+        }
+
+        run.LeaseExpiresAtUtc = Min(nowUtc.AddMinutes(2), run.WindowEndUtc);
+        run.UpdatedAtUtc = nowUtc;
+        cycle.UsedRequestBudget = checked(cycle.UsedRequestBudget + 1);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await EfMarketCategoryInstrumentEnvironmentResolver.VerifyAppliedAtCommitAsync(
+            dbContext,
+            contextResolver,
+            environmentId,
+            context.Environment,
+            context.AppliedEndpointProfile,
+            cancellationToken).ConfigureAwait(false);
+        if (Clock.GetUtcNow().ToUniversalTime() >= context.WindowEndUtc)
+        {
+            throw new InvalidOperationException("The trading window closed before request budget reservation.");
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
     public async Task<bool> TryConsumeManualRequestBudgetAsync(
         BrokerEnvironmentKind environment,
         DateOnly tradingDay,
@@ -665,6 +828,21 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         && state.LeaseOwner == owner
         && state.LeaseFence == fence
         && state.LeaseExpiresAtUtc > nowUtc;
+
+    private static bool IsValidDetailBudgetContext(
+        MarketDetailRequestBudgetContext context,
+        DateTimeOffset nowUtc) =>
+        context.RunId != Guid.Empty
+        && context.LeaseOwner != Guid.Empty
+        && context.LeaseFence > 0
+        && context.ScheduleRevision > 0
+        && context.EffectiveUpdatesPerDay is >= 1 and <= 4
+        && !string.IsNullOrWhiteSpace(context.AppliedEndpointProfile)
+        && context.WindowEndUtc.Offset == TimeSpan.Zero
+        && nowUtc.Offset == TimeSpan.Zero
+        && nowUtc < context.WindowEndUtc;
+
+    private static DateTimeOffset Min(DateTimeOffset left, DateTimeOffset right) => left <= right ? left : right;
 
     private static void ValidateLeaseRequest(int slot, long scheduleRevision, Guid owner, DateTimeOffset nowUtc, TimeSpan duration)
     {

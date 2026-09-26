@@ -14,6 +14,7 @@ using TNC.Trading.Platform.Application.Features.AccountDetails;
 using TNC.Trading.Platform.Application.Features.AccountPreferences;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDetails;
 using TNC.Trading.Platform.Application.Features.BrokerEnvironments;
 using TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent.Ports;
 using TNC.Trading.Platform.Application.Services;
@@ -124,14 +125,25 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         services.AddScoped<IMarketCategoryInstrumentCycleStore>(provider =>
             provider.GetRequiredService<EfMarketCategoryInstrumentCycleStore>());
         services.AddScoped<IMarketCategoryInstrumentRequestBudget, EfMarketCategoryInstrumentRequestBudget>();
+        services.AddScoped<EfMarketDetailReadStore>();
+        services.AddScoped<IMarketDetailReader>(provider => provider.GetRequiredService<EfMarketDetailReadStore>());
         services.AddScoped<IMarketCategoryInstrumentStatusReader, EfMarketCategoryInstrumentStatusReader>();
-        services.AddSingleton<IgProviderRequestThrottle>();
+        services.AddScoped<EfMarketDetailRunStore>();
+        services.AddScoped<IMarketDetailRunStore>(provider => provider.GetRequiredService<EfMarketDetailRunStore>());
+        services.AddScoped<IMarketDetailObservationWriter>(provider => provider.GetRequiredService<EfMarketDetailRunStore>());
+        services.AddScoped<IMarketDetailListingSourceReader, EfMarketDetailListingSourceReader>();
+        services.AddScoped<IMarketDetailRequestBudget, EfMarketDetailRequestBudget>();
+        services.AddScoped<IgProviderRequestThrottle>();
         services.AddHttpClient<IAccountDetailsGateway, IgAccountDetailsGateway>(client =>
         {
             client.BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/");
         });
         services.AddHttpClient<IMarketCategoriesGateway, IgMarketCategoriesGateway>();
         services.AddHttpClient<IMarketCategoryInstrumentsGateway, IgMarketCategoryInstrumentsGateway>();
+        services.AddHttpClient<IMarketDetailsGateway, IgMarketDetailsGateway>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(15);
+        });
         var accountPreferencesBaseUrl = configuration["Ig:AccountPreferencesBaseUrl"];
         if (!Uri.TryCreate(accountPreferencesBaseUrl, UriKind.Absolute, out var parsedAccountPreferencesBaseUrl)
             || parsedAccountPreferencesBaseUrl.Scheme is not ("http" or "https")

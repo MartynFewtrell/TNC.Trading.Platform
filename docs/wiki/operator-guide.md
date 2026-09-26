@@ -45,7 +45,8 @@ The left navigation still changes based on the signed-in operator role.
 `/market-categories` reads the current applied environment's saved SQL
 catalogue. It does not call IG or offer a manual category refresh; the
 schedule-gated worker refreshes categories automatically. The instrument
-collection status appears above saved categories. Category codes are links to
+collection status appears above saved categories, with independent detail
+coverage and its last-complete time. Category codes are links to
 their saved instruments without an additional suffix or underline. Viewers
 see category interest as a disabled checkbox; Operators can select or clear an
 accessible, visually unlabelled checkbox for each current
@@ -88,6 +89,24 @@ shown as IG-supplied text. Collector status reports schedule, next wake-up,
 request budget, collection outcome, and safe failure state; it does not expose
 credentials or raw provider diagnostics. Failure to load status is shown
 separately and does not blank successfully loaded category or instrument data.
+
+Each instrument tab links to
+`/market-categories/{CategoryCode}/instruments/{Epic}/market-details`, which
+loads one saved observation for the selected EPIC. The detail page begins with
+source and coverage status, then shows stored terms and a historical quote
+snapshot; it is not live pricing and offers no trading controls. Platform
+retrieval times are UTC, while IG's unzoned `updateTime` remains provider text.
+Reload repeats the Viewer SQL read and never refreshes IG. Back navigation
+preserves the selected instrument/page while that listing presenter remains
+available; a direct deep link returns to the saved category listing.
+
+Collection can remain blocked or incomplete when the distinct selected
+universe exceeds the remaining shared daily allowance or active slot capacity.
+The per-category 15,000 listing bound and 50-target bulk chunk do not guarantee
+full coverage. No detail-history cleanup or archive is configured; operators
+must monitor SQL storage and latency. Production use that depends on
+indefinite market-detail retention or redistribution is blocked pending
+confirmation of the applicable IG agreement.
 
 ## Broker environment catalog
 

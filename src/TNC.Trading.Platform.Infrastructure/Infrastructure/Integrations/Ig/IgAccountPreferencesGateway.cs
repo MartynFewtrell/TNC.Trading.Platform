@@ -8,7 +8,11 @@ using TNC.Trading.Platform.Application.Features.PlatformAuthentication.Ports;
 
 namespace TNC.Trading.Platform.Infrastructure.Integrations.Ig;
 
-internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtectedCredentialService protectedCredentialService, IAppliedBrokerEnvironmentContextResolver? contextResolver = null) : IAccountPreferencesGateway
+internal sealed class IgAccountPreferencesGateway(
+    HttpClient httpClient,
+    IProtectedCredentialService protectedCredentialService,
+    IAppliedBrokerEnvironmentContextResolver? contextResolver = null,
+    IgProviderRequestThrottle? throttle = null) : IAccountPreferencesGateway
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
@@ -21,7 +25,7 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
             var session = await CreateSessionAsync(credentials, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(session.CurrentAccountId, request.TargetAccountId, StringComparison.Ordinal))
                 return new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, null, AccountPreferencesAccountMismatch.Category, AccountPreferencesAccountMismatch.Detail);
-            var result = await SendAsync(HttpMethod.Get, null, credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);
+            var result = await SendAsync(HttpMethod.Get, null, credentials.ApiKey, credentials.Identifier, session, cancellationToken).ConfigureAwait(false);
             return result.Outcome is AccountPreferencesGatewayOutcome.Succeeded success
                 ? new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, success.Preferences.TrailingStopsEnabled)
                 : new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, null, AccountPreferencesFailureCategory.Transient, "IG account preference observation is unavailable.");
@@ -42,11 +46,11 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
             var session = await CreateSessionAsync(credentials, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(session.CurrentAccountId, request.TargetAccountId, StringComparison.Ordinal))
                 return new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, null, false, AccountPreferencesAccountMismatch.Category, AccountPreferencesAccountMismatch.Detail);
-            var current = await ReadAsync(credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);
+            var current = await ReadAsync(credentials.ApiKey, credentials.Identifier, session, cancellationToken).ConfigureAwait(false);
             if (current == request.TrailingStopsEnabled) return new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, current, false);
-            var update = await SendAsync(HttpMethod.Put, new IgPreferencesRequest(request.TrailingStopsEnabled), credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);
+            var update = await SendAsync(HttpMethod.Put, new IgPreferencesRequest(request.TrailingStopsEnabled), credentials.ApiKey, credentials.Identifier, session, cancellationToken).ConfigureAwait(false);
             if (update.Outcome is not AccountPreferencesGatewayOutcome.Succeeded) return new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, current, false, AccountPreferencesFailureCategory.Transient, "IG account preference write was not confirmed.");
-            var confirmed = await ReadAsync(credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);
+            var confirmed = await ReadAsync(credentials.ApiKey, credentials.Identifier, session, cancellationToken).ConfigureAwait(false);
             return new(session.CurrentAccountId, attemptId, DateTimeOffset.UtcNow, confirmed, true);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -56,9 +60,13 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
         catch (InvalidOperationException) { return new(request.TargetAccountId, attemptId, DateTimeOffset.UtcNow, null, false, AccountPreferencesFailureCategory.Unsupported, "The applied broker environment is unavailable."); }
     }
 
-    private async Task<bool> ReadAsync(string apiKey, Session session, CancellationToken cancellationToken)
+    private async Task<bool> ReadAsync(
+        string apiKey,
+        string accountIdentifier,
+        Session session,
+        CancellationToken cancellationToken)
     {
-        var result = await SendAsync(HttpMethod.Get, null, apiKey, session, cancellationToken).ConfigureAwait(false);
+        var result = await SendAsync(HttpMethod.Get, null, apiKey, accountIdentifier, session, cancellationToken).ConfigureAwait(false);
         return result.Outcome is AccountPreferencesGatewayOutcome.Succeeded success
             ? success.Preferences.TrailingStopsEnabled
             : throw new HttpRequestException("IG preference read was not successful.");
@@ -75,11 +83,11 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
         {
             var credentials = await GetCredentialsAsync(cancellationToken).ConfigureAwait(false);
             var session = await CreateSessionAsync(credentials, cancellationToken).ConfigureAwait(false);
-            var result = await SendAsync(method, body, credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);
+            var result = await SendAsync(method, body, credentials.ApiKey, credentials.Identifier, session, cancellationToken).ConfigureAwait(false);
             if (result.Unauthorized && method == HttpMethod.Get)
             {
                 session = await CreateSessionAsync(credentials, cancellationToken).ConfigureAwait(false);
-                result = await SendAsync(method, body, credentials.ApiKey, session, cancellationToken).ConfigureAwait(false);
+                result = await SendAsync(method, body, credentials.ApiKey, credentials.Identifier, session, cancellationToken).ConfigureAwait(false);
             }
             return result.Outcome;
         }
@@ -120,6 +128,12 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
 
     private async Task<Session> CreateSessionAsync(IgCredentials credentials, CancellationToken cancellationToken)
     {
+        if (throttle is not null
+            && !await throttle.WaitAsync(credentials.ApiKey, credentials.Identifier, DateTimeOffset.MaxValue, cancellationToken).ConfigureAwait(false))
+        {
+            throw new HttpRequestException("IG session request could not be paced before its deadline.");
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, "session");
         request.Headers.Add("X-IG-API-KEY", credentials.ApiKey);
         request.Headers.Add("Version", "2");
@@ -134,8 +148,20 @@ internal sealed class IgAccountPreferencesGateway(HttpClient httpClient, IProtec
         return new(cst, token, sessionBody.CurrentAccountId);
     }
 
-    private async Task<(AccountPreferencesGatewayOutcome Outcome, bool Unauthorized)> SendAsync(HttpMethod method, object? body, string apiKey, Session session, CancellationToken cancellationToken)
+    private async Task<(AccountPreferencesGatewayOutcome Outcome, bool Unauthorized)> SendAsync(
+        HttpMethod method,
+        object? body,
+        string apiKey,
+        string accountIdentifier,
+        Session session,
+        CancellationToken cancellationToken)
     {
+        if (throttle is not null
+            && !await throttle.WaitAsync(apiKey, accountIdentifier, DateTimeOffset.MaxValue, cancellationToken).ConfigureAwait(false))
+        {
+            throw new HttpRequestException("IG account-preferences request could not be paced before its deadline.");
+        }
+
         using var request = new HttpRequestMessage(method, "accounts/preferences");
         request.Headers.Add("X-IG-API-KEY", apiKey);
         request.Headers.Add("CST", session.Cst);

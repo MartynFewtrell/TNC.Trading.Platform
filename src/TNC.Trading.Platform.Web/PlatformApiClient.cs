@@ -244,6 +244,37 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
             ?? throw new InvalidOperationException("Market-category instrument page response was empty.");
     }
 
+    /// <summary>Reads saved market details for a current category/EPIC membership using Viewer scope.</summary>
+    public async Task<MarketDetailViewModel> GetMarketDetailAsync(
+        string categoryCode,
+        string epic,
+        long? listingVersion,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(categoryCode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(epic);
+        if (listingVersion is < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(listingVersion), "Listing version must be positive.");
+        }
+
+        var url = $"/api/platform/market-categories/{Uri.EscapeDataString(categoryCode)}/instruments/{Uri.EscapeDataString(epic)}/market-details";
+        if (listingVersion is not null)
+        {
+            url += $"?listingVersion={listingVersion.Value}";
+        }
+
+        using var request = await CreateAuthorizedRequestAsync(
+            HttpMethod.Get,
+            url,
+            [PlatformAuthenticationDefaults.Scopes.Viewer],
+            cancellationToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<MarketDetailViewModel>(JsonOptions, cancellationToken)
+            ?? throw new InvalidOperationException("Market-detail response was empty.");
+    }
+
     /// <summary>Updates shared category interest using the operator scope and current set revision.</summary>
     public async Task<long> UpdateMarketCategoryInterestAsync(
         string categoryCode,

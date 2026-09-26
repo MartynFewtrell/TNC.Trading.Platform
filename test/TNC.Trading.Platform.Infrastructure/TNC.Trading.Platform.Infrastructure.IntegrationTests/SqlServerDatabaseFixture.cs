@@ -88,6 +88,14 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
             DROP TABLE IF EXISTS [AccountPreferencesDesiredStateAudits];
             DROP TABLE IF EXISTS [AccountPreferencesCurrentStates];
             DROP TABLE IF EXISTS [AccountPreferencesOperations];
+            DROP TABLE IF EXISTS [MarketDetailCurrent];
+            DROP TABLE IF EXISTS [MarketDetailEligibility];
+            DROP TABLE IF EXISTS [MarketDetailObservations];
+            DROP TABLE IF EXISTS [MarketDetailRunMemberships];
+            DROP TABLE IF EXISTS [MarketDetailRunTargets];
+            DROP TABLE IF EXISTS [MarketDetailRunSources];
+            DROP TABLE IF EXISTS [MarketDetailCollectionRuns];
+            DROP TABLE IF EXISTS [IgProviderRateReservations];
             DROP TABLE IF EXISTS [MarketCategoryInstrumentObservations];
             DROP TABLE IF EXISTS [MarketCategoryInstruments];
             DROP TABLE IF EXISTS [MarketCategoryInstrumentCollectionRuns];

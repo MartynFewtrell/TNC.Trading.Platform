@@ -5,4 +5,5 @@ internal sealed record MarketCategoryCollectionStatusViewModel(
     DateTimeOffset? LastSuccessfulCollectionAtUtc,
     int Attempts,
     string? Outcome,
-    string? SafeFailure);
+    string? SafeFailure,
+    MarketDetailCoverageViewModel? DetailCoverage = null);

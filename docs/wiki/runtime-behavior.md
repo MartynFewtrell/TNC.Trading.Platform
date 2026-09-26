@@ -2,7 +2,7 @@
 title: Runtime behavior
 description: Startup, supervision, broker authentication, retry, notification, and retention behavior
 author: TNC Trading
-ms.date: 2026-07-27
+ms.date: 2026-09-25
 ms.topic: concept
 ---
 
@@ -85,6 +85,40 @@ quota. An unset or zero allowance pauses provider collection. The status API
 and UI report used/approved request counts, due/next slot, outcomes and safe
 failure categories without provider response bodies or credentials.
 
+In addition to the environment/day allowance, all IG HTTP gateways use a
+shared SQL-backed rolling request limiter across API replicas. It applies the
+documented defaults of 30 requests per account and 60 per application per
+minute from the [IG API FAQ](https://labs.ig.com/faq.html), alongside local
+250 ms request spacing. Only SHA-256 hashes of API keys and account
+identifiers are retained for rate scopes. Scheduled market-detail calls use
+the same operator-approved environment/day allowance as category and
+instrument collection; each session, bulk request, failed HTTP attempt, and
+401 reauthentication replay reserves one allowance unit before transport.
+The active slot deadline is not extended when a request must wait for rate
+capacity.
+
+Market-detail collection runs as a separate scoped step after each listing
+collector tick. It uses the same due slot and proceeds only after the current
+category catalogue, Operator interest, successful category prerequisite, and
+each selected category's complete listing snapshot have been validated for
+that exact trading day and slot. The selected sources and their revisions are
+frozen into an independently leased detail run; duplicate EPICs across
+categories share one provider target while retaining all category
+memberships. A failed or stale selected listing blocks coverage and never
+falls back to a last-good snapshot.
+
+Each worker tick requests at most 50 outstanding EPICs and resumes only
+pending or retryable failures from the frozen run. Before collection, the
+coordinator estimates the remaining session, bulk, reauthentication, retry,
+shared allowance, rate-spacing, and trading-window cost. Missing or
+insufficient capacity blocks the run rather than sending an unbounded
+request. Schedule, environment/profile, source revisions, lease fence, and
+allowance are checked around provider work and before each result is
+published. A changed source supersedes aggregate coverage while preserving
+already validated observations as history. The existing worker continues to
+recheck at most every 30 seconds; slot closure prevents further provider calls
+and does not cause a next-day replay.
+
 To retry a slot with a failed category during its trading window, apply pending database
 migrations, restart the API with the current build, then run the guarded
 [instrument slot reset script](../../infra/scripts/reset-instrument-collection-slot.sql)
@@ -120,6 +154,57 @@ displayed as IG-supplied text and is not converted into a platform timestamp.
 Category removal does not erase instrument observations. Manual Operator
 category refresh is also schedule- and allowance-gated before provider access
 and before publication, and shares cycle serialization with the worker.
+
+### SQL-only market-detail reads
+
+Viewer-protected market-detail reads use the applied environment and current
+SQL listing membership; they never create an IG session or call a provider.
+`GET /api/platform/market-categories/{categoryCode}/instruments/{epic}/market-details`
+returns the saved observation, its retrieval time and source endpoint/version,
+the listing snapshot version and retrieval time, and independent category
+coverage. A known current EPIC without an observation is returned as
+`NotCollected`; a previous last-good observation remains available with its
+current target state, including `OutOfDate` or `Excluded` when applicable.
+Missing current membership returns `404`, a mismatched optional
+`listingVersion` returns `409`, and an unsupported applied environment returns
+a safe `503` response.
+
+Category status and listing pages add compact market-detail coverage and
+availability from bounded SQL batches. Listing rows do not include nested
+instrument terms or quote details, and the listing request quota/outcome
+remains distinct from detail coverage. Coverage reports expected, completed,
+excluded and outstanding targets, last-complete time, safe failure code and a
+next scheduled check when known. A Viewer read does not refresh IG data.
+
+The Web UI links each instrument to the stable
+`/market-categories/{categoryCode}/instruments/{epic}/market-details` deep
+link. The detail page makes one lazy Viewer GET for the selected EPIC, presents
+the saved snapshot as historical rather than live, and labels platform
+retrieval times as UTC while retaining IG's update-time text unchanged.
+Currencies, bands and notices remain in provider order; optional technical
+terms are collapsed and encoded as text. Reload performs the same SQL read,
+not a provider refresh. Returning to the category preserves the in-memory
+selected page and EPIC when available; a directly opened link falls back to
+the saved category listing.
+
+The configured daily request allowance is shared with category, session, and
+instrument collection; detail estimates include remaining bulk calls, session
+calls, bounded retry attempts, and a possible 401 replay. The estimate is a
+preflight guard, not a service-level guarantee: a sufficiently large universe
+or insufficient remaining trading window/allowance leaves coverage blocked or
+incomplete. The 15,000-instrument category cap and the 50-target bulk chunk
+are validation/transport bounds, not evidence that all eligible categories
+fit a slot or daily quota. Operators must monitor actual distinct selected
+EPICs, request use, slot duration, SQL write/query latency, and retained
+history growth before increasing cadence or promising full-universe coverage.
+
+Detail runs, sources, targets, memberships, and immutable observations are
+retained online indefinitely in this delivery. Retirement explicitly removes
+the broker environment's current detail and eligibility projections but
+preserves that historical evidence. No automatic retention cleanup or archive
+exists for market-detail history. Production use that relies on indefinite
+internal retention or any redistribution remains a release/compliance blocker
+until the applicable IG market-data/API agreement is confirmed.
 
 ## Runtime model summary
 

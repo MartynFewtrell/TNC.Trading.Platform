@@ -18,6 +18,8 @@ The implemented application is focused on:
 - capturing and retaining secret-safe IG login snapshot data from successful backend auth transitions
 - collecting complete, schedule-gated IG market-category instrument snapshots
   into SQL for protected browsing and future analysis
+- collecting and retaining validated IG market-detail observations separately
+  from listing snapshots, with a saved-data Viewer drill-down
 - recording operational and notification history
 - keeping market-data collection separate from trading, recommendations, and
   live streaming
@@ -43,6 +45,8 @@ The implemented application is focused on:
   request budgets
 - Viewer browsing of saved snapshots and Operator-managed category interest
   and collection frequency/allowance controls
+- saved market-detail terms, provenance, and historical quote snapshots for
+  selected instruments
 
 ### Current IG Demo connectivity and proof data
 
@@ -184,10 +188,13 @@ The operator UI includes these principal routes:
 - `/status` shows environment, trading schedule, auth state, retry state, and recent auth events for viewer-capable operators
 - `/market-categories` shows saved categories and collector status; Operators can manage shared interest
 - `/market-categories/{CategoryCode}/instruments` browses a saved snapshot using protected keyset paging
+- `/market-categories/{CategoryCode}/instruments/{Epic}/market-details` reads one saved detail observation for a selected instrument
 - `/configuration` shows editable configuration, secret-presence indicators, and write-only credential update fields for operator-capable users
 - `/administration/authentication` shows the admin-only auth summary surface
 
-See [Operator guide](operator-guide.md) for full behavior details.
+See the [Operator guide](operator-guide.md) for full behavior details and the
+[local development guide](local-development.md) for repository build, start,
+and validation steps.
 
 ## Persistence overview
 
@@ -203,6 +210,8 @@ The current implementation persists or models the following record types:
 - notification records
 - market-category catalogue, shared interest, collection settings and cycle state
 - versioned current instrument snapshots and retained complete collection observations
+- per-slot market-detail run/source/target/membership provenance, current
+  availability, and immutable validated observation history
 
 See [Architecture](architecture.md) and [Runtime behavior](runtime-behavior.md) for more detail.
 
