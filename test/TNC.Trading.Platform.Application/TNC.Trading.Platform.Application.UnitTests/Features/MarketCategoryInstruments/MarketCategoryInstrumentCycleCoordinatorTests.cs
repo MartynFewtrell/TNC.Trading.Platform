@@ -76,6 +76,59 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         Assert.Equal(0, harness.PublishedCategories);
     }
 
+    /// <summary>
+    /// Trace: startup collection during an active trading window.
+    /// Verifies: the first scheduled check after a restart can collect again despite a completed slot, but later ticks in that process cannot replay it.
+    /// Expected: a Saturday startup collects twice across two simulated starts while the intervening regular tick does not collect.
+    /// Why: explicit startup refreshes must be bounded to one per start without turning normal polling into duplicate provider work.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteDueCycleAsync_ShouldRecollectOnce_WhenRestartingDuringCompletedSaturdaySlot()
+    {
+        var schedule = new TradingScheduleConfiguration(
+            new(9, 0), new(17, 0), [DayOfWeek.Saturday], WeekendBehavior.ExcludeWeekends, [], "UTC");
+        var harness = new CycleHarness(schedule, new DateTimeOffset(2026, 9, 26, 11, 0, 0, TimeSpan.Zero));
+
+        await harness.ExecuteAsync(CancellationToken.None);
+        Assert.Equal("Completed", harness.Status);
+        Assert.Equal(2, harness.PublishedCategories);
+
+        await harness.ExecuteAsync(CancellationToken.None);
+        Assert.Equal("SlotAlreadyObserved", harness.Status);
+        Assert.Equal(2, harness.PublishedCategories);
+
+        await harness.ExecuteAsync(CancellationToken.None, isStartupCheck: true);
+        Assert.Equal("Completed", harness.Status);
+        Assert.True(harness.StartupLeaseRequested);
+        Assert.Equal(4, harness.PublishedCategories);
+    }
+
+    /// <summary>
+    /// Trace: market categories status on startup during the configured Saturday window.
+    /// Verifies: an unobserved active slot reports an immediate check rather than the next weekday's opening.
+    /// Expected: status is due with a Saturday check at the current instant, then points to the next trading day after completion.
+    /// Why: a late startup must not tell operators to wait until Monday while today's slot is still due, or promise another check after it finishes.
+    /// </summary>
+    [Fact]
+    public async Task GetStatus_ShouldReportCheckNow_WhenSaturdaySlotIsDueAtStartup()
+    {
+        var schedule = new TradingScheduleConfiguration(
+            new(9, 0), new(17, 0), [DayOfWeek.Saturday], WeekendBehavior.ExcludeWeekends, [], "UTC");
+        var now = new DateTimeOffset(2026, 9, 26, 11, 0, 0, TimeSpan.Zero);
+        var harness = new CycleHarness(schedule, now);
+
+        var status = await harness.GetStatusAsync();
+
+        Assert.True(status.IsDue);
+        Assert.Equal(now, status.NextWakeUpUtc);
+        Assert.Equal(new DateOnly(2026, 9, 26), status.TradingDay);
+
+        await harness.ExecuteAsync(CancellationToken.None);
+        var afterCollection = await harness.GetStatusAsync();
+        Assert.False(afterCollection.IsDue);
+        Assert.Equal(new DateTimeOffset(2026, 10, 3, 9, 0, 0, TimeSpan.Zero), afterCollection.NextWakeUpUtc);
+    }
+
     private static MarketCategoryInstrumentCollection CreateCollection(string categoryCode)
     {
         var instrument = CreateInstrument($"{categoryCode}-EPIC");
@@ -124,7 +177,7 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
             Guid.NewGuid(),
             1);
 
-    public sealed class CycleHarness
+    internal sealed class CycleHarness
     {
         private static readonly TradingScheduleConfiguration Schedule = new(
             new(9, 0),
@@ -133,12 +186,12 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
             WeekendBehavior.ExcludeWeekends,
             [],
             "UTC");
-        private readonly FakeConfigurationStore configurationStore = new(Schedule);
+        private readonly FakeConfigurationStore configurationStore;
         private readonly FakeEnvironmentResolver environmentResolver = new();
         private readonly FakeMarketCategoriesGateway categoryGateway = new();
         private readonly FakeScheduleGuard scheduleGuard;
 
-        private FakeClock Clock { get; } = new(new DateTimeOffset(2026, 9, 28, 10, 0, 0, TimeSpan.Zero));
+        private FakeClock Clock { get; }
         private FakeCycleStore CycleStore { get; } = new();
         private FakeInterestReader InterestReader { get; } = new();
         private FakeCategorySnapshotStore CategorySnapshotStore { get; } = new();
@@ -149,9 +202,12 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         public int FailedCategories { get; private set; }
         public int PublishedCategories => Writer.WritesCount;
         public string? CycleOutcome => CycleStore.LastCycleOutcome;
+        public bool StartupLeaseRequested => CycleStore.StartupLeaseRequested;
 
-        public CycleHarness()
+        public CycleHarness(TradingScheduleConfiguration? schedule = null, DateTimeOffset? now = null)
         {
+            configurationStore = new(schedule ?? Schedule);
+            Clock = new(now ?? new DateTimeOffset(2026, 9, 28, 10, 0, 0, TimeSpan.Zero));
             scheduleGuard = new(Clock);
         }
 
@@ -193,12 +249,31 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 new NullApplicationLogger());
         }
 
-        public async Task ExecuteAsync(CancellationToken cancellationToken)
+        public async Task ExecuteAsync(CancellationToken cancellationToken, bool isStartupCheck = false)
         {
-            var result = await CreateCoordinator().ExecuteDueCycleAsync(cancellationToken);
+            var result = await CreateCoordinator().ExecuteDueCycleAsync(cancellationToken, isStartupCheck);
             Status = result.Status;
             CompletedCategories = result.CompletedCategories;
             FailedCategories = result.FailedCategories;
+        }
+
+        public Task<GetMarketCategoryInstrumentStatusResponse> GetStatusAsync() =>
+            new GetMarketCategoryInstrumentStatusHandler(
+                environmentResolver,
+                new PlatformConfigurationService(configurationStore),
+                new FakeFrequencyReader(),
+                CycleStore,
+                new FakeStatusReader(),
+                new TradingScheduleGate(),
+                new MarketCategoryInstrumentSchedulePolicy(new TradingScheduleGate(), Clock),
+                Clock).HandleAsync(new GetMarketCategoryInstrumentStatusRequest(), CancellationToken.None);
+
+        private sealed class FakeStatusReader : IMarketCategoryInstrumentStatusReader
+        {
+            public Task<MarketCategoryInstrumentCollectionStatus> ReadAsync(
+                BrokerEnvironmentKind environment, DateOnly tradingDay, CancellationToken cancellationToken) =>
+                Task.FromResult(new MarketCategoryInstrumentCollectionStatus(
+                    environment, tradingDay, null, null, null, null, null, 0, 20, []));
         }
 
         private sealed class FakeConfigurationStore(TradingScheduleConfiguration schedule) : IPlatformConfigurationStore
@@ -308,17 +383,24 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         {
             public Dictionary<string, int> CategoryAttempts { get; } = new(StringComparer.Ordinal);
             public string? LastCycleOutcome { get; private set; }
+            public bool StartupLeaseRequested { get; private set; }
+            private MarketCategoryInstrumentSlotProgress? latestProgress;
 
             Task<MarketCategoryInstrumentSlotProgress?> IMarketCategoryInstrumentCycleStore.GetLatestProgressAsync(
                 BrokerEnvironmentKind environment,
                 CancellationToken cancellationToken) =>
-                Task.FromResult<MarketCategoryInstrumentSlotProgress?>(null);
+                Task.FromResult(latestProgress);
 
             Task<long?> IMarketCategoryInstrumentCycleStore.TryAcquireLeaseAsync(
                 MarketCategoryInstrumentCycleLease lease,
                 DateTimeOffset nowUtc,
                 TimeSpan leaseDuration,
-                CancellationToken cancellationToken) => Task.FromResult<long?>(1);
+                bool isStartupCheck,
+                CancellationToken cancellationToken)
+            {
+                StartupLeaseRequested = isStartupCheck;
+                return Task.FromResult<long?>(1);
+            }
 
             Task<bool> IMarketCategoryInstrumentCycleStore.TryRenewLeaseAsync(
                 MarketCategoryInstrumentCycleLease lease,
@@ -377,6 +459,11 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 CancellationToken cancellationToken)
             {
                 LastCycleOutcome = outcome;
+                latestProgress = new(
+                    lease.TradingDay,
+                    lease.ScheduledSlot,
+                    lease.EffectiveUpdatesPerDay,
+                    lease.ScheduleRevision.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 return Task.FromResult(true);
             }
 

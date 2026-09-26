@@ -16,6 +16,7 @@ internal sealed class MarketCategoryInstrumentCollector(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await Task.Yield();
+        var isStartupCheck = true;
         while (!stoppingToken.IsCancellationRequested)
         {
             var startedAt = timeProvider.GetTimestamp();
@@ -36,7 +37,8 @@ internal sealed class MarketCategoryInstrumentCollector(
                     try
                     {
                         var coordinator = scope.ServiceProvider.GetRequiredService<IMarketCategoryInstrumentCycleCoordinator>();
-                        result = await coordinator.ExecuteDueCycleAsync(stoppingToken).ConfigureAwait(false);
+                        result = await coordinator.ExecuteDueCycleAsync(stoppingToken, isStartupCheck).ConfigureAwait(false);
+                        isStartupCheck = false;
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                     {

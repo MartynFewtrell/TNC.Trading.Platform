@@ -258,6 +258,30 @@ public sealed class MarketCategoryInstrumentPolicyTests
     }
 
     /// <summary>
+    /// Trace: Market categories next scheduled check after a trading-schedule edit.
+    /// Verifies: the next wake-up uses the current schedule's Saturday inclusion rather than the previous weekday-only calendar.
+    /// Expected: a Friday check moves from Monday to Saturday when Saturday is added, without changing the collection frequency.
+    /// Why: the status API must expose the revised schedule to a page refreshing its collection status.
+    /// </summary>
+    [Fact]
+    public void GetNextWakeUpUtc_ShouldMoveToSaturday_WhenSaturdayIsAddedToTradingSchedule()
+    {
+        var policy = CreatePolicy(new DateTimeOffset(2026, 9, 25, 17, 0, 0, TimeSpan.Zero));
+        var weekdaySchedule = CreateSchedule(
+            "UTC",
+            new TimeOnly(8, 0),
+            new TimeOnly(16, 0),
+            [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday]);
+
+        var before = policy.GetNextWakeUpUtc(weekdaySchedule, 1);
+        var after = policy.GetNextWakeUpUtc(
+            weekdaySchedule with { TradingDays = [.. weekdaySchedule.TradingDays, DayOfWeek.Saturday] }, 1);
+
+        Assert.Equal(new DateTimeOffset(2026, 9, 28, 8, 0, 0, TimeSpan.Zero), before);
+        Assert.Equal(new DateTimeOffset(2026, 9, 26, 8, 0, 0, TimeSpan.Zero), after);
+    }
+
+    /// <summary>
     /// Trace: Market Category Instruments Work Item 1, step 3; Non-negotiable Behaviour 3.
     /// Verifies: disabled schedules, unsupported applied environments and invalid frequencies fail closed.
     /// Expected: each unsafe configuration is blocked before a due slot is produced.

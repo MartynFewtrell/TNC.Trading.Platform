@@ -13,6 +13,7 @@ internal interface IMarketCategoryInstrumentCycleStore
         MarketCategoryInstrumentCycleLease lease,
         DateTimeOffset nowUtc,
         TimeSpan leaseDuration,
+        bool isStartupCheck,
         CancellationToken cancellationToken);
 
     Task<bool> TryRenewLeaseAsync(

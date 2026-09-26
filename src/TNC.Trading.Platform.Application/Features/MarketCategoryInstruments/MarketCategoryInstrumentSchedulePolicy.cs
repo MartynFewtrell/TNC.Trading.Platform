@@ -83,7 +83,7 @@ internal sealed class MarketCategoryInstrumentSchedulePolicy(
             && (string.Equals(previous.ScheduleIdentity, scheduleIdentity, StringComparison.Ordinal)
                 || string.Equals(previous.ScheduleIdentity, GetScheduleRevision(scheduleIdentity).ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal));
 
-        if (previousProgressMatches && request.PreviousProgress!.SlotIndex >= slotIndex)
+        if (!request.IsStartupCheck && previousProgressMatches && request.PreviousProgress!.SlotIndex >= slotIndex)
         {
             return new(false, MarketCategoryInstrumentScheduleBlockReason.SlotAlreadyObserved, tradingDay, slotIndex, effectiveFrequency, scheduleIdentity, []);
         }

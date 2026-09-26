@@ -7,6 +7,8 @@ namespace TNC.Trading.Platform.Web.Components.Pages;
 /// </summary>
 internal sealed class MarketCategoriesPagePresenter(PlatformApiClient platformApiClient)
 {
+    private readonly SemaphoreSlim statusRefreshLock = new(1, 1);
+
     /// <summary>Gets the most recently saved market-category snapshot.</summary>
     public MarketCategoriesViewModel? State { get; private set; }
 
@@ -39,7 +41,7 @@ internal sealed class MarketCategoriesPagePresenter(PlatformApiClient platformAp
         try
         {
             State = await platformApiClient.GetMarketCategoriesAsync(cancellationToken);
-            await LoadCollectionStatusAsync(cancellationToken);
+            await RefreshCollectionStatusAsync(cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -112,19 +114,29 @@ internal sealed class MarketCategoriesPagePresenter(PlatformApiClient platformAp
         }
     }
 
-    private async Task LoadCollectionStatusAsync(CancellationToken cancellationToken)
+    /// <summary>Refreshes the schedule-derived status without reloading the saved category catalogue.</summary>
+    public async Task RefreshCollectionStatusAsync(CancellationToken cancellationToken)
     {
-        CollectionStatusError = null;
+        await statusRefreshLock.WaitAsync(cancellationToken);
         try
         {
-            CollectionStatus = await platformApiClient.GetInstrumentCollectionStatusAsync(cancellationToken);
+            CollectionStatusError = null;
+            try
+            {
+                CollectionStatus = await platformApiClient.GetInstrumentCollectionStatusAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (Exception exception) when (exception is HttpRequestException or PlatformApiException or PlatformScopeChallengeRequiredException or InvalidOperationException)
+            {
+                CollectionStatus = null;
+                CollectionStatusError = CreateErrorMessage("Unable to load collector status", exception);
+            }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        finally
         {
-        }
-        catch (Exception exception) when (exception is HttpRequestException or PlatformApiException or PlatformScopeChallengeRequiredException or InvalidOperationException)
-        {
-            CollectionStatusError = CreateErrorMessage("Unable to load collector status", exception);
+            statusRefreshLock.Release();
         }
     }
 

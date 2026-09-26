@@ -10,9 +10,9 @@ public sealed class MarketCategoryInstrumentCollectorTests
 {
     /// <summary>
     /// Trace: Market Category Instruments Work Item 4, step 1.
-    /// Verifies: the API collector executes repeatedly in independent DI scopes and shuts down through host cancellation.
-    /// Expected: each tick uses a fresh scoped coordinator, every scope is disposed, and StopAsync completes.
-    /// Why: collector work must not leak scoped SQL state across ticks or block application shutdown.
+    /// Verifies: the API collector executes repeatedly in independent DI scopes, requests a fresh startup check once, and shuts down through host cancellation.
+    /// Expected: only the first tick is marked as startup, each tick has a fresh scope, and StopAsync completes.
+    /// Why: startup recollection must not repeat on ordinary ticks or leak scoped SQL state.
     /// </summary>
     [Fact]
     public async Task StartAsync_ShouldUseFreshScopePerTickAndStop_WhenHostShutsDown()
@@ -42,6 +42,7 @@ public sealed class MarketCategoryInstrumentCollectorTests
         Assert.Equal(probe.DetailScopeIds.Count, probe.DetailDisposedScopeIds.Count);
         Assert.Equal(probe.DetailScopeIds.Count, probe.DetailScopeIds.Distinct().Count());
         Assert.Equal(["listing", "detail", "listing", "detail"], probe.TickOrder);
+        Assert.Equal([true, false], probe.StartupChecks);
     }
 
     private sealed class CollectorProbe
@@ -55,15 +56,17 @@ public sealed class MarketCategoryInstrumentCollectorTests
         public List<Guid> DetailScopeIds { get; } = [];
         public List<Guid> DetailDisposedScopeIds { get; } = [];
         public List<string> TickOrder { get; } = [];
+        public List<bool> StartupChecks { get; } = [];
         public int TickCount => Volatile.Read(ref tickCount);
         public int DetailTickCount => Volatile.Read(ref detailTickCount);
 
-        public int RecordTick(Guid scopeId)
+        public int RecordTick(Guid scopeId, bool isStartupCheck)
         {
             lock (ScopeIds)
             {
                 ScopeIds.Add(scopeId);
                 TickOrder.Add("listing");
+                StartupChecks.Add(isStartupCheck);
             }
 
             return Interlocked.Increment(ref tickCount);
@@ -106,9 +109,9 @@ public sealed class MarketCategoryInstrumentCollectorTests
     {
         private readonly Guid scopeId = Guid.NewGuid();
 
-        public Task<MarketCategoryInstrumentCycleResult> ExecuteDueCycleAsync(CancellationToken cancellationToken)
+        public Task<MarketCategoryInstrumentCycleResult> ExecuteDueCycleAsync(CancellationToken cancellationToken, bool isStartupCheck = false)
         {
-            probe.RecordTick(scopeId);
+            probe.RecordTick(scopeId, isStartupCheck);
             return Task.FromResult(new MarketCategoryInstrumentCycleResult(
                 "NotDue",
                 DateTimeOffset.UtcNow.AddMilliseconds(2),

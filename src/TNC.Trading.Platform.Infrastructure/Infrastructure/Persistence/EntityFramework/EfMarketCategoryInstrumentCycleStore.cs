@@ -64,6 +64,7 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         MarketCategoryInstrumentCycleLease lease,
         DateTimeOffset nowUtc,
         TimeSpan leaseDuration,
+        bool isStartupCheck,
         CancellationToken cancellationToken) =>
         TryAcquireLeaseAsync(
             lease.BrokerEnvironment,
@@ -74,7 +75,8 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
             nowUtc,
             leaseDuration,
             cancellationToken,
-            lease.WindowEndUtc);
+            lease.WindowEndUtc,
+            isStartupCheck);
 
     public Task<bool> TryRenewLeaseAsync(
         MarketCategoryInstrumentCycleLease lease,
@@ -211,7 +213,8 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         DateTimeOffset nowUtc,
         TimeSpan leaseDuration,
         CancellationToken cancellationToken,
-        DateTimeOffset? windowEndUtc = null)
+        DateTimeOffset? windowEndUtc = null,
+        bool isStartupCheck = false)
     {
         ValidateLeaseRequest(scheduledSlot, scheduleRevision, leaseOwner, nowUtc, leaseDuration);
         if (windowEndUtc is { } windowEnd && (windowEnd.Offset != TimeSpan.Zero || nowUtc >= windowEnd))
@@ -233,9 +236,32 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
             };
             dbContext.InstrumentCollectionCycleStates.Add(state);
         }
-        else if (state.ScheduleRevision != scheduleRevision
-            || state.Outcome is "Completed" or "Skipped" or "Idle"
-            || (state.LeaseOwner is not null && state.LeaseExpiresAtUtc > nowUtc))
+        else if (state.LeaseOwner is not null && state.LeaseExpiresAtUtc > nowUtc)
+        {
+            return null;
+        }
+        else if (state.ScheduleRevision != scheduleRevision || isStartupCheck)
+        {
+            state.ScheduleRevision = scheduleRevision;
+            state.CategoryPrerequisite = "Pending";
+            state.CategoryPrerequisiteSafeError = null;
+            state.CategoryPrerequisiteAttempts = 0;
+            state.CategoryPrerequisiteLeaseFence = 0;
+            var priorAttempts = await dbContext.InstrumentCollectionCategoryAttempts
+                .Where(item => item.BrokerEnvironmentId == environmentId
+                    && item.TradingDay == tradingDay
+                    && item.ScheduledSlot == scheduledSlot)
+                .ToListAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var attempt in priorAttempts)
+            {
+                attempt.Attempts = 0;
+                attempt.State = "Pending";
+                attempt.LeaseFence = 0;
+                attempt.SafeError = null;
+                attempt.UpdatedAtUtc = null;
+            }
+        }
+        else if (state.Outcome is "Completed" or "Skipped" or "Idle")
         {
             return null;
         }

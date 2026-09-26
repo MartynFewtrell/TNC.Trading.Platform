@@ -1,6 +1,6 @@
 @namespace TNC.Trading.Platform.Web.Components.Pages
 @page "/market-categories"
-@implements IDisposable
+@implements IAsyncDisposable
 @attribute [Authorize(Policy = PlatformAuthenticationDefaults.Policies.Viewer)]
 @using TNC.Trading.Platform.Web.Authentication
 @inject MarketCategoriesPagePresenter Presenter
@@ -27,10 +27,15 @@ else
     {
         <PlatformAccordionSection Title="Instrument collection" IsOpen="true">
             <section class="panel" aria-label="Instrument collection schedule" data-testid="market-category-collection-status">
+                <button type="button" data-testid="market-category-refresh-schedule" @onclick="RefreshCollectionStatusAsync">Refresh schedule status</button>
                 <div class="market-category-collection-summary">
                     @if (collectionStatus.NextWakeUpUtc is { } nextWakeUp)
                     {
                         <p>Next scheduled check: <time datetime="@nextWakeUp.ToString("O")">@nextWakeUp.ToLocalTime().ToString("g")</time></p>
+                    }
+                    @if (collectionStatus.LastCategoryRefreshAtUtc is { } lastRefresh)
+                    {
+                        <p>Last category refresh: <time datetime="@lastRefresh.ToString("O")">@lastRefresh.ToLocalTime().ToString("g")</time></p>
                     }
                     @if (collectionStatus.ApprovedDailyRequestAllowance is { } allowance)
                     {
@@ -47,6 +52,10 @@ else
     @if (!string.IsNullOrWhiteSpace(Presenter.CollectionStatusError))
     {
         <p class="error" role="status" data-testid="market-category-collection-status-error">@Presenter.CollectionStatusError</p>
+    }
+    @if (Presenter.CollectionStatus is null)
+    {
+        <button type="button" data-testid="market-category-refresh-schedule" @onclick="RefreshCollectionStatusAsync">Retry schedule status</button>
     }
 
     @if (Presenter.State is null)
@@ -158,6 +167,8 @@ else
     private bool hasRequiredScope;
     private bool canEditInterest;
     private readonly CancellationTokenSource requestLifetime = new();
+    private PeriodicTimer? statusTimer;
+    private Task? statusRefreshTask;
 
     protected override async Task OnInitializedAsync()
     {
@@ -166,7 +177,29 @@ else
         {
             canEditInterest = (await OperatorContextAccessor.GetCurrentAsync()).IsOperator;
             await Presenter.LoadAsync(requestLifetime.Token);
+            statusTimer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+            statusRefreshTask = RefreshStatusPeriodicallyAsync(statusTimer, requestLifetime.Token);
         }
+    }
+
+    private async Task RefreshStatusPeriodicallyAsync(PeriodicTimer timer, CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(RefreshCollectionStatusAsync);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task RefreshCollectionStatusAsync()
+    {
+        await Presenter.RefreshCollectionStatusAsync(requestLifetime.Token);
+        StateHasChanged();
     }
 
     private Task SetInterestAsync(MarketCategoryViewModel category, ChangeEventArgs args) =>
@@ -175,9 +208,14 @@ else
     private static string FormatUtc(DateTimeOffset value) =>
         value.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss 'UTC'", System.Globalization.CultureInfo.InvariantCulture);
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         requestLifetime.Cancel();
+        statusTimer?.Dispose();
+        if (statusRefreshTask is not null)
+        {
+            await statusRefreshTask;
+        }
         requestLifetime.Dispose();
     }
 }

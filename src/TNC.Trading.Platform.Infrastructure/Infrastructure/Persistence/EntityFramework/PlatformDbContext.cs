@@ -455,7 +455,6 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.Property(item => item.CategoryCode).HasMaxLength(128).IsRequired();
             entity.Property(item => item.QualityStatus).HasMaxLength(64).IsRequired();
             entity.HasIndex(item => new { item.BrokerEnvironmentId, item.CategoryCode, item.TradingDay, item.ScheduledSlot })
-                .IsUnique()
                 .HasFilter("[IsComplete] = 1");
             entity.HasIndex(item => new { item.BrokerEnvironmentId, item.CategoryCode, item.RetrievedAtUtc });
             entity.HasIndex(item => new { item.BrokerEnvironmentId, item.CategoryCode, item.SnapshotVersion });

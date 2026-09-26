@@ -2,6 +2,8 @@ using System.Data.Common;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
@@ -33,9 +35,43 @@ public sealed class MarketCategoryInstrumentSqlIntegrationTests(SqlServerDatabas
         });
 
         var successIndexCount = await context.Database.SqlQueryRaw<int>(
-            "SELECT COUNT(*) AS [Value] FROM sys.indexes WHERE object_id = OBJECT_ID(N'MarketCategoryInstrumentCollectionRuns') AND is_unique = 1 AND filter_definition LIKE N'%IsComplete%'")
+            "SELECT COUNT(*) AS [Value] FROM sys.indexes WHERE object_id = OBJECT_ID(N'MarketCategoryInstrumentCollectionRuns') AND name = N'IX_MarketCategoryInstrumentCollectionRuns_BrokerEnvironmentId_CategoryCode_TradingDay_ScheduledSlot' AND is_unique = 0 AND filter_definition LIKE N'%IsComplete%'")
             .SingleAsync();
         Assert.Equal(1, successIndexCount);
+    }
+
+    /// <summary>
+    /// Trace: startup collection during an active trading window.
+    /// Verifies: upgrading an existing database changes the completed-run index without discarding its historical data.
+    /// Expected: the previous run and observation survive and the slot index becomes nonunique.
+    /// Why: deployed databases already contain completed collections when startup recollection is enabled.
+    /// </summary>
+    [Fact]
+    public async Task MigrateAsync_ShouldPreserveCompletedRuns_WhenReplacingUniqueSlotIndex()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260925191100_CoordinateIgProviderRateReservations", fixture.CancellationToken);
+        var environmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(context, fixture.CancellationToken);
+        var resolver = new FakeResolver(environmentId);
+        await new EfMarketCategorySnapshotStore(context, resolver).ReplaceAsync(CategorySnapshot("CAT"), fixture.CancellationToken);
+        var day = DateOnly.FromDateTime(DateTime.UtcNow);
+        var lease = await PrepareCycleAsync(context, resolver, BrokerEnvironmentKind.Demo, day, 0);
+        var runId = Guid.NewGuid();
+        await new EfMarketCategoryInstrumentSnapshotStore(context, resolver).SaveCompleteAsync(
+            Collection("CAT", Instrument("EPIC-OLD")),
+            Provenance("CAT", day, 0, runId, 1, lease.Owner, lease.Fence),
+            fixture.CancellationToken);
+
+        await context.Database.MigrateAsync(fixture.CancellationToken);
+
+        Assert.Equal(runId, (await context.MarketCategoryInstrumentCollectionRuns.SingleAsync(fixture.CancellationToken)).CollectionId);
+        Assert.Equal(runId, (await context.MarketCategoryInstrumentObservations.SingleAsync(fixture.CancellationToken)).CollectionId);
+        var nonuniqueIndexCount = await context.Database.SqlQueryRaw<int>(
+            "SELECT COUNT(*) AS [Value] FROM sys.indexes WHERE object_id = OBJECT_ID(N'MarketCategoryInstrumentCollectionRuns') AND name = N'IX_MarketCategoryInstrumentCollectionRuns_BrokerEnvironmentId_CategoryCode_TradingDay_ScheduledSlot' AND is_unique = 0 AND filter_definition LIKE N'%IsComplete%'")
+            .SingleAsync(fixture.CancellationToken);
+        Assert.Equal(1, nonuniqueIndexCount);
     }
 
     /// <summary>Trace: Market Category Instruments Work Item 2. Verifies settings corruption or missing initialization is fail-closed instead of silently creating frequency and request-budget policy.</summary>
@@ -380,6 +416,123 @@ public sealed class MarketCategoryInstrumentSqlIntegrationTests(SqlServerDatabas
         await using var verificationContext = fixture.CreateDbContext();
         Assert.Equal(1, await verificationContext.MarketCategoryInstrumentCollectionRuns.CountAsync());
         Assert.Equal(1, await verificationContext.MarketCategoryInstrumentObservations.CountAsync());
+    }
+
+    /// <summary>
+    /// Trace: startup collection during an active trading window.
+    /// Verifies: a completed slot can be leased for a fresh startup check or a revised schedule without losing its daily request usage.
+    /// Expected: a normal reacquisition is denied, but startup and schedule revision each advance the fence and reset category attempts and prerequisite.
+    /// Why: restarts and schedule edits should recollect without bypassing the approved daily budget.
+    /// </summary>
+    [Fact]
+    public async Task TryAcquireLeaseAsync_ShouldResetCompletedSlot_WhenStartupCheckIsRequested()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        await context.Database.MigrateAsync();
+        var environmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(context, fixture.CancellationToken);
+        var store = new EfMarketCategoryInstrumentCycleStore(context, new FakeResolver(environmentId));
+        var day = new DateOnly(2026, 9, 26);
+        var now = new DateTimeOffset(2026, 9, 26, 11, 0, 0, TimeSpan.Zero);
+        var owner = Guid.NewGuid();
+        var fence = await store.TryAcquireLeaseAsync(BrokerEnvironmentKind.Demo, day, 0, 7, owner, now, TimeSpan.FromMinutes(2), fixture.CancellationToken);
+        Assert.NotNull(fence);
+        Assert.True(await store.TryBeginCategoryPrerequisiteAsync(BrokerEnvironmentKind.Demo, day, 0, owner, fence.Value, now, fixture.CancellationToken));
+        Assert.True(await store.CompleteCategoryPrerequisiteAsync(BrokerEnvironmentKind.Demo, day, 0, owner, fence.Value, now, true, null, fixture.CancellationToken));
+        Assert.True(await store.TryReserveCategoryAttemptAsync(BrokerEnvironmentKind.Demo, day, 0, "CAT", owner, fence.Value, now, fixture.CancellationToken));
+        Assert.True(await store.CompleteCategoryAttemptAsync(BrokerEnvironmentKind.Demo, day, 0, "CAT", owner, fence.Value, now, true, null, fixture.CancellationToken));
+        Assert.True(await store.CompleteCycleAsync(BrokerEnvironmentKind.Demo, day, 0, owner, fence.Value, now, "Completed", fixture.CancellationToken));
+
+        var cycle = await context.InstrumentCollectionCycleStates.SingleAsync(fixture.CancellationToken);
+        cycle.UsedRequestBudget = 2;
+        await context.SaveChangesAsync(fixture.CancellationToken);
+        Assert.Null(await store.TryAcquireLeaseAsync(BrokerEnvironmentKind.Demo, day, 0, 7, Guid.NewGuid(), now.AddMinutes(3), TimeSpan.FromMinutes(2), fixture.CancellationToken));
+
+        var restartedOwner = Guid.NewGuid();
+        var restartedFence = await store.TryAcquireLeaseAsync(BrokerEnvironmentKind.Demo, day, 0, 7, restartedOwner, now.AddMinutes(3), TimeSpan.FromMinutes(2), fixture.CancellationToken, isStartupCheck: true);
+
+        Assert.Equal(fence.Value + 1, restartedFence);
+        Assert.Equal(2, cycle.UsedRequestBudget);
+        Assert.Equal(0, cycle.CategoryPrerequisiteAttempts);
+        Assert.True(await store.TryBeginCategoryPrerequisiteAsync(BrokerEnvironmentKind.Demo, day, 0, restartedOwner, restartedFence!.Value, now.AddMinutes(3), fixture.CancellationToken));
+        Assert.False(await store.TryReserveCategoryAttemptAsync(BrokerEnvironmentKind.Demo, day, 0, "CAT", restartedOwner, restartedFence.Value, now.AddMinutes(3), fixture.CancellationToken));
+        Assert.True(await store.CompleteCategoryPrerequisiteAsync(BrokerEnvironmentKind.Demo, day, 0, restartedOwner, restartedFence.Value, now.AddMinutes(3), true, null, fixture.CancellationToken));
+        Assert.True(await store.TryReserveCategoryAttemptAsync(BrokerEnvironmentKind.Demo, day, 0, "CAT", restartedOwner, restartedFence.Value, now.AddMinutes(3), fixture.CancellationToken));
+        Assert.True(await store.CompleteCategoryAttemptAsync(BrokerEnvironmentKind.Demo, day, 0, "CAT", restartedOwner, restartedFence.Value, now.AddMinutes(3), true, null, fixture.CancellationToken));
+        Assert.True(await store.CompleteCycleAsync(BrokerEnvironmentKind.Demo, day, 0, restartedOwner, restartedFence.Value, now.AddMinutes(3), "Completed", fixture.CancellationToken));
+
+        var revisedOwner = Guid.NewGuid();
+        var revisedFence = await store.TryAcquireLeaseAsync(BrokerEnvironmentKind.Demo, day, 0, 8, revisedOwner, now.AddMinutes(6), TimeSpan.FromMinutes(2), fixture.CancellationToken);
+        Assert.Equal(restartedFence.Value + 1, revisedFence);
+        Assert.Equal(8, cycle.ScheduleRevision);
+        Assert.Equal(2, cycle.UsedRequestBudget);
+        Assert.True(await store.TryBeginCategoryPrerequisiteAsync(BrokerEnvironmentKind.Demo, day, 0, revisedOwner, revisedFence!.Value, now.AddMinutes(6), fixture.CancellationToken));
+    }
+
+    /// <summary>
+    /// Trace: startup collection during an active trading window.
+    /// Verifies: publishing a category again for the same day and slot after startup lease reacquisition keeps both completed runs.
+    /// Expected: distinct immutable observations remain, the current snapshot advances, and the used daily budget is retained.
+    /// Why: a restart must not fail on the old unique slot index or erase collection history to make room for a fresh check.
+    /// </summary>
+    [Fact]
+    public async Task SaveCompleteAsync_ShouldRetainBothRuns_WhenStartupRecollectsCompletedSlot()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        await context.Database.MigrateAsync();
+        var environmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(context, fixture.CancellationToken);
+        var resolver = new FakeResolver(environmentId);
+        await new EfMarketCategorySnapshotStore(context, resolver).ReplaceAsync(CategorySnapshot("CAT"), fixture.CancellationToken);
+        var day = DateOnly.FromDateTime(DateTime.UtcNow);
+        var cycles = new EfMarketCategoryInstrumentCycleStore(context, resolver);
+        var snapshots = new EfMarketCategoryInstrumentSnapshotStore(context, resolver);
+        var firstLease = await PrepareCycleAsync(context, resolver, BrokerEnvironmentKind.Demo, day, 0);
+        var firstId = Guid.NewGuid();
+        var first = await snapshots.SaveCompleteAsync(
+            Collection("CAT", Instrument("EPIC-OLD")),
+            Provenance("CAT", day, 0, firstId, 1, firstLease.Owner, firstLease.Fence),
+            fixture.CancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        Assert.True(await cycles.CompleteCycleAsync(BrokerEnvironmentKind.Demo, day, 0, firstLease.Owner, firstLease.Fence, now, "Completed", fixture.CancellationToken));
+        var cycle = await context.InstrumentCollectionCycleStates.SingleAsync(fixture.CancellationToken);
+        cycle.UsedRequestBudget = 2;
+        await context.SaveChangesAsync(fixture.CancellationToken);
+
+        var restartedOwner = Guid.NewGuid();
+        var restartedFence = await cycles.TryAcquireLeaseAsync(
+            BrokerEnvironmentKind.Demo, day, 0, 1, restartedOwner, now.AddMinutes(1),
+            TimeSpan.FromHours(8), fixture.CancellationToken, isStartupCheck: true);
+        Assert.NotNull(restartedFence);
+        Assert.True(await cycles.TryBeginCategoryPrerequisiteAsync(BrokerEnvironmentKind.Demo, day, 0, restartedOwner, restartedFence.Value, now.AddMinutes(1), fixture.CancellationToken));
+        Assert.True(await cycles.CompleteCategoryPrerequisiteAsync(BrokerEnvironmentKind.Demo, day, 0, restartedOwner, restartedFence.Value, now.AddMinutes(1), true, null, fixture.CancellationToken));
+        Assert.True(await cycles.TryReserveCategoryAttemptAsync(BrokerEnvironmentKind.Demo, day, 0, "CAT", restartedOwner, restartedFence.Value, now.AddMinutes(1), fixture.CancellationToken));
+        var secondId = Guid.NewGuid();
+        var second = await snapshots.SaveCompleteAsync(
+            Collection("CAT", Instrument("EPIC-NEW")),
+            Provenance("CAT", day, 0, secondId, 1, restartedOwner, restartedFence.Value),
+            fixture.CancellationToken);
+
+        await using var verificationContext = fixture.CreateDbContext();
+        var runs = await verificationContext.MarketCategoryInstrumentCollectionRuns
+            .AsNoTracking().OrderBy(item => item.SnapshotVersion).ToListAsync(fixture.CancellationToken);
+        Assert.Equal(2, runs.Count);
+        Assert.Equal(new[] { firstId, secondId }, runs.Select(item => item.CollectionId));
+        Assert.All(runs, item =>
+        {
+            Assert.Equal(day, item.TradingDay);
+            Assert.Equal(0, item.ScheduledSlot);
+            Assert.True(item.IsComplete);
+        });
+        Assert.Equal(2, await verificationContext.MarketCategoryInstrumentObservations.CountAsync(fixture.CancellationToken));
+        Assert.Equal(first.SnapshotVersion + 1, second.SnapshotVersion);
+        var current = await verificationContext.MarketCategoryInstrumentCatalogStates.SingleAsync(fixture.CancellationToken);
+        Assert.Equal(secondId, current.CollectionId);
+        Assert.Equal(second.SnapshotVersion, current.SnapshotVersion);
+        var page = await new EfMarketCategoryInstrumentSnapshotStore(verificationContext, resolver)
+            .ReadPageAsync(new(BrokerEnvironmentKind.Demo, "CAT", second.SnapshotVersion, null, 10), fixture.CancellationToken);
+        Assert.Equal("EPIC-NEW", Assert.Single(page!.Instruments).Epic);
+        Assert.Equal(2, (await verificationContext.InstrumentCollectionCycleStates.SingleAsync(fixture.CancellationToken)).UsedRequestBudget);
     }
 
     /// <summary>Trace: Market Category Instruments Work Item 2. Verifies expired leases advance the fence, slot reservations are idempotent, category retries are bounded, and multiple slots share one atomic trading-day budget.</summary>

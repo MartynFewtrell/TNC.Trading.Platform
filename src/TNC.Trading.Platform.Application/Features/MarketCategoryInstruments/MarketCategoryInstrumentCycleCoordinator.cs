@@ -25,7 +25,7 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan ConfigurationRecheckInterval = TimeSpan.FromSeconds(30);
 
-    public async Task<MarketCategoryInstrumentCycleResult> ExecuteDueCycleAsync(CancellationToken cancellationToken)
+    public async Task<MarketCategoryInstrumentCycleResult> ExecuteDueCycleAsync(CancellationToken cancellationToken, bool isStartupCheck = false)
     {
         var nowUtc = clock.GetUtcNow().ToUniversalTime();
         var applied = await appliedEnvironmentResolver.ResolveAppliedAsync(cancellationToken).ConfigureAwait(false);
@@ -52,7 +52,8 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
             environment,
             configuration.TradingSchedule,
             frequency,
-            previousProgress));
+            previousProgress,
+            isStartupCheck));
         var updatesPerDay = frequency.ForTradingDay(
             decision.TradingDay ?? GetTradingDayOrToday(configuration.TradingSchedule, nowUtc));
         var nextWake = schedulePolicy.GetNextWakeUpUtc(configuration.TradingSchedule, updatesPerDay);
@@ -108,7 +109,7 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
             windowEnd,
             applied!.EndpointProfile);
         await cycleStore.RecordMissedSlotsAsync(lease, decision.MissedSlotIndexes, cancellationToken).ConfigureAwait(false);
-        var fence = await cycleStore.TryAcquireLeaseAsync(lease, nowUtc, LeaseDuration, cancellationToken).ConfigureAwait(false);
+        var fence = await cycleStore.TryAcquireLeaseAsync(lease, nowUtc, LeaseDuration, isStartupCheck, cancellationToken).ConfigureAwait(false);
         if (fence is null)
         {
             return new("AlreadyObservedOrLeased", nextWake, 0, 0);

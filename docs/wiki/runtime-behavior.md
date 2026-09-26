@@ -65,6 +65,19 @@ local trading day. Unsupported or unconfigured applied environments, a
 disabled/invalid schedule, and absent/invalid capacity pause collection before
 IG is called.
 
+On each API process startup, the worker checks the applied trading schedule
+immediately. If startup falls inside an active trading window, it attempts one
+fresh collection of the current slot even if that slot completed before the
+restart. The SQL lease still fences concurrent workers, and previous daily
+request usage remains counted toward the allowance. Each successful repeat
+publishes a newer current snapshot and retains the earlier completed runs and
+observations for the same category, trading day, and slot. The schema migration
+replaces the unique completed-run slot index with a nonunique filtered index;
+existing history is preserved. Later polling ticks in the
+same process do not repeat the completed slot. A schedule edit during an active
+window also permits the revised slot to run without replaying other missed
+slots; no collection is performed outside the configured trading window.
+
 For each due slot, a durable environment/day/slot lease coordinates replicas.
 The worker refreshes and validates the full category catalogue first, records
 that prerequisite, then intersects the current selection with currently

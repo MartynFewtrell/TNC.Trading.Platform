@@ -60,7 +60,21 @@ The Instrument collection and Saved categories panels can each be collapsed
 or expanded; both start open. Instrument collection places the next scheduled
 check beside the daily request quota when space permits. If no allowance is
 configured, it explains that collection is paused. The panel does not display
-the internal collector state or scheduling reason.
+the internal collector state or scheduling reason. While the page remains
+open, it rereads the schedule-derived collection status every 30 seconds so
+changes to trading days, weekends, holidays, hours, or time zone appear in
+the next scheduled check. Use Refresh schedule status to check immediately;
+this reads status only and does not trigger provider collection. If status
+cannot be read, the old next check is hidden and Retry schedule status is
+available.
+On application startup during an active trading window, the worker checks
+immediately and makes one fresh collection attempt for the current slot, even
+if it completed earlier that day. The status reports an immediate next check
+while the slot is due; once observed, it displays the next scheduled slot or
+trading day. The last successful category refresh is shown alongside it when
+available, so a completed startup check can be distinguished from a missed
+one. Restarting does not reset the daily request allowance or permit collection
+after the trading window closes.
 
 Interested categories that have been removed from the current catalogue are
 shown as dormant. They are not collected while absent and can become eligible

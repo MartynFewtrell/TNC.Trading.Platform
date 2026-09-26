@@ -8,4 +8,5 @@ internal sealed record MarketCategoryInstrumentScheduleRequest(
     BrokerEnvironmentKind? AppliedBrokerEnvironment,
     TradingScheduleConfiguration Schedule,
     MarketCategoryInstrumentFrequency Frequency,
-    MarketCategoryInstrumentSlotProgress? PreviousProgress);
+    MarketCategoryInstrumentSlotProgress? PreviousProgress,
+    bool IsStartupCheck = false);

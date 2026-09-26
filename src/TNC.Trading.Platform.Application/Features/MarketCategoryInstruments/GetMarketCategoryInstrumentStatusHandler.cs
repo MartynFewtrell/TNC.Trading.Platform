@@ -53,7 +53,9 @@ internal sealed class GetMarketCategoryInstrumentStatusHandler(
             collectionStatus,
             decision.IsDue,
             decision.SlotIndex,
-            schedulePolicy.GetNextWakeUpUtc(configuration.TradingSchedule, effectiveFrequency),
+            decision.IsDue
+                ? clock.GetUtcNow().ToUniversalTime()
+                : schedulePolicy.GetNextWakeUpUtc(configuration.TradingSchedule, effectiveFrequency),
             decision.BlockReason?.ToString());
     }
 }

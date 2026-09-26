@@ -73,6 +73,96 @@ public sealed class MarketCategoriesTests
     }
 
     /// <summary>
+    /// Trace: Market categories schedule status after operator trading-schedule updates.
+    /// Verifies: refreshing the status after Saturday is enabled replaces the old next check without fetching categories or calling IG.
+    /// Expected: the displayed UTC instant changes from Monday to Saturday and only the status GET is repeated.
+    /// Why: an open categories page must not retain an obsolete schedule after configuration changes.
+    /// </summary>
+    [Fact]
+    public void RefreshCollectionStatus_ShouldShowSaturday_WhenTradingScheduleChanges()
+    {
+        var monday = new DateTimeOffset(2026, 9, 28, 8, 0, 0, TimeSpan.Zero);
+        var saturday = new DateTimeOffset(2026, 9, 26, 8, 0, 0, TimeSpan.Zero);
+        using var context = new PlatformComponentTestContext("local-viewer", null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCategories("FX", false, true)),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCollectionStatus(monday, 100)),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCollectionStatus(saturday, 100)));
+
+        var cut = context.Render<MarketCategories>();
+        cut.WaitForAssertion(() => Assert.Equal(monday.ToString("O"),
+            cut.Find("[data-testid='market-category-collection-status'] time").GetAttribute("datetime")));
+
+        cut.Find("[data-testid='market-category-refresh-schedule']").Click();
+
+        cut.WaitForAssertion(() => Assert.Equal(saturday.ToString("O"),
+            cut.Find("[data-testid='market-category-collection-status'] time").GetAttribute("datetime")));
+        Assert.Equal(3, context.ApiHandler.CallCount);
+        Assert.All(context.ApiHandler.Requests, request => Assert.Equal(HttpMethod.Get, request.Method));
+        Assert.Equal(context.ApiHandler.Requests[1].RequestUri, context.ApiHandler.Requests[2].RequestUri);
+    }
+
+    /// <summary>
+    /// Trace: Market categories schedule status after operator trading-schedule updates.
+    /// Verifies: a status failure clears the previous schedule and a subsequent retry restores the latest value.
+    /// Expected: the old next check disappears while the error is visible, then Saturday replaces it on retry.
+    /// Why: failed refreshes must not present stale schedule data as current.
+    /// </summary>
+    [Fact]
+    public void RefreshCollectionStatus_ShouldClearStaleCheck_WhenStatusReadFails()
+    {
+        var monday = new DateTimeOffset(2026, 9, 28, 8, 0, 0, TimeSpan.Zero);
+        var saturday = new DateTimeOffset(2026, 9, 26, 8, 0, 0, TimeSpan.Zero);
+        using var context = new PlatformComponentTestContext("local-viewer", null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCategories("FX", false, true)),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCollectionStatus(monday, 100)),
+            _ => PlatformWebTestData.CreateProblemResponse(HttpStatusCode.ServiceUnavailable, new { title = "Status unavailable" }),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCollectionStatus(saturday, 100)));
+
+        var cut = context.Render<MarketCategories>();
+        cut.WaitForAssertion(() => Assert.NotEmpty(cut.FindAll("[data-testid='market-category-collection-status'] time")));
+        cut.Find("[data-testid='market-category-refresh-schedule']").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Empty(cut.FindAll("[data-testid='market-category-collection-status'] time"));
+            Assert.NotEmpty(cut.FindAll("[data-testid='market-category-collection-status-error']"));
+        });
+        cut.Find("[data-testid='market-category-refresh-schedule']").Click();
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Equal(saturday.ToString("O"),
+                cut.Find("[data-testid='market-category-collection-status'] time").GetAttribute("datetime"));
+            Assert.Empty(cut.FindAll("[data-testid='market-category-collection-status-error']"));
+        });
+    }
+
+    /// <summary>
+    /// Trace: active-window startup collection feedback on the market categories page.
+    /// Verifies: the most recent successful category refresh remains visible when the next scheduled slot has moved to a later day.
+    /// Expected: Saturday appears as the last refresh and Monday as the next check.
+    /// Why: a completed startup check should not be mistaken for a missed Saturday check.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldShowSaturdayRefresh_WhenNextCheckIsMonday()
+    {
+        var saturday = new DateTimeOffset(2026, 9, 26, 11, 0, 0, TimeSpan.Zero);
+        var monday = new DateTimeOffset(2026, 9, 28, 8, 0, 0, TimeSpan.Zero);
+        using var context = new PlatformComponentTestContext("local-viewer", null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCategories("FX", false, true)),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCollectionStatus(monday, 100, saturday)));
+
+        var cut = context.Render<MarketCategories>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var summary = cut.Find("[data-testid='market-category-collection-status'] .market-category-collection-summary");
+            Assert.Equal(monday.ToString("O"), summary.QuerySelectorAll("time")[0].GetAttribute("datetime"));
+            Assert.Contains("Last category refresh:", summary.TextContent, StringComparison.Ordinal);
+            Assert.Equal(saturday.ToString("O"), summary.QuerySelectorAll("time")[1].GetAttribute("datetime"));
+        });
+    }
+
+    /// <summary>
     /// Trace: Market categories page, collapsible panels.
     /// Verifies: instrument collection and saved categories use the shared Configuration accordion presentation.
     /// Expected: each panel has its own summary and starts expanded in the existing display order.
@@ -308,7 +398,10 @@ public sealed class MarketCategoriesTests
         DormantInterestedCategories = Array.Empty<string>()
     };
 
-    private static object CreateCollectionStatus(DateTimeOffset? nextWakeUpUtc = null, int? approvedDailyRequestAllowance = null) => new
+    private static object CreateCollectionStatus(
+        DateTimeOffset? nextWakeUpUtc = null,
+        int? approvedDailyRequestAllowance = null,
+        DateTimeOffset? lastCategoryRefreshAtUtc = null) => new
     {
         State = "Available",
         BrokerEnvironment = "Demo",
@@ -317,7 +410,7 @@ public sealed class MarketCategoriesTests
         CurrentSlot = (int?)null,
         NextWakeUpUtc = nextWakeUpUtc,
         PauseReason = "SlotAlreadyObserved",
-        LastCategoryRefreshAtUtc = (DateTimeOffset?)null,
+        LastCategoryRefreshAtUtc = lastCategoryRefreshAtUtc,
         LastCompletedSlot = (int?)null,
         CycleOutcome = (string?)null,
         CategoryPrerequisiteOutcome = (string?)null,
