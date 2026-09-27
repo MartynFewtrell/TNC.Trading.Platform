@@ -4,8 +4,10 @@ internal enum MarketCategoryInstrumentScheduleBlockReason
 {
     ScheduleDisabled,
     UnsupportedAppliedEnvironment,
+    LegacyScheduleReconciliationRequired,
     InvalidSchedule,
     InvalidFrequency,
+    TimedUpdatesDisabled,
     ScheduleInactive,
     SlotAlreadyObserved
 }

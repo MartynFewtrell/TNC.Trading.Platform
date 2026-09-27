@@ -86,6 +86,21 @@ internal static class GetPlatformStatusMapping
                         status.IgLoginStatus.LatestProofData.OpenPositionCount,
                         status.IgLoginStatus.LatestProofData.RetrievedAtUtc)),
             "Available",
-            response.LastReconciledAtUtc);
+            response.LastReconciledAtUtc,
+            status.TradingState is null
+                ? null
+                : new TradingStateResponse(
+                    status.TradingState.TradingWindowOpen,
+                    status.TradingState.CanTrade,
+                    status.TradingState.CanStartMarketDataUpdate,
+                    status.TradingState.AppliedBrokerEnvironmentId,
+                    status.TradingState.ScheduleRevision,
+                    status.TradingState.CollectionConfigurationVersion,
+                    status.TradingState.TradingDay,
+                    status.TradingState.NextWindowOpeningUtc,
+                    status.TradingState.NextWindowClosingUtc,
+                    status.TradingState.NextScheduledStartUtc,
+                    status.TradingState.TradeBlockReasons.Select(reason => reason.ToString()).ToArray(),
+                    status.TradingState.MarketDataBlockReasons.Select(reason => reason.ToString()).ToArray()));
     }
 }

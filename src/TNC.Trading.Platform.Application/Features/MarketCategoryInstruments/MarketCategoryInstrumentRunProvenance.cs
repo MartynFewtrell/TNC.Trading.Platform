@@ -1,4 +1,5 @@
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 
 namespace TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 
@@ -17,4 +18,6 @@ internal sealed record MarketCategoryInstrumentRunProvenance(
     MarketCategoryInstrumentDataQualityEvidence DataQualityEvidence,
     Guid LeaseOwner,
     long LeaseFence,
-    DateTimeOffset? ScheduleWindowEndUtc = null);
+    DateTimeOffset? ScheduleWindowEndUtc = null,
+    MarketDataFullRunLease? FullRunLease = null,
+    long ScheduleRevision = 0);

@@ -68,14 +68,19 @@ internal sealed class UpdatePlatformConfigurationValidator
             errors[nameof(update.ChangedBy)] = ["ChangedBy is required."];
         }
 
-        if (update.InstrumentUpdatesPerDay is < 1 or > 4)
+        if (update.InstrumentUpdatesPerDay is < 0)
         {
-            errors[nameof(update.InstrumentUpdatesPerDay)] = ["Instrument updates per day must be between 1 and 4."];
+            errors[nameof(update.InstrumentUpdatesPerDay)] = ["Instrument updates per day cannot be negative."];
         }
 
         if (update.ApprovedNonTradingDailyRequestAllowance is < 0)
         {
             errors[nameof(update.ApprovedNonTradingDailyRequestAllowance)] = ["The approved daily request allowance cannot be negative."];
+        }
+
+        if (update.MarketDataLeadInMinutes is < 0)
+        {
+            errors[nameof(update.MarketDataLeadInMinutes)] = ["Market-data lead-in cannot be negative."];
         }
 
         if (errors.Count > 0)

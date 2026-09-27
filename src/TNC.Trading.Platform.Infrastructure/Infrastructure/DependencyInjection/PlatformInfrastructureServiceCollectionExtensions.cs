@@ -15,6 +15,7 @@ using TNC.Trading.Platform.Application.Features.AccountPreferences;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 using TNC.Trading.Platform.Application.Features.MarketDetails;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 using TNC.Trading.Platform.Application.Features.BrokerEnvironments;
 using TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent.Ports;
 using TNC.Trading.Platform.Application.Services;
@@ -66,6 +67,7 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
 
         services.AddScoped<ProtectedCredentialService>();
         services.AddScoped<IAppliedBrokerEnvironmentContextResolver, SqlAppliedBrokerEnvironmentContextResolver>();
+        services.AddScoped<IAppliedBrokerScheduleProfileStore, SqlAppliedBrokerScheduleProfileStore>();
         services.AddScoped<IBrokerEnvironmentCatalogService, SqlBrokerEnvironmentCatalogService>();
         services.AddScoped<IProtectedCredentialService>(serviceProvider => serviceProvider.GetRequiredService<ProtectedCredentialService>());
         services.AddScoped<SqlPlatformConfigurationStore>();
@@ -111,6 +113,11 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
             provider => provider.GetRequiredService<EfMarketCategoryInstrumentSnapshotStore>());
         services.AddScoped<TNC.Trading.Platform.Application.Features.MarketCategoryInstruments.IMarketCategoryInstrumentSnapshotWriter>(
             provider => provider.GetRequiredService<EfMarketCategoryInstrumentSnapshotStore>());
+        services.AddScoped<EfMarketDataFullRunStore>();
+        services.AddScoped<IMarketDataFullRunStore>(provider =>
+            provider.GetRequiredService<EfMarketDataFullRunStore>());
+        services.AddScoped<IMarketDataFullRunIntentWriter>(provider =>
+            provider.GetRequiredService<EfMarketDataFullRunStore>());
         services.AddScoped<EfMarketCategoryInstrumentInterestStore>();
         services.AddScoped<TNC.Trading.Platform.Application.Features.MarketCategoryInstruments.IMarketCategoryInstrumentInterestReader>(
             provider => provider.GetRequiredService<EfMarketCategoryInstrumentInterestStore>());

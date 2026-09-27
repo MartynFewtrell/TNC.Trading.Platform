@@ -1,16 +1,14 @@
 namespace TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 
-/// <summary>Current and pending update frequency, with pending values effective on a local trading day.</summary>
+/// <summary>Configured update frequency, including a pending value retained for persisted-contract compatibility.</summary>
 internal sealed record MarketCategoryInstrumentFrequency(
     int CurrentUpdatesPerDay,
     int? PendingUpdatesPerDay,
     DateOnly? PendingEffectiveTradingDay,
-    int? ApprovedNonTradingDailyRequestAllowance = null)
+    int? ApprovedNonTradingDailyRequestAllowance = null,
+    int LeadInMinutes = 15,
+    long ConfigurationVersion = 1)
 {
-    public int ForTradingDay(DateOnly tradingDay) =>
-        PendingUpdatesPerDay is not null
-        && PendingEffectiveTradingDay is not null
-        && tradingDay >= PendingEffectiveTradingDay
-            ? PendingUpdatesPerDay.Value
-            : CurrentUpdatesPerDay;
+    /// <summary>Returns the authoritative current count; persisted legacy pending values are not promoted by policy.</summary>
+    public int ForTradingDay(DateOnly tradingDay) => CurrentUpdatesPerDay;
 }

@@ -12,4 +12,5 @@ internal sealed record GetPlatformStatusResponse(
     DateTimeOffset? UpdatedAtUtc,
     IgLoginStatusResponse? IgLogin,
     string StateAvailability,
-    DateTimeOffset? LastReconciledAtUtc);
+    DateTimeOffset? LastReconciledAtUtc,
+    TradingStateResponse? TradingState = null);

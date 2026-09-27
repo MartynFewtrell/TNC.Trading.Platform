@@ -9,4 +9,5 @@ internal sealed record UpdatePlatformConfigurationRequest(
     UpdateIgCredentialsRequest Credentials,
     string ChangedBy,
     int? InstrumentUpdatesPerDay = null,
-    int? ApprovedNonTradingDailyRequestAllowance = null);
+    int? ApprovedNonTradingDailyRequestAllowance = null,
+    int? MarketDataLeadInMinutes = null);

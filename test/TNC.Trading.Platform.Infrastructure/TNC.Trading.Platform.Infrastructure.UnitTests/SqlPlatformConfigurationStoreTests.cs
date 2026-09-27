@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.AppliedBrokerSchedule;
 using TNC.Trading.Platform.Infrastructure.Configuration.SqlServer;
 using TNC.Trading.Platform.Infrastructure.Credentials.DataProtection;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
@@ -297,7 +298,8 @@ public class SqlPlatformConfigurationStoreTests
             configuration,
             protectedCredentialService,
             TimeProvider.System,
-            new PlatformEnvironmentContext(PlatformEnvironmentKind.Test));
+            new PlatformEnvironmentContext(PlatformEnvironmentKind.Test),
+            InMemoryAppliedBrokerScheduleProfileStore.ForConfiguration(configuration));
     }
 
     private static PlatformConfigurationUpdate CreateConfigurationUpdate(

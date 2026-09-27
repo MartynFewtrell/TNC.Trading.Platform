@@ -11,4 +11,6 @@ internal sealed record InstrumentCollectionConfigurationResponse(
     int? ApprovedNonTradingDailyRequestAllowance,
     int? UsedRequestBudget,
     string? CollectionOutcome,
-    string? SafeFailure);
+    string? SafeFailure,
+    int? LeadInMinutes,
+    string? CapacityWarning);

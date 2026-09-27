@@ -1,6 +1,8 @@
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
+using TNC.Trading.Platform.Application.Features.TradingState;
 using TNC.Trading.Platform.Application.Services;
 
 namespace TNC.Trading.Platform.Application.Features.MarketDetails;
@@ -11,10 +13,12 @@ internal sealed class MarketDetailCollectionCoordinator(
     IMarketCategoryInstrumentFrequencyReader frequencyReader,
     IMarketDetailListingSourceReader listingSourceReader,
     IMarketDetailRunStore runStore,
+    IMarketDataFullRunStore fullRunStore,
     IMarketDetailsGateway gateway,
     IMarketDetailObservationWriter observationWriter,
     IMarketDetailRequestBudget requestBudget,
     MarketCategoryInstrumentSchedulePolicy schedulePolicy,
+    TradingStateEvaluator tradingStateEvaluator,
     IMarketCategoryInstrumentClock clock,
     MarketDetailUniversePolicy universePolicy,
     MarketDetailCapacityPolicy capacityPolicy,
@@ -23,7 +27,9 @@ internal sealed class MarketDetailCollectionCoordinator(
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan MaximumAccountRequestInterval = TimeSpan.FromSeconds(2);
 
-    public async Task<CollectMarketDetailsResponse> ExecuteDueCollectionAsync(CancellationToken cancellationToken)
+    public async Task<CollectMarketDetailsResponse> ExecuteDueCollectionAsync(
+        CancellationToken cancellationToken,
+        MarketDataFullRunLease? fullRunLease = null)
     {
         var nowUtc = clock.GetUtcNow().ToUniversalTime();
         var applied = await appliedEnvironmentResolver.ResolveAppliedAsync(cancellationToken).ConfigureAwait(false);
@@ -34,19 +40,43 @@ internal sealed class MarketDetailCollectionCoordinator(
 
         var configuration = await configurationService.GetRuntimeAsync(null, environment, cancellationToken).ConfigureAwait(false);
         var frequency = await frequencyReader.ReadAsync(environment, cancellationToken).ConfigureAwait(false);
+        var tradingState = tradingStateEvaluator.Evaluate(new(
+            applied,
+            configuration,
+            frequency,
+            null,
+            nowUtc));
+        if (tradingState.TradingWindowOpen && !tradingState.CanStartMarketDataUpdate)
+        {
+            return Pause(
+                MarketDetailRunStatus.Blocked,
+                tradingState.MarketDataBlockReasons.Count > 0
+                    ? tradingState.MarketDataBlockReasons[0].ToString()
+                    : "MarketDataUnavailable",
+                nowUtc);
+        }
+
         var decision = schedulePolicy.Evaluate(new(
             true,
             true,
             environment,
             configuration.TradingSchedule,
             frequency,
-            PreviousProgress: null));
+            PreviousProgress: null,
+            IsLegacyScheduleReconciliationRequired: configuration.MarketDataScheduleReconciliationRequired));
         var updatesPerDay = frequency.ForTradingDay(decision.TradingDay ?? DateOnly.FromDateTime(nowUtc.UtcDateTime));
         var nextWake = schedulePolicy.GetNextWakeUpUtc(configuration.TradingSchedule, updatesPerDay);
-        if (!decision.IsDue
-            || decision.TradingDay is not { } tradingDay
-            || decision.SlotIndex is not { } slotIndex
-            || decision.EffectiveUpdatesPerDay is not { } effectiveUpdatesPerDay)
+        var tradingDayCandidate = fullRunLease?.TradingDay ?? decision.TradingDay;
+        var slotIndexCandidate = fullRunLease is null
+            ? decision.SlotIndex
+            : fullRunLease.DetailScheduledSlot
+                ?? fullRunLease.CoveredSlots?.FirstOrDefault()?.ScheduledSlot
+                ?? 0;
+        var updatesPerDayCandidate = fullRunLease?.EffectiveUpdatesPerDay ?? decision.EffectiveUpdatesPerDay;
+        if (tradingDayCandidate is not { } tradingDay
+            || slotIndexCandidate is not { } slotIndex
+            || updatesPerDayCandidate is not { } effectiveUpdatesPerDay
+            || (fullRunLease is null && !decision.IsDue))
         {
             return new(
                 MarketDetailRunStatus.NeverCollected,
@@ -55,31 +85,92 @@ internal sealed class MarketDetailCollectionCoordinator(
                 nextWake);
         }
 
-        var windowEndUtc = schedulePolicy.GetWindowEndUtc(configuration.TradingSchedule, tradingDay);
-        var scheduleRevision = MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(configuration.TradingSchedule);
-        if (windowEndUtc is not { } windowEnd || nowUtc >= windowEnd)
+        var windowEndUtc = fullRunLease?.WindowEndUtc
+            ?? schedulePolicy.GetWindowEndUtc(configuration.TradingSchedule, tradingDay);
+        var scheduleRevision = fullRunLease?.ScheduleRevision
+            ?? MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(configuration.TradingSchedule, frequency);
+        if (windowEndUtc is not { } windowEnd || (fullRunLease is null && nowUtc >= windowEnd))
         {
             return new(MarketDetailRunStatus.Blocked, new(0, 0, 0), "WindowClosed", nextWake);
         }
 
+        if (fullRunLease is { } parentLease
+            && (parentLease.Environment != environment
+                || parentLease.AppliedBrokerEnvironmentId != applied!.BrokerEnvironmentId
+                || !string.Equals(parentLease.EndpointProfile, applied.EndpointProfile, StringComparison.Ordinal)))
+        {
+            return new(MarketDetailRunStatus.Blocked, new(0, 0, 0), "FullRunContextChanged", nextWake);
+        }
+
+        if (fullRunLease is { } completedParentLease
+            && await fullRunStore.GetStageStatusAsync(
+                completedParentLease,
+                MarketDataFullRunStage.Details,
+                clock.GetUtcNow().ToUniversalTime(),
+                cancellationToken).ConfigureAwait(false) == "Succeeded")
+        {
+            return new(MarketDetailRunStatus.Complete, new(0, 0, 0), "AlreadyCompleted", nextWake);
+        }
+
+        if (fullRunLease is { SelectedCategoryCodes.Count: 0 })
+        {
+            return new(MarketDetailRunStatus.Complete, new(0, 0, 0), "NoSelectedCategories", nextWake);
+        }
+
         var key = new MarketDetailRunKey(environment, tradingDay, slotIndex);
-        var initialSnapshot = await listingSourceReader.ReadAsync(
+        var initialSnapshot = await ReadListingSourcesAsync(
             key,
             scheduleRevision,
             applied!.EndpointProfile,
+            fullRunLease,
             cancellationToken).ConfigureAwait(false);
         var owner = Guid.NewGuid();
-        var lease = await runStore.TryAcquireAsync(
-            key,
-            initialSnapshot.Revisions,
-            applied.EndpointProfile,
-            owner,
-            nowUtc,
-            LeaseDuration,
-            windowEnd,
-            cancellationToken).ConfigureAwait(false);
+        var lease = fullRunLease is null
+            ? await runStore.TryAcquireAsync(
+                key,
+                initialSnapshot.Revisions,
+                applied.EndpointProfile,
+                owner,
+                nowUtc,
+                LeaseDuration,
+                windowEnd,
+                cancellationToken).ConfigureAwait(false)
+            : await runStore.TryAcquireForFullRunAsync(
+                key,
+                initialSnapshot.Revisions,
+                applied.EndpointProfile,
+                owner,
+                nowUtc,
+                LeaseDuration,
+                windowEnd,
+                fullRunLease,
+                cancellationToken).ConfigureAwait(false);
         if (lease is null)
         {
+            if (fullRunLease is { } resumedParentLease)
+            {
+                var expectedEpics = initialSnapshot.Sources
+                    .SelectMany(source => source.Epics)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+                var succeededEpics = await fullRunStore.GetSucceededItemsAsync(
+                    resumedParentLease,
+                    MarketDataFullRunStage.Details,
+                    clock.GetUtcNow().ToUniversalTime(),
+                    cancellationToken).ConfigureAwait(false);
+                var completedCount = expectedEpics.Count(succeededEpics.Contains);
+                var resumedCounts = new MarketDetailRunCounts(expectedEpics.Length, completedCount, 0);
+                var allExpectedEpicsSucceeded = initialSnapshot.PrerequisitesValidated
+                    && completedCount == expectedEpics.Length;
+                return new(
+                    allExpectedEpicsSucceeded
+                        ? MarketDetailRunStatus.Complete
+                        : MarketDetailRunStatus.Incomplete,
+                    resumedCounts,
+                    allExpectedEpicsSucceeded ? null : "DetailResumeIncomplete",
+                    NextCheck(nowUtc, windowEnd, nextWake));
+            }
+
             return new(
                 MarketDetailRunStatus.Running,
                 new(0, 0, 0),
@@ -136,11 +227,15 @@ internal sealed class MarketDetailCollectionCoordinator(
         }
 
         var capacityTargets = await runStore.ReadRetryableCapacityTargetsAsync(lease, cancellationToken).ConfigureAwait(false);
-        var capacity = capacityPolicy.Estimate(capacityTargets);
+        var capacity = capacityPolicy.Estimate(
+            capacityTargets,
+            isFailedItemFollowUp: fullRunLease?.Trigger is MarketDataFullRunTrigger.FailedItemRetry);
         var remainingAllowance = await requestBudget.GetRemainingAllowanceAsync(budgetContext, cancellationToken).ConfigureAwait(false);
         var requiredRateTime = TimeSpan.FromTicks(
             checked(MaximumAccountRequestInterval.Ticks * (long)capacity.WorstCaseRequests));
-        var timeRemaining = windowEnd - clock.GetUtcNow().ToUniversalTime();
+        var timeRemaining = fullRunLease is null
+            ? windowEnd - clock.GetUtcNow().ToUniversalTime()
+            : TimeSpan.MaxValue;
         var capacityAvailable = remainingAllowance is { } remaining
             && remaining >= capacity.WorstCaseRequests
             && requiredRateTime <= timeRemaining;
@@ -156,54 +251,123 @@ internal sealed class MarketDetailCollectionCoordinator(
                 cancellationToken).ConfigureAwait(false);
         }
 
-        var batch = await runStore.ReadOutstandingTargetsAsync(lease, 50, cancellationToken).ConfigureAwait(false);
         var stopForContextChange = false;
-        if (batch.Count > 0)
+        for (var attemptNumber = 0; attemptNumber < 3 && !stopForContextChange; attemptNumber++)
         {
-            var request = new MarketDetailGatewayRequest(batch.Select(target => target.Epic).ToArray(), budgetContext);
-            var results = await gateway.GetMarketsAsync(request, cancellationToken).ConfigureAwait(false);
-            foreach (var result in results)
+            var outstandingTargets = await runStore.ReadOutstandingTargetsAsync(
+                lease,
+                15_000,
+                cancellationToken).ConfigureAwait(false);
+            if (outstandingTargets.Count == 0)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var currentSnapshot = await listingSourceReader.ReadAsync(
-                    key,
-                    scheduleRevision,
-                    applied.EndpointProfile,
-                    cancellationToken).ConfigureAwait(false);
-                if (!HasCurrentRevisions(lease, initialSnapshot, currentSnapshot)
-                    || !await requestBudget.IsExecutionContextStillActiveAsync(budgetContext, cancellationToken).ConfigureAwait(false))
+                break;
+            }
+
+            if (attemptNumber > 0)
+            {
+                if (!await requestBudget.IsExecutionContextStillActiveAsync(
+                        budgetContext,
+                        cancellationToken).ConfigureAwait(false))
                 {
                     stopForContextChange = true;
                     break;
                 }
 
-                if (result.Observation is { } observation)
+                await clock.DelayAsync(
+                    attemptNumber == 1 ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(5),
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            foreach (var batch in outstandingTargets.Chunk(50))
+            {
+                var request = new MarketDetailGatewayRequest(batch.Select(target => target.Epic).ToArray(), budgetContext);
+                var results = await gateway.GetMarketsAsync(request, cancellationToken).ConfigureAwait(false);
+                foreach (var result in results)
                 {
-                    if (!await observationWriter.SaveValidatedAsync(lease, observation, cancellationToken).ConfigureAwait(false))
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var currentSnapshot = await ReadListingSourcesAsync(
+                        key,
+                        scheduleRevision,
+                        applied.EndpointProfile,
+                        fullRunLease,
+                        cancellationToken).ConfigureAwait(false);
+                    if (!HasCurrentRevisions(lease, initialSnapshot, currentSnapshot)
+                        || (fullRunLease is { } activeParentLease
+                            && !await fullRunStore.TryRenewLeaseAsync(
+                                activeParentLease,
+                                clock.GetUtcNow().ToUniversalTime(),
+                                TimeSpan.FromMinutes(5),
+                                cancellationToken).ConfigureAwait(false))
+                        || !await requestBudget.IsExecutionContextStillActiveAsync(budgetContext, cancellationToken).ConfigureAwait(false))
                     {
                         stopForContextChange = true;
                         break;
+                    }
+
+                    if (result.Observation is { } observation)
+                    {
+                        if (!await observationWriter.SaveValidatedAsync(lease, observation, cancellationToken).ConfigureAwait(false))
+                        {
+                            stopForContextChange = true;
+                            break;
+                        }
+
+                        if (fullRunLease is { } successfulParentLease
+                            && !await fullRunStore.RecordItemAttemptAsync(
+                                successfulParentLease,
+                                MarketDataFullRunStage.Details,
+                                result.Epic,
+                                "Succeeded",
+                                clock.GetUtcNow().ToUniversalTime(),
+                                true,
+                                null,
+                                cancellationToken).ConfigureAwait(false))
+                        {
+                            stopForContextChange = true;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        if (!await runStore.RecordFailureAsync(
+                            lease,
+                            result,
+                            clock.GetUtcNow().ToUniversalTime(),
+                            cancellationToken).ConfigureAwait(false))
+                        {
+                            stopForContextChange = true;
+                            break;
+                        }
+
+                        if (fullRunLease is { } failedParentLease
+                            && !await fullRunStore.RecordItemAttemptAsync(
+                                failedParentLease,
+                                MarketDataFullRunStage.Details,
+                                result.Epic,
+                                "Failed",
+                                clock.GetUtcNow().ToUniversalTime(),
+                                false,
+                                "DetailCollectionFailed",
+                                cancellationToken).ConfigureAwait(false))
+                        {
+                            stopForContextChange = true;
+                            break;
+                        }
                     }
                 }
-                else
+
+                if (stopForContextChange)
                 {
-                    if (!await runStore.RecordFailureAsync(
-                        lease,
-                        result,
-                        clock.GetUtcNow().ToUniversalTime(),
-                        cancellationToken).ConfigureAwait(false))
-                    {
-                        stopForContextChange = true;
-                        break;
-                    }
+                    break;
                 }
             }
         }
 
-        var finalSnapshot = await listingSourceReader.ReadAsync(
+        var finalSnapshot = await ReadListingSourcesAsync(
             key,
             scheduleRevision,
             applied.EndpointProfile,
+            fullRunLease,
             cancellationToken).ConfigureAwait(false);
         var finalRevisionsCurrent = HasCurrentRevisions(lease, initialSnapshot, finalSnapshot);
         var active = await requestBudget.IsExecutionContextStillActiveAsync(budgetContext, cancellationToken).ConfigureAwait(false);
@@ -262,10 +426,11 @@ internal sealed class MarketDetailCollectionCoordinator(
         DateTimeOffset nextWake,
         CancellationToken cancellationToken)
     {
-        var currentSnapshot = await listingSourceReader.ReadAsync(
+        var currentSnapshot = await ReadListingSourcesAsync(
             lease.Key,
             lease.Revisions.ScheduleRevision,
             lease.AppliedEndpointProfile,
+            lease.FullRunLease,
             cancellationToken).ConfigureAwait(false);
         var revisionsCurrent = HasCurrentRevisions(lease, snapshot, currentSnapshot);
         var counts = await runStore.ReadCountsAsync(lease, cancellationToken).ConfigureAwait(false);
@@ -299,6 +464,44 @@ internal sealed class MarketDetailCollectionCoordinator(
                 && pair.First.IsValidatedComplete == pair.Second.IsValidatedComplete
                 && pair.First.Epics.SequenceEqual(pair.Second.Epics, StringComparer.Ordinal));
 
+    private Task<MarketDetailListingSourceSnapshot> ReadListingSourcesAsync(
+        MarketDetailRunKey key,
+        long scheduleRevision,
+        string endpointProfile,
+        MarketDataFullRunLease? fullRunLease,
+        CancellationToken cancellationToken) =>
+        ReadListingSourcesCoreAsync(
+            key,
+            scheduleRevision,
+            endpointProfile,
+            fullRunLease,
+            cancellationToken);
+
+    private async Task<MarketDetailListingSourceSnapshot> ReadListingSourcesCoreAsync(
+        MarketDetailRunKey key,
+        long scheduleRevision,
+        string endpointProfile,
+        MarketDataFullRunLease? fullRunLease,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await listingSourceReader.ReadAsync(
+            key,
+            scheduleRevision,
+            endpointProfile,
+            fullRunLease?.SelectedCategoryCodes,
+            cancellationToken).ConfigureAwait(false);
+        return fullRunLease is null
+            ? snapshot
+            : snapshot with
+            {
+                Revisions = snapshot.Revisions with
+                {
+                    InterestRevision = fullRunLease.InterestRevision,
+                    ScheduleRevision = fullRunLease.ScheduleRevision
+                }
+            };
+    }
+
     private static MarketDetailRequestBudgetContext ToBudgetContext(
         MarketDetailRunLease lease,
         int effectiveUpdatesPerDay) =>
@@ -312,7 +515,8 @@ internal sealed class MarketDetailCollectionCoordinator(
             lease.Revisions.ScheduleRevision,
             effectiveUpdatesPerDay,
             lease.AppliedEndpointProfile,
-            lease.WindowEndUtc);
+            lease.WindowEndUtc,
+            lease.FullRunLease);
 
     private static bool IsSupportedAppliedEnvironment(
         AppliedBrokerEnvironmentContext? context,

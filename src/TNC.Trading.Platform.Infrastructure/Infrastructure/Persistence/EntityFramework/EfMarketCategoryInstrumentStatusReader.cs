@@ -49,7 +49,7 @@ internal sealed class EfMarketCategoryInstrumentStatusReader(
             .Select(item => new { item.CategoryCode, item.LastRefreshedAtUtc })
             .ToListAsync(cancellationToken).ConfigureAwait(false);
         var categoryCodes = await dbContext.MarketCategories.AsNoTracking()
-            .Where(item => item.BrokerEnvironmentId == environmentId)
+            .Where(item => item.BrokerEnvironmentId == environmentId && item.IsCurrent)
             .Select(item => item.Code)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
         var attempts = await dbContext.InstrumentCollectionCategoryAttempts.AsNoTracking()

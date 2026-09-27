@@ -9,4 +9,5 @@ internal sealed record MarketCategoryInstrumentScheduleRequest(
     TradingScheduleConfiguration Schedule,
     MarketCategoryInstrumentFrequency Frequency,
     MarketCategoryInstrumentSlotProgress? PreviousProgress,
-    bool IsStartupCheck = false);
+    bool IsStartupCheck = false,
+    bool IsLegacyScheduleReconciliationRequired = false);

@@ -1,5 +1,7 @@
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
+using TNC.Trading.Platform.Application.Features.TradingState;
 using TNC.Trading.Platform.Application.Services;
 
 namespace TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
@@ -9,6 +11,7 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
     PlatformConfigurationService configurationService,
     IAppliedBrokerEnvironmentContextResolver appliedEnvironmentResolver,
     IMarketCategoryInstrumentFrequencyReader frequencyReader,
+    TradingStateEvaluator tradingStateEvaluator,
     IMarketCategoryInstrumentInterestReader interestReader,
     IMarketCategoryInstrumentCycleStore cycleStore,
     IMarketCategorySnapshotStore categorySnapshotStore,
@@ -20,9 +23,11 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
     MarketCategoryInstrumentCyclePolicy cyclePolicy,
     MarketCategoryInstrumentRetryPolicy retryPolicy,
     IMarketCategoryInstrumentClock clock,
+    IMarketDataFullRunStore fullRunStore,
     IPlatformApplicationLogger logger) : IMarketCategoryInstrumentCycleCoordinator
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan FullRunLeaseDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan ConfigurationRecheckInterval = TimeSpan.FromSeconds(30);
 
     public async Task<MarketCategoryInstrumentCycleResult> ExecuteDueCycleAsync(CancellationToken cancellationToken, bool isStartupCheck = false)
@@ -45,6 +50,23 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
             return Poll("PausedConfiguration", nowUtc, 0, 0);
         }
 
+        var tradingState = tradingStateEvaluator.Evaluate(new(
+            applied,
+            configuration,
+            frequency,
+            null,
+            nowUtc));
+        if (tradingState.TradingWindowOpen && !tradingState.CanStartMarketDataUpdate)
+        {
+            return Poll(
+                tradingState.MarketDataBlockReasons.Count > 0
+                    ? tradingState.MarketDataBlockReasons[0].ToString()
+                    : "MarketDataUnavailable",
+                nowUtc,
+                0,
+                0);
+        }
+
         var previousProgress = await cycleStore.GetLatestProgressAsync(environment, cancellationToken).ConfigureAwait(false);
         var decision = schedulePolicy.Evaluate(new(
             true,
@@ -53,107 +75,375 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
             configuration.TradingSchedule,
             frequency,
             previousProgress,
-            isStartupCheck));
+            isStartupCheck,
+            configuration.MarketDataScheduleReconciliationRequired));
         var updatesPerDay = frequency.ForTradingDay(
             decision.TradingDay ?? GetTradingDayOrToday(configuration.TradingSchedule, nowUtc));
         var nextWake = schedulePolicy.GetNextWakeUpUtc(configuration.TradingSchedule, updatesPerDay);
+        var pendingIntent = await fullRunStore.GetPendingIntentAsync(environment, cancellationToken).ConfigureAwait(false);
+        var pendingFailedItemRetry = await fullRunStore.GetPendingFailedItemRetryAsync(
+            environment,
+            nowUtc,
+            cancellationToken).ConfigureAwait(false);
+        var retryScheduleRevision = MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(
+            configuration.TradingSchedule,
+            frequency);
+        var failedItemRetryIsDue = pendingFailedItemRetry is { } failedItemRetry
+            && nowUtc >= failedItemRetry.DueAtUtc
+            && nowUtc < failedItemRetry.WindowEndUtc
+            && tradingState.CanStartMarketDataUpdate
+            && failedItemRetry.Environment == environment
+            && failedItemRetry.AppliedBrokerEnvironmentId == applied!.BrokerEnvironmentId
+            && string.Equals(failedItemRetry.EndpointProfile, applied.EndpointProfile, StringComparison.Ordinal)
+            && failedItemRetry.TradingDay == (decision.TradingDay
+                ?? tradingState.TradingDay
+                ?? GetTradingDayOrToday(configuration.TradingSchedule, nowUtc))
+            && failedItemRetry.ScheduleRevision == retryScheduleRevision
+            && failedItemRetry.WindowEndUtc == schedulePolicy.GetWindowEndUtc(
+                configuration.TradingSchedule,
+                failedItemRetry.TradingDay);
+        var hasTriggerIntent = failedItemRetryIsDue
+            || (pendingIntent is not null
+            && tradingState.TradingWindowOpen
+            && tradingState.CanStartMarketDataUpdate);
 
-        if (!decision.IsDue
-            || decision.TradingDay is null
-            || decision.SlotIndex is null
-            || decision.ScheduleIdentity is null)
+        MarketDataFullRunAdmissionResult? resumeAdmission = null;
+        if ((!decision.IsDue || decision.TradingDay is null || decision.ScheduleIdentity is null)
+            && !hasTriggerIntent)
         {
-            if (decision.TradingDay is { } missedDay && decision.ScheduleIdentity is { } missedScheduleIdentity)
+            var resumeDay = tradingState.TradingDay
+                ?? GetTradingDayOrToday(configuration.TradingSchedule, nowUtc);
+            var resumeScheduleRevision = MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(
+                configuration.TradingSchedule,
+                frequency);
+            var resumeAdmissionRequest = new MarketDataFullRunAdmissionRequest(
+                environment,
+                applied!.BrokerEnvironmentId,
+                applied.EndpointProfile,
+                resumeDay,
+                nowUtc,
+                schedulePolicy.GetWindowEndUtc(configuration.TradingSchedule, resumeDay) ?? nowUtc,
+                resumeScheduleRevision,
+                frequency.ForTradingDay(resumeDay),
+                Math.Max(1, frequency.ConfigurationVersion),
+                0,
+                MarketDataFullRunTrigger.Scheduled,
+                [],
+                [],
+                Guid.NewGuid(),
+                FullRunLeaseDuration,
+                ResumeOnly: true);
+            resumeAdmission = await fullRunStore.TryAdmitAsync(
+                resumeAdmissionRequest,
+                cancellationToken).ConfigureAwait(false);
+            if (resumeAdmission.Status == MarketDataFullRunAdmissionStatus.AlreadyRunning)
             {
-                var windowEndUtc = schedulePolicy.GetWindowEndUtc(configuration.TradingSchedule, missedDay)
-                    ?? DateTimeOffset.MinValue;
-                var missedLease = new MarketCategoryInstrumentCycleLease(
-                    environment,
-                    missedDay,
-                    decision.SlotIndex ?? 0,
-                    updatesPerDay,
-                    MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(configuration.TradingSchedule),
-                    Guid.NewGuid(),
-                    0,
-                    windowEndUtc,
-                    applied!.EndpointProfile);
-                await cycleStore.RecordMissedSlotsAsync(missedLease, decision.MissedSlotIndexes, cancellationToken).ConfigureAwait(false);
+                return new("AlreadyRunning", nextWake, 0, 0);
             }
 
-            return new(
-                decision.BlockReason?.ToString() ?? "NotDue",
-                nextWake,
-                0,
-                0);
+            if (resumeAdmission.Status != MarketDataFullRunAdmissionStatus.Resumed)
+            {
+                if (decision.TradingDay is { } missedDay && decision.ScheduleIdentity is { } missedScheduleIdentity)
+                {
+                    var missedWindowEnd = schedulePolicy.GetWindowEndUtc(configuration.TradingSchedule, missedDay)
+                        ?? DateTimeOffset.MinValue;
+                    var missedLease = new MarketCategoryInstrumentCycleLease(
+                        environment,
+                        missedDay,
+                        decision.SlotIndex ?? 0,
+                        updatesPerDay,
+                        MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(configuration.TradingSchedule, frequency),
+                        Guid.NewGuid(),
+                        0,
+                        missedWindowEnd,
+                        applied.EndpointProfile);
+                    await cycleStore.RecordMissedSlotsAsync(
+                        missedLease,
+                        decision.MissedSlotIndexes,
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                return new(
+                    decision.BlockReason?.ToString() ?? "NotDue",
+                    nextWake,
+                    0,
+                    0);
+            }
         }
 
-        var day = decision.TradingDay.Value;
-        var slot = decision.SlotIndex.Value;
-        var windowEnd = schedulePolicy.GetWindowEndUtc(configuration.TradingSchedule, day)
-            ?? DateTimeOffset.MinValue;
-        if (nowUtc >= windowEnd)
+        var day = resumeAdmission?.Lease?.TradingDay
+            ?? (failedItemRetryIsDue ? pendingFailedItemRetry!.TradingDay : decision.TradingDay ?? tradingState.TradingDay);
+        if (day is null)
         {
-            return new("ScheduleClosed", nextWake, 0, 0);
+            return Poll("NoEligibleTradingDay", nowUtc, 0, 0);
         }
 
-        var scheduleRevision = MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(configuration.TradingSchedule);
+        var resumeLease = resumeAdmission?.Lease;
+        var effectiveUpdatesPerDay = resumeLease?.EffectiveUpdatesPerDay
+            ?? (failedItemRetryIsDue
+                ? pendingFailedItemRetry!.EffectiveUpdatesPerDay
+                : frequency.ForTradingDay(day.Value));
+        var slot = resumeLease?.DetailScheduledSlot
+            ?? (failedItemRetryIsDue ? pendingFailedItemRetry!.DetailScheduledSlot : decision.SlotIndex ?? 0);
+        var windowEnd = resumeLease?.WindowEndUtc
+            ?? (failedItemRetryIsDue
+                ? pendingFailedItemRetry!.WindowEndUtc
+                : schedulePolicy.GetWindowEndUtc(configuration.TradingSchedule, day.Value))
+            ?? DateTimeOffset.MinValue;
+        if (resumeLease is null && nowUtc >= windowEnd && !decision.IsDue)
+        {
+            return Poll("ScheduleClosed", nowUtc, 0, 0);
+        }
+
+        var scheduleRevision = resumeLease?.ScheduleRevision
+            ?? (failedItemRetryIsDue
+                ? pendingFailedItemRetry!.ScheduleRevision
+                : MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(configuration.TradingSchedule, frequency));
+        var interestsAtAdmission = resumeLease is null
+            ? await interestReader.ReadAsync(environment, cancellationToken).ConfigureAwait(false)
+            : new MarketCategoryInstrumentInterestState(
+                resumeLease.InterestRevision,
+                resumeLease.SelectedCategoryCodes.Select(code => new MarketCategoryInstrumentInterest(code, true)).ToArray());
+        var trigger = resumeLease?.Trigger
+            ?? (failedItemRetryIsDue
+                ? MarketDataFullRunTrigger.FailedItemRetry
+                : pendingIntent?.Trigger)
+            ?? (decision.MissedSlotIndexes.Count > 0
+                ? MarketDataFullRunTrigger.CatchUp
+                : MarketDataFullRunTrigger.Scheduled);
+        var coveredSlots = resumeLease?.CoveredSlots?.ToList() ?? (failedItemRetryIsDue
+            ? []
+            : decision.IsDue
+            ? decision.MissedSlotIndexes
+                .Append(slot)
+                .Select(index => new MarketDataFullRunSlotIdentity(day.Value, scheduleRevision, index))
+                .ToList()
+            : schedulePolicy.GetSlotsCoveredByLeadIn(
+                configuration.TradingSchedule,
+                frequency,
+                day.Value,
+                nowUtc).ToList());
+        var admission = resumeAdmission ?? await fullRunStore.TryAdmitAsync(
+                new(
+                    environment,
+                    applied!.BrokerEnvironmentId,
+                    applied.EndpointProfile,
+                    day.Value,
+                    nowUtc,
+                    windowEnd,
+                    scheduleRevision,
+                    effectiveUpdatesPerDay,
+                    failedItemRetryIsDue
+                        ? pendingFailedItemRetry!.CollectionConfigurationVersion
+                        : frequency.ConfigurationVersion,
+                    failedItemRetryIsDue
+                        ? pendingFailedItemRetry!.InterestRevision
+                        : interestsAtAdmission.Revision,
+                    trigger,
+                    failedItemRetryIsDue
+                        ? pendingFailedItemRetry!.SelectedCategoryCodes
+                        : interestsAtAdmission.Interests
+                            .Where(item => item.IsSelected)
+                            .Select(item => item.CategoryCode)
+                            .Distinct(StringComparer.Ordinal)
+                            .OrderBy(item => item, StringComparer.Ordinal)
+                            .ToArray(),
+                    coveredSlots.Distinct().ToArray(),
+                    Guid.NewGuid(),
+                    FullRunLeaseDuration,
+                    RetrySourceRunId: failedItemRetryIsDue
+                        ? pendingFailedItemRetry!.SourceRunId
+                        : null,
+                    DetailScheduledSlot: slot),
+                cancellationToken).ConfigureAwait(false);
+        if (admission.Status is not (MarketDataFullRunAdmissionStatus.Admitted or MarketDataFullRunAdmissionStatus.Resumed)
+            || admission.Lease is null)
+        {
+            return new(admission.Status.ToString(), nextWake, 0, 0);
+        }
+
+        var fullRunLease = admission.Lease;
+        day = fullRunLease.TradingDay;
+        effectiveUpdatesPerDay = fullRunLease.EffectiveUpdatesPerDay;
+        slot = fullRunLease.CoveredSlots?.FirstOrDefault()?.ScheduledSlot ?? slot;
+        windowEnd = fullRunLease.WindowEndUtc;
+        scheduleRevision = fullRunLease.ScheduleRevision;
         var owner = Guid.NewGuid();
         var lease = new MarketCategoryInstrumentCycleLease(
             environment,
-            day,
+            day.Value,
             slot,
-            decision.EffectiveUpdatesPerDay!.Value,
+            effectiveUpdatesPerDay,
             scheduleRevision,
             owner,
             0,
             windowEnd,
-            applied!.EndpointProfile);
-        await cycleStore.RecordMissedSlotsAsync(lease, decision.MissedSlotIndexes, cancellationToken).ConfigureAwait(false);
-        var fence = await cycleStore.TryAcquireLeaseAsync(lease, nowUtc, LeaseDuration, isStartupCheck, cancellationToken).ConfigureAwait(false);
+            fullRunLease.EndpointProfile,
+            fullRunLease);
+        if (admission.Status == MarketDataFullRunAdmissionStatus.Admitted)
+        {
+            await cycleStore.RecordMissedSlotsAsync(
+                lease,
+                decision.MissedSlotIndexes,
+                cancellationToken).ConfigureAwait(false);
+        }
+        var fence = await cycleStore.TryAcquireLeaseAsync(
+            lease,
+            nowUtc,
+            LeaseDuration,
+            isStartupCheck && admission.Status != MarketDataFullRunAdmissionStatus.Resumed,
+            cancellationToken).ConfigureAwait(false);
         if (fence is null)
         {
-            return new("AlreadyObservedOrLeased", nextWake, 0, 0);
+            return new("AlreadyObservedOrLeased", nextWake, 0, 0, FullRunLease: fullRunLease);
         }
 
         lease = lease with { Fence = fence.Value };
-        using var deadline = clock.CreateDeadlineCancellationSource(windowEnd - nowUtc);
-        using var scheduleCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
+        using var deadline = lease.FullRunLease is null
+            ? clock.CreateDeadlineCancellationSource(windowEnd - nowUtc)
+            : null;
+        using var scheduleCancellation = deadline is null
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+            : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         var scheduleToken = scheduleCancellation.Token;
 
         try
         {
-            var prerequisiteSucceeded = await RefreshCategoryPrerequisiteAsync(
-                lease,
-                configuration.TradingSchedule,
-                scheduleToken,
-                cancellationToken).ConfigureAwait(false);
+            var categoryStageStatus = lease.FullRunLease is { } categoryStageLease
+                ? await fullRunStore.GetStageStatusAsync(
+                    categoryStageLease,
+                    MarketDataFullRunStage.Categories,
+                    clock.GetUtcNow().ToUniversalTime(),
+                    cancellationToken).ConfigureAwait(false)
+                : null;
+            var categoryStageSucceeded = categoryStageStatus is "Succeeded" or "Skipped";
+            var prerequisiteSucceeded = categoryStageSucceeded
+                || await RefreshCategoryPrerequisiteAsync(
+                    lease,
+                    configuration.TradingSchedule,
+                    scheduleToken,
+                    cancellationToken).ConfigureAwait(false);
+            var categorySnapshot = prerequisiteSucceeded
+                ? await categorySnapshotStore.GetAsync(cancellationToken).ConfigureAwait(false)
+                : null;
+            var usingLastGoodCategorySnapshot = false;
+            if (categorySnapshot is null && !prerequisiteSucceeded)
+            {
+                if (await CanContinueAsync(
+                        lease,
+                        configuration.TradingSchedule,
+                        scheduleToken,
+                        cancellationToken).ConfigureAwait(false))
+                {
+                    categorySnapshot = await categorySnapshotStore.GetAsync(cancellationToken).ConfigureAwait(false);
+                    usingLastGoodCategorySnapshot = categorySnapshot is { Categories.Count: > 0, LastRefreshedAtUtc: not null };
+                }
+            }
+
             if (!prerequisiteSucceeded)
+            {
+                if (lease.FullRunLease is { } failedParentLease)
+                {
+                    await fullRunStore.RecordStageAttemptAsync(
+                        failedParentLease,
+                        MarketDataFullRunStage.Categories,
+                        "Failed",
+                        clock.GetUtcNow().ToUniversalTime(),
+                        false,
+                        "CategoryPrerequisiteFailed",
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            if (!prerequisiteSucceeded && !usingLastGoodCategorySnapshot)
             {
                 await cycleStore.CompleteCycleAsync(lease, clock.GetUtcNow().ToUniversalTime(), "Failed", cancellationToken)
                     .ConfigureAwait(false);
-                return new("CategoryPrerequisiteFailed", nextWake, 0, 1);
+                return new("CategoryPrerequisiteFailed", nextWake, 0, 1, FullRunLease: fullRunLease);
             }
 
-            var categorySnapshot = await categorySnapshotStore.GetAsync(cancellationToken).ConfigureAwait(false);
-            var interests = await interestReader.ReadAsync(environment, cancellationToken).ConfigureAwait(false);
-            var plan = cyclePolicy.AfterCategoryRefresh(
-                new MarketCategoriesRefreshOutcome.Saved(categorySnapshot ?? throw new InvalidOperationException(
-                    "A successful category prerequisite did not produce a saved catalogue.")),
-                interests.Interests);
+            if (prerequisiteSucceeded
+                && !categoryStageSucceeded
+                && lease.FullRunLease is { } parentLease
+                && !await fullRunStore.RecordStageAttemptAsync(
+                    parentLease,
+                    MarketDataFullRunStage.Categories,
+                    "Succeeded",
+                    clock.GetUtcNow().ToUniversalTime(),
+                    true,
+                    null,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                return new("FullRunLeaseLost", nextWake, 0, 1, FullRunLease: parentLease);
+            }
+
+            if (categorySnapshot is null)
+            {
+                throw new InvalidOperationException(
+                    "A validated category prerequisite did not produce a saved catalogue.");
+            }
+
+            var plan = cyclePolicy.AfterCategorySnapshot(
+                categorySnapshot,
+                interestsAtAdmission.Interests);
             if (plan.Status == MarketCategoryInstrumentCyclePlanStatus.NoSelectedCurrentCategories)
             {
+                if (lease.FullRunLease is { } emptyParentLease
+                    && !await fullRunStore.RecordStageAttemptAsync(
+                        emptyParentLease,
+                        MarketDataFullRunStage.Listings,
+                        "Succeeded",
+                        clock.GetUtcNow().ToUniversalTime(),
+                        true,
+                        null,
+                        cancellationToken).ConfigureAwait(false))
+                {
+                    return new("FullRunLeaseLost", nextWake, 0, 0, FullRunLease: emptyParentLease);
+                }
+
                 await cycleStore.CompleteCycleAsync(lease, clock.GetUtcNow().ToUniversalTime(), "Idle", cancellationToken)
                     .ConfigureAwait(false);
-                return new("IdleNoSelectedCurrentCategories", nextWake, 0, 0);
+                return new(
+                    usingLastGoodCategorySnapshot
+                        ? "IdleUsingLastGoodCategoryCatalogue"
+                        : "IdleNoSelectedCurrentCategories",
+                    nextWake,
+                    0,
+                    usingLastGoodCategorySnapshot ? 1 : 0,
+                    FullRunLease: fullRunLease);
             }
 
             var completed = 0;
-            var failed = 0;
+            var failed = usingLastGoodCategorySnapshot ? 1 : 0;
             var providerPages = 0;
             var collectionIds = new List<Guid>();
             var cycleInterrupted = false;
+            var succeededCategories = lease.FullRunLease is { } succeededCategoriesLease
+                ? await fullRunStore.GetSucceededItemsAsync(
+                    succeededCategoriesLease,
+                    MarketDataFullRunStage.Listings,
+                    clock.GetUtcNow().ToUniversalTime(),
+                    cancellationToken).ConfigureAwait(false)
+                : new HashSet<string>(StringComparer.Ordinal);
+            var listingStageSkipped = lease.FullRunLease is { } skippedListingsLease
+                && await fullRunStore.GetStageStatusAsync(
+                    skippedListingsLease,
+                    MarketDataFullRunStage.Listings,
+                    clock.GetUtcNow().ToUniversalTime(),
+                    cancellationToken).ConfigureAwait(false) == "Skipped";
             foreach (var categoryCode in plan.CategoriesToCollect)
             {
+                if (listingStageSkipped)
+                {
+                    break;
+                }
+
+                if (succeededCategories.Contains(categoryCode))
+                {
+                    completed++;
+                    continue;
+                }
+
                 cancellationToken.ThrowIfCancellationRequested();
                 if (scheduleToken.IsCancellationRequested || !await CanContinueAsync(
                         lease, configuration.TradingSchedule, scheduleToken, cancellationToken).ConfigureAwait(false))
@@ -167,7 +457,7 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                         lease,
                         categorySnapshot!.Revision,
                         categoryCode,
-                        frequency.ForTradingDay(day),
+                        effectiveUpdatesPerDay,
                         configuration.TradingSchedule,
                         scheduleToken,
                         cancellationToken).ConfigureAwait(false);
@@ -181,6 +471,44 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                 {
                     failed++;
                 }
+
+                if (lease.FullRunLease is { } itemParentLease
+                    && !await fullRunStore.RecordItemAttemptAsync(
+                        itemParentLease,
+                        MarketDataFullRunStage.Listings,
+                        categoryCode,
+                        outcome.Succeeded ? "Succeeded" : "Failed",
+                        clock.GetUtcNow().ToUniversalTime(),
+                        outcome.Succeeded,
+                        outcome.Succeeded ? null : "ListingCollectionFailed",
+                        cancellationToken).ConfigureAwait(false))
+                {
+                    failed++;
+                    cycleInterrupted = true;
+                    break;
+                }
+            }
+
+            var listingsStageStatus = lease.FullRunLease is { } listingStageLease
+                ? await fullRunStore.GetStageStatusAsync(
+                    listingStageLease,
+                    MarketDataFullRunStage.Listings,
+                    clock.GetUtcNow().ToUniversalTime(),
+                    cancellationToken).ConfigureAwait(false)
+                : null;
+            var listingsStageSucceeded = listingsStageStatus is "Succeeded" or "Skipped";
+            if (!listingsStageSucceeded
+                && lease.FullRunLease is { } listingParentLease
+                && !await fullRunStore.RecordStageAttemptAsync(
+                    listingParentLease,
+                    MarketDataFullRunStage.Listings,
+                    failed == 0 && !cycleInterrupted ? "Succeeded" : "Failed",
+                    clock.GetUtcNow().ToUniversalTime(),
+                    failed == 0 && !cycleInterrupted,
+                    failed == 0 && !cycleInterrupted ? null : "ListingStageIncomplete",
+                    cancellationToken).ConfigureAwait(false))
+            {
+                cycleInterrupted = true;
             }
 
             if (scheduleToken.IsCancellationRequested || cycleInterrupted)
@@ -196,7 +524,8 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                     completed,
                     failed,
                     providerPages,
-                    collectionIds);
+                    collectionIds,
+                    fullRunLease);
             }
 
             await cycleStore.CompleteCycleAsync(
@@ -205,12 +534,15 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                 "Completed",
                 cancellationToken).ConfigureAwait(false);
             return new(
-                failed == 0 ? "Completed" : "CompletedWithCategoryFailures",
+                usingLastGoodCategorySnapshot
+                    ? "CompletedUsingLastGoodCategoryCatalogue"
+                    : failed == 0 ? "Completed" : "CompletedWithCategoryFailures",
                 nextWake,
                 completed,
                 failed,
                 providerPages,
-                collectionIds);
+                collectionIds,
+                fullRunLease);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -222,7 +554,7 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
         {
             await cycleStore.CompleteCycleAsync(lease, clock.GetUtcNow().ToUniversalTime(), "Skipped", cancellationToken)
                 .ConfigureAwait(false);
-            return new("ScheduleClosed", nextWake, 0, 1);
+            return new("ScheduleClosed", nextWake, 0, 1, FullRunLease: fullRunLease);
         }
     }
 
@@ -307,7 +639,8 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                 lease.WindowEndUtc,
                 lease.ScheduleRevision,
                 lease.EffectiveUpdatesPerDay,
-                lease.EndpointProfile);
+                lease.EndpointProfile,
+                FullRunLease: lease.FullRunLease);
             var collectionResult = await instrumentsGateway.CollectCompleteAsync(
                 lease.BrokerEnvironment,
                 categoryCode,
@@ -343,7 +676,9 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                                 missingOptionalValueCount),
                             lease.Owner,
                             lease.Fence,
-                            lease.WindowEndUtc),
+                            lease.WindowEndUtc,
+                            lease.FullRunLease,
+                            lease.ScheduleRevision),
                         scheduleToken).ConfigureAwait(false);
                     return new(true, complete.Collection.Metadata.PageNumbersFetched.Count, collectionId);
                 }
@@ -404,26 +739,56 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
         CancellationToken scheduleToken,
         CancellationToken cancellationToken)
     {
-        if (scheduleToken.IsCancellationRequested || !await IsScheduleOpenAsync(lease, scheduleToken).ConfigureAwait(false))
+        if (scheduleToken.IsCancellationRequested
+            || (lease.FullRunLease is null
+                && !await IsScheduleOpenAsync(lease, scheduleToken).ConfigureAwait(false)))
         {
             return false;
         }
 
         var nowUtc = clock.GetUtcNow().ToUniversalTime();
-        return await cycleStore.TryRenewLeaseAsync(lease, nowUtc, LeaseDuration, cancellationToken).ConfigureAwait(false)
-            && await IsAppliedEnvironmentUnchangedAsync(lease, cancellationToken).ConfigureAwait(false);
+        if (!await cycleStore.TryRenewLeaseAsync(lease, nowUtc, LeaseDuration, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        if (lease.FullRunLease is { } fullRunLease
+            && !await fullRunStore.TryRenewLeaseAsync(
+                fullRunLease,
+                nowUtc,
+                FullRunLeaseDuration,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        return await IsAppliedEnvironmentUnchangedAsync(lease, cancellationToken).ConfigureAwait(false);
     }
 
-    private Task<bool> IsScheduleOpenAsync(
+    private async Task<bool> IsScheduleOpenAsync(
         MarketCategoryInstrumentCycleLease lease,
         CancellationToken scheduleToken)
     {
-        if (scheduleToken.IsCancellationRequested || clock.GetUtcNow().ToUniversalTime() >= lease.WindowEndUtc)
+        if (scheduleToken.IsCancellationRequested)
         {
-            return Task.FromResult(false);
+            return false;
         }
 
-        return scheduleGuard.IsStillActiveAsync(
+        if (lease.FullRunLease is { } parentLease)
+        {
+            return await fullRunStore.TryRenewLeaseAsync(
+                parentLease,
+                clock.GetUtcNow().ToUniversalTime(),
+                FullRunLeaseDuration,
+                scheduleToken).ConfigureAwait(false);
+        }
+
+        if (clock.GetUtcNow().ToUniversalTime() >= lease.WindowEndUtc)
+        {
+            return false;
+        }
+
+        return await scheduleGuard.IsStillActiveAsync(
             lease.BrokerEnvironment,
             new(
                 lease.TradingDay,
@@ -434,7 +799,7 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                 lease.WindowEndUtc,
                 lease.ScheduleRevision,
                 lease.EffectiveUpdatesPerDay),
-            scheduleToken);
+            scheduleToken).ConfigureAwait(false);
     }
 
     private async Task<bool> IsAppliedEnvironmentUnchangedAsync(

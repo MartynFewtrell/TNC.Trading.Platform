@@ -4,6 +4,7 @@ internal sealed class BrokerEnvironmentScheduleProfileEntity
 {
     public Guid BrokerEnvironmentId { get; set; }
     public int DefaultsVersion { get; set; }
+    public long ScheduleVersion { get; set; } = 1;
     public TimeOnly TradingHoursStart { get; set; }
     public TimeOnly TradingHoursEnd { get; set; }
     public string TradingDaysCsv { get; set; } = string.Empty;

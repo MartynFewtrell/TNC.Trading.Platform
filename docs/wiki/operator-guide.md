@@ -438,26 +438,31 @@ At runtime, reconciliation and manual retry use the same Application-owned sched
 
 ### Market-category instrument collection
 
-The collection section shows whether the collector is configured or paused,
-the applied IG market-data environment, effective and pending frequency, the
-next local trading day for a frequency change, the approved daily allowance,
+The collection section shows the applied IG market-data environment, the
+configured updates per trading day, lead-in, approved daily allowance,
 current usage, and the latest safe outcome/failure state.
 
-`InstrumentUpdatesPerDay` defaults to `1` and accepts `1` through `4`. A
-frequency change is applied from the next local trading day. Values above one
-require a sufficient, operator-approved allowance for that broker
-environment; the allowance is shared across category, session, and instrument
-HTTP requests and is not equivalent to the frequency setting. Setting the
-allowance to zero pauses provider requests. Leaving it unset also leaves the
-collector paused. Saving settings does not fetch provider data.
+`InstrumentUpdatesPerDay` defaults to `1`, accepts zero or any higher
+nonnegative count, and applies immediately when saved. Values above four
+produce a warning; they are not rejected solely for exceeding four. The
+allowance is shared across category, session, and instrument HTTP requests and
+is not equivalent to the frequency setting. Setting the allowance to zero
+pauses provider requests. Leaving it unset also leaves the collector paused.
+Saving settings does not fetch provider data. A zero frequency disables timed
+starts and leaves the next timed start empty; the current manual category
+refresh still requires timed-slot admission, so zero does not yet provide a
+manual full-update workflow. The lead-in setting is persisted but does not
+yet provide near-future slot coverage.
 
 The worker starts only for a supported applied IG market-data environment and
 inside its configured active schedule. It refreshes categories first, then
-collects only selected categories still present in that catalogue. Missed
-slots are gaps rather than after-hours catch-up. The UI reports safe status
-for unsupported context, schedule closure, quota exhaustion, provider
-unavailability, or invalid/incomplete data without showing payloads or
-credentials.
+collects only selected categories still present in that catalogue. The status
+API distinguishes trading capability from market-data capability and reports
+their independent safe block reasons. Legacy schedule reconciliation blocks
+new market-data admission without preventing runtime/authentication
+reconciliation. The UI reports safe status for unsupported context, schedule
+closure, quota exhaustion, provider unavailability, or invalid/incomplete
+data without showing payloads or credentials.
 
 ### Retry policy
 

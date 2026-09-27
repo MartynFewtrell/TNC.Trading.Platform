@@ -10,26 +10,33 @@ internal sealed class MarketDetailCapacityPolicy
         "https://demo-api.ig.com/gateway/deal/markets?epics=".Length
         + "&filter=ALL".Length;
 
-    public MarketDetailCapacityEstimate Estimate(IReadOnlyList<MarketDetailCapacityTarget> retryableTargets)
+    public MarketDetailCapacityEstimate Estimate(
+        IReadOnlyList<MarketDetailCapacityTarget> retryableTargets,
+        bool isFailedItemFollowUp = false)
     {
         ArgumentNullException.ThrowIfNull(retryableTargets);
         if (retryableTargets.Any(target =>
                 string.IsNullOrWhiteSpace(target.Epic)
                 || target.Epic.Length > 64
-                || target.Attempts is < 0 or >= MaximumAttempts)
+                || (isFailedItemFollowUp
+                    ? target.Attempts != MaximumAttempts
+                    : target.Attempts is < 0 or >= MaximumAttempts))
             || retryableTargets.Select(target => target.Epic).Distinct(StringComparer.Ordinal).Count() != retryableTargets.Count)
         {
-            throw new ArgumentException("Capacity targets must have unique, valid EPICs and fewer than three attempts.", nameof(retryableTargets));
+            throw new ArgumentException(
+                "Capacity targets must have unique, valid EPICs and attempt counts appropriate to their retry mode.",
+                nameof(retryableTargets));
         }
 
-        var noRetryRequests = 0;
-        var worstCaseRequests = 0;
-        var totalMarketBatches = 0;
         var immediateBatchRequestCounts = CountMarketRequests(
             retryableTargets.Select(target => target.Epic).ToArray());
-        noRetryRequests = immediateBatchRequestCounts.Count + immediateBatchRequestCounts.Sum();
+        var noRetryRequests = immediateBatchRequestCounts.Count + immediateBatchRequestCounts.Sum();
+        var worstCaseRequests = 0;
+        var totalMarketBatches = 0;
 
-        for (var attemptNumber = 0; attemptNumber < MaximumAttempts; attemptNumber++)
+        var firstAttemptNumber = isFailedItemFollowUp ? MaximumAttempts : 0;
+        var finalAttemptNumber = isFailedItemFollowUp ? MaximumAttempts : MaximumAttempts - 1;
+        for (var attemptNumber = firstAttemptNumber; attemptNumber <= finalAttemptNumber; attemptNumber++)
         {
             var epics = retryableTargets
                 .Where(target => target.Attempts <= attemptNumber)

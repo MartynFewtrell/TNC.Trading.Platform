@@ -31,7 +31,8 @@ internal static class UpdatePlatformConfigurationMapping
                 request.Credentials.Password,
                 request.ChangedBy,
                 request.InstrumentUpdatesPerDay,
-                request.ApprovedNonTradingDailyRequestAllowance));
+                request.ApprovedNonTradingDailyRequestAllowance,
+                request.MarketDataLeadInMinutes));
 
     public static UpdatePlatformConfigurationResponse ToResponse(this AppUpdatePlatformConfiguration.UpdatePlatformConfigurationResponse response)
         => new(
@@ -76,5 +77,7 @@ internal static class UpdatePlatformConfigurationMapping
                 response.InstrumentCollectionStatus?.UsedRequestBudget,
                 response.InstrumentCollectionStatus?.CycleOutcome
                     ?? response.InstrumentCollectionStatus?.CategoryPrerequisiteOutcome,
-                response.InstrumentCollectionStatus?.SafeCategoryFailure));
+                response.InstrumentCollectionStatus?.SafeCategoryFailure,
+                response.InstrumentCollectionFrequency?.LeadInMinutes,
+                GetPlatformConfigurationMapping.GetCapacityWarning(response.InstrumentCollectionFrequency?.CurrentUpdatesPerDay)));
 }

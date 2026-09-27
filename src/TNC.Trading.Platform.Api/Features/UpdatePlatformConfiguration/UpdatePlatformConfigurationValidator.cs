@@ -21,14 +21,19 @@ internal sealed class UpdatePlatformConfigurationValidator
             errors[$"{nameof(request.TradingSchedule)}.{nameof(request.TradingSchedule.WeekendBehavior)}"] = ["Weekend behavior is invalid."];
         }
 
-        if (request.InstrumentUpdatesPerDay is < 1 or > 4)
+        if (request.InstrumentUpdatesPerDay is < 0)
         {
-            errors[nameof(request.InstrumentUpdatesPerDay)] = ["Instrument updates per day must be between 1 and 4."];
+            errors[nameof(request.InstrumentUpdatesPerDay)] = ["Instrument updates per day cannot be negative."];
         }
 
         if (request.ApprovedNonTradingDailyRequestAllowance is < 0)
         {
             errors[nameof(request.ApprovedNonTradingDailyRequestAllowance)] = ["The approved daily request allowance cannot be negative."];
+        }
+
+        if (request.MarketDataLeadInMinutes is < 0)
+        {
+            errors[nameof(request.MarketDataLeadInMinutes)] = ["Market-data lead-in cannot be negative."];
         }
 
         if (errors.Count > 0)

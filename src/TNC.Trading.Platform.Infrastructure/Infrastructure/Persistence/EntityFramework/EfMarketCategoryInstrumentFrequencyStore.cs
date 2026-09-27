@@ -2,13 +2,16 @@ using Microsoft.EntityFrameworkCore;
 using System.Data;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 
 namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 
 internal sealed class EfMarketCategoryInstrumentFrequencyStore(
     PlatformDbContext dbContext,
-    IAppliedBrokerEnvironmentContextResolver? contextResolver = null) :
+    IMarketDataFullRunIntentWriter fullRunIntentWriter,
+    IAppliedBrokerEnvironmentContextResolver? contextResolver = null,
+    TimeProvider? timeProvider = null) :
     IMarketCategoryInstrumentFrequencyReader,
     IMarketCategoryInstrumentFrequencyWriter
 {
@@ -26,7 +29,9 @@ internal sealed class EfMarketCategoryInstrumentFrequencyStore(
             settings.CurrentUpdatesPerDay,
             settings.PendingUpdatesPerDay,
             settings.PendingEffectiveTradingDay,
-            settings.ApprovedNonTradingDailyRequestAllowance);
+            settings.ApprovedNonTradingDailyRequestAllowance,
+            settings.LeadInMinutes,
+            settings.ConfigurationVersion);
     }
 
     public async Task SaveAsync(
@@ -48,15 +53,25 @@ internal sealed class EfMarketCategoryInstrumentFrequencyStore(
         }
 
         ValidateSettings(settings);
-        if (settings.CurrentUpdatesPerDay != frequency.CurrentUpdatesPerDay)
-        {
-            throw new InvalidOperationException("The current collection frequency changed; refresh settings before saving a pending frequency.");
-        }
-
+        settings.CurrentUpdatesPerDay = frequency.CurrentUpdatesPerDay;
         settings.PendingUpdatesPerDay = frequency.PendingUpdatesPerDay;
         settings.PendingEffectiveTradingDay = frequency.PendingEffectiveTradingDay;
         settings.ApprovedNonTradingDailyRequestAllowance = frequency.ApprovedNonTradingDailyRequestAllowance;
+        settings.LeadInMinutes = frequency.LeadInMinutes;
+        settings.ConfigurationVersion = checked(settings.ConfigurationVersion + 1);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        var interestRevision = await dbContext.MarketCategoryInterestStates.AsNoTracking()
+            .Where(item => item.BrokerEnvironmentId == environmentId)
+            .Select(item => item.Revision)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        await fullRunIntentWriter.RecordIntentAsync(
+            appliedBrokerEnvironment,
+            environmentId,
+            MarketDataFullRunTrigger.Configuration,
+            settings.ConfigurationVersion,
+            interestRevision,
+            (timeProvider ?? TimeProvider.System).GetUtcNow(),
+            cancellationToken).ConfigureAwait(false);
         await EfMarketCategoryInstrumentEnvironmentResolver.VerifyAppliedAtCommitAsync(
             dbContext, contextResolver, environmentId, appliedBrokerEnvironment, null, cancellationToken, requireExecutable: false).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -89,21 +104,25 @@ internal sealed class EfMarketCategoryInstrumentFrequencyStore(
     private static void ValidateFrequency(MarketCategoryInstrumentFrequency frequency)
     {
         ArgumentNullException.ThrowIfNull(frequency);
-        if (frequency.CurrentUpdatesPerDay is < 1 or > 4
-            || frequency.PendingUpdatesPerDay is < 1 or > 4
+        if (frequency.CurrentUpdatesPerDay < 0
+            || frequency.PendingUpdatesPerDay is < 0
             || (frequency.PendingUpdatesPerDay is null) != (frequency.PendingEffectiveTradingDay is null)
-            || frequency.ApprovedNonTradingDailyRequestAllowance is < 0)
+            || frequency.ApprovedNonTradingDailyRequestAllowance is < 0
+            || frequency.LeadInMinutes < 0
+            || frequency.ConfigurationVersion < 1)
         {
-            throw new ArgumentException("Collection frequency must be between 1 and 4, and pending frequency/date and allowance values must be valid.", nameof(frequency));
+            throw new ArgumentException("Collection frequency and allowance values must be nonnegative, with pending frequency and date configured together.", nameof(frequency));
         }
     }
 
     private static void ValidateSettings(InstrumentCollectionSettingsEntity settings)
     {
-        if (settings.CurrentUpdatesPerDay is < 1 or > 4
-            || settings.PendingUpdatesPerDay is < 1 or > 4
+        if (settings.CurrentUpdatesPerDay < 0
+            || settings.PendingUpdatesPerDay is < 0
             || (settings.PendingUpdatesPerDay is null) != (settings.PendingEffectiveTradingDay is null)
-            || settings.ApprovedNonTradingDailyRequestAllowance is < 0)
+            || settings.ApprovedNonTradingDailyRequestAllowance is < 0
+            || settings.LeadInMinutes < 0
+            || settings.ConfigurationVersion < 1)
         {
             throw new InvalidOperationException("Persisted collection settings are corrupt; collection is paused.");
         }

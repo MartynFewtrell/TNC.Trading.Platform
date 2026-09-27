@@ -1,6 +1,7 @@
 using System.Net;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
+using TNC.Trading.Platform.Web;
 using TNC.Trading.Platform.Web.Components.Pages;
 
 namespace TNC.Trading.Platform.Web.UnitTests;
@@ -22,8 +23,8 @@ public sealed class ConfigurationTests
 
         Assert.NotNull(result.Form);
         Assert.Null(result.ErrorMessage);
-        Assert.Equal("08:00", result.Form.StartOfDayText);
-        Assert.Equal("Monday,Tuesday,Wednesday,Thursday,Friday", result.Form.TradingDaysCsv);
+        Assert.Equal(new TimeOnly(8, 0), result.Form.TradingSchedule.StartOfDay);
+        Assert.Equal(new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday }, result.Form.TradingSchedule.TradingDays);
     }
 
     /// <summary>
@@ -78,6 +79,7 @@ public sealed class ConfigurationTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerCatalog()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerStatus()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateAppliedSchedule()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration(
                 currentFrequency: 1,
                 pendingFrequency: 3,
@@ -91,11 +93,11 @@ public sealed class ConfigurationTests
 
         cut.WaitForAssertion(() =>
         {
-            Assert.Contains("\"instrumentUpdatesPerDay\":3", context.ApiHandler.Requests[3].Content, StringComparison.Ordinal);
-            Assert.Contains("\"approvedNonTradingDailyRequestAllowance\":40", context.ApiHandler.Requests[3].Content, StringComparison.Ordinal);
+            Assert.Contains("\"instrumentUpdatesPerDay\":3", context.ApiHandler.Requests[4].Content, StringComparison.Ordinal);
+            Assert.Contains("\"approvedNonTradingDailyRequestAllowance\":40", context.ApiHandler.Requests[4].Content, StringComparison.Ordinal);
             Assert.Contains("Daily request quota: 4 used of 40; 36 remaining.", cut.Markup, StringComparison.Ordinal);
         });
-        Assert.Equal(HttpMethod.Put, context.ApiHandler.Requests[3].Method);
+        Assert.Equal(HttpMethod.Put, context.ApiHandler.Requests[4].Method);
     }
 
     [Fact]
@@ -154,6 +156,7 @@ public sealed class ConfigurationTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerCatalog()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerStatus()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateAppliedSchedule()),
             _ => PlatformWebTestData.CreateProblemResponse(
                 HttpStatusCode.BadRequest,
                 new
@@ -193,6 +196,7 @@ public sealed class ConfigurationTests
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerCatalog()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerStatus()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateAppliedSchedule()),
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration(restartRequired: true)));
 
         var cut = context.Render<Configuration>();
@@ -321,6 +325,44 @@ public sealed class ConfigurationTests
         });
     }
 
+    /// <summary>
+    /// Trace: Trading-Day Market Data Delivery Plan, Work Item 1 applied broker schedule editing.
+    /// Verifies the form loads and saves the applied broker schedule through the dedicated Operator API operation.
+    /// Expected: the schedule PUT contains the edited local window, targets only the applied-schedule route, and does not submit a broker identity.
+    /// Why: pending broker selection must not redirect shared Trading Day edits or create an independent market-data schedule.
+    /// </summary>
+    [Fact]
+    public void AppliedSchedule_ShouldSaveAppliedProfile_WhenSelectedBrokerIsPending()
+    {
+        using var context = new PlatformComponentTestContext(
+            "local-operator",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, PlatformWebTestData.CreateConfiguration()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerCatalog()),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateBrokerStatus(restartRequired: true, selectedName: "IG Demo Next")),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateAppliedSchedule(legacyReconciliationRequired: true)),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateAppliedSchedule() with
+            {
+                StartOfDay = new TimeOnly(8, 30)
+            }));
+
+        var cut = context.Render<Configuration>();
+        cut.WaitForElement("[data-testid='applied-broker-schedule-save-button']");
+        Assert.Contains("New market-data admission is blocked", cut.Find("[data-testid='legacy-schedule-reconciliation-required']").TextContent, StringComparison.Ordinal);
+        cut.Find("input[type='time']").Change("08:30");
+        cut.Find("[data-testid='applied-broker-schedule-save-button']").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            var request = context.ApiHandler.Requests[4];
+            Assert.Equal(HttpMethod.Put, request.Method);
+            Assert.EndsWith("/api/platform/configuration/applied-broker-schedule", request.RequestUri, StringComparison.Ordinal);
+            Assert.Contains("\"startOfDay\":\"08:30:00\"", request.Content, StringComparison.Ordinal);
+            Assert.DoesNotContain("brokerEnvironmentId", request.Content, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("Trading Day schedule saved and legacy reconciliation recorded for the applied broker.", cut.Find("[data-testid='applied-broker-schedule-message']").TextContent, StringComparison.Ordinal);
+        });
+    }
+
     private static BrokerEnvironmentViewModel[] CreateBrokerCatalog() =>
     [
         new(
@@ -357,7 +399,25 @@ public sealed class ConfigurationTests
     private static BrokerEnvironmentStatusViewModel CreateBrokerStatus(bool restartRequired = false, string? selectedName = null)
     {
         var applied = CreateBrokerCatalog()[0];
-        var selected = selectedName is null ? applied : applied with { Name = selectedName };
+        var selected = selectedName is null
+            ? applied
+            : applied with
+            {
+                Id = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+                Name = selectedName
+            };
         return new("Test", applied, selected, restartRequired, 1);
     }
+
+    private static AppliedBrokerScheduleViewModel CreateAppliedSchedule(bool legacyReconciliationRequired = false) => new(
+        DemoBrokerId,
+        1,
+        1,
+        new TimeOnly(8, 0),
+        new TimeOnly(17, 0),
+        [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday],
+        "ExcludeWeekends",
+        [],
+        "Europe/London",
+        legacyReconciliationRequired);
 }

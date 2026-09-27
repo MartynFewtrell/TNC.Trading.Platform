@@ -73,6 +73,22 @@ public class GetPlatformConfigurationMappingTests
         Assert.DoesNotContain(propertyNames, name => name.Equals("key", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// Trace: Trading-Day Market Data Delivery Plan, Work Item 1 count-capacity warning.
+    /// Verifies counts above four produce a nonblocking quota/capacity warning while four or fewer remain unflagged.
+    /// Expected: only the above-four count returns warning text.
+    /// Why: the count is intentionally uncapped, but operators need a visible capacity caution.
+    /// </summary>
+    [Theory]
+    [InlineData(4, false)]
+    [InlineData(5, true)]
+    public void GetCapacityWarning_ShouldWarnOnlyAboveFour_WhenCountIsConfigured(int count, bool warningExpected)
+    {
+        var warning = GetPlatformConfigurationMapping.GetCapacityWarning(count);
+
+        Assert.Equal(warningExpected, warning is not null);
+    }
+
     private static IEnumerable<string> GetPropertyNames(PropertyInfo property)
     {
         yield return property.Name;

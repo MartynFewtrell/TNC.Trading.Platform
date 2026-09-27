@@ -1,4 +1,6 @@
-﻿namespace TNC.Trading.Platform.Application.Configuration;
+﻿using TNC.Trading.Platform.Application.Features.TradingState;
+
+namespace TNC.Trading.Platform.Application.Configuration;
 
 internal sealed record PlatformStatusModel(
     PlatformEnvironmentKind PlatformEnvironment,
@@ -12,4 +14,5 @@ internal sealed record PlatformStatusModel(
     string? BlockedReason,
     PlatformRetryState RetryState,
     DateTimeOffset UpdatedAtUtc,
-    IgLoginStatusProjection IgLoginStatus);
+    IgLoginStatusProjection IgLoginStatus,
+    TradingStateEvaluation? TradingState = null);

@@ -193,6 +193,24 @@ public class TradingScheduleGateTests
         Assert.Equal("Trading schedule is inactive for the configured bank holiday.", status.Reason);
     }
 
+    /// <summary>
+    /// Trace: Trading-Day Market Data Delivery Plan, Work Item 1 fail-closed schedule handling.
+    /// Verifies: an invalid configured time zone cannot silently evaluate using UTC.
+    /// Expected: the trading window is inactive with an explicit invalid-zone reason.
+    /// Why: substituting UTC can authorize activity at an unintended local time.
+    /// </summary>
+    [Fact]
+    public void Evaluate_ShouldReturnInactive_WhenTimeZoneIsInvalid()
+    {
+        var gate = new TradingScheduleGate();
+        var schedule = CreateTradingSchedule(Array.Empty<DateOnly>()) with { TimeZone = "invalid/time-zone" };
+
+        var status = gate.Evaluate(schedule, new DateTimeOffset(2026, 3, 30, 10, 0, 0, TimeSpan.Zero));
+
+        Assert.False(status.IsActive);
+        Assert.Equal("Trading schedule is inactive because its time zone is invalid.", status.Reason);
+    }
+
     private static TradingScheduleConfiguration CreateTradingSchedule(IReadOnlyList<DateOnly> bankHolidays, string weekendBehavior = "ExcludeWeekends")
     {
         return new TradingScheduleConfiguration(

@@ -1,4 +1,5 @@
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.TradingState;
 using TNC.Trading.Platform.Application.Services;
 
 namespace TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
@@ -8,6 +9,7 @@ internal sealed class MarketCategoryInstrumentScheduleGuard(
     IAppliedBrokerEnvironmentContextResolver appliedEnvironmentResolver,
     IMarketCategoryInstrumentFrequencyReader frequencyReader,
     MarketCategoryInstrumentSchedulePolicy schedulePolicy,
+    TradingStateEvaluator tradingStateEvaluator,
     IMarketCategoryInstrumentClock clock) : IMarketCategoryInstrumentScheduleGuard
 {
     public async Task<bool> IsStillActiveAsync(
@@ -53,7 +55,18 @@ internal sealed class MarketCategoryInstrumentScheduleGuard(
             return false;
         }
 
-        if (MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(configuration.TradingSchedule) != context.ScheduleRevision
+        var tradingState = tradingStateEvaluator.Evaluate(new(
+            applied,
+            configuration,
+            frequency,
+            null,
+            clock.GetUtcNow()));
+        if (!tradingState.CanStartMarketDataUpdate)
+        {
+            return false;
+        }
+
+        if (MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(configuration.TradingSchedule, frequency) != context.ScheduleRevision
             || frequency.ForTradingDay(context.TradingDay) != context.EffectiveUpdatesPerDay)
         {
             return false;
@@ -65,7 +78,8 @@ internal sealed class MarketCategoryInstrumentScheduleGuard(
             environment,
             configuration.TradingSchedule,
             frequency,
-            null));
+            null,
+            IsLegacyScheduleReconciliationRequired: configuration.MarketDataScheduleReconciliationRequired));
         return decision.IsDue
             && decision.TradingDay == context.TradingDay
             && decision.SlotIndex == context.ScheduledSlot

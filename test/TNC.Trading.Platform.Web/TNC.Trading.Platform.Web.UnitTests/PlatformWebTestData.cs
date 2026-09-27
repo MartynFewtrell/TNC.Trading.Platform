@@ -77,7 +77,9 @@ internal static class PlatformWebTestData
                 allowance,
                 4,
                 "Partial",
-                "ProviderUnavailable"));
+                "ProviderUnavailable",
+                15,
+                null));
 
     public static PlatformEventsViewModel CreateEvents(params PlatformEventItemViewModel[] events) =>
         new(events.Length == 0

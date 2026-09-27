@@ -1,6 +1,7 @@
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 using TNC.Trading.Platform.Application.Services;
 
 namespace TNC.Trading.Platform.Application.UnitTests.Features.MarketCategoryInstruments;
@@ -32,13 +33,59 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
     }
 
     /// <summary>
-    /// Trace: Market Category Instruments Work Item 1, step 4 and Work Item 4, step 3.
-    /// Verifies: a schedule-close cancellation during a provider request prevents provider-derived SQL publication.
-    /// Expected: the last-good snapshot remains unchanged and no instrument write is recorded after the injected clock reaches the window end.
-    /// Why: schedule close is a hard boundary; a late response must not publish even when the provider returns complete data.
+    /// Trace: Trading-Day Market Data Work Item 4, step 1.
+    /// Verifies: a failed category refresh can use the persisted last-good catalogue without treating the refresh as successful.
+    /// Expected: selected categories continue collecting from the retained catalogue while the cycle reports a partial outcome.
+    /// Why: a transient catalogue failure must not discard usable validated category/listing history or hide stale provenance.
     /// </summary>
     [Fact]
-    public async Task ExecuteDueCycleAsync_ShouldNotPublishProviderData_WhenWindowClosesDuringCollection()
+    public async Task ExecuteDueCycleAsync_ShouldUseLastGoodCatalogue_WhenCategoryRefreshFails()
+    {
+        var harness = new CycleHarness();
+        harness.ConfigureCategoryRefreshUnavailable();
+
+        await harness.ExecuteAsync(CancellationToken.None);
+
+        Assert.Equal("CompletedUsingLastGoodCategoryCatalogue", harness.Status);
+        Assert.Equal(2, harness.CompletedCategories);
+        Assert.Equal(1, harness.FailedCategories);
+        Assert.Equal(3, harness.CategoryRefreshCalls);
+        Assert.Equal("A-EPIC", harness.SnapshotEpic("A"));
+        Assert.Equal("B-EPIC", harness.SnapshotEpic("B"));
+        Assert.Contains((MarketDataFullRunStage.Categories, "Failed"), harness.FullRunStageAttempts);
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 4, step 2.
+    /// Verifies: a due failed-item follow-up is admitted only for its frozen source categories and bypasses catalogue/listing provider stages.
+    /// Expected: the request carries the source run and original detail slot, covers no scheduled slot, and makes no category/listing calls.
+    /// Why: bounded recovery must not replay successful or source stages and must remain distinguishable from a full update.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteDueCycleAsync_ShouldAdmitFailedItemFollowUp_WithoutRepeatingSourceStages()
+    {
+        var harness = new CycleHarness();
+        harness.ConfigureDueFailedItemRetry();
+
+        await harness.ExecuteAsync(CancellationToken.None);
+
+        Assert.Equal(MarketDataFullRunTrigger.FailedItemRetry, harness.AdmissionRequest!.Trigger);
+        Assert.Equal(["A"], harness.AdmissionRequest.SelectedCategoryCodes);
+        Assert.Empty(harness.AdmissionRequest.CoveredSlots);
+        Assert.NotNull(harness.AdmissionRequest.RetrySourceRunId);
+        Assert.Equal(0, harness.CategoryRefreshCalls);
+        Assert.Equal(0, harness.ListingProviderCalls);
+        Assert.Equal("Completed", harness.Status);
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 3, step 3.
+    /// Verifies: an admitted parent run may finish provider-backed listing collection after the timed window closes.
+    /// Expected: both selected category lists are published and the cycle completes after the injected clock reaches the window end.
+    /// Why: closing prevents new runs, but must not revoke a still-fenced run that was admitted inside the Trading Day.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteDueCycleAsync_ShouldPublishProviderData_WhenAdmittedRunContinuesAfterWindowClose()
     {
         var harness = new CycleHarness();
         harness.SeedSnapshot("B", "PRIOR-B");
@@ -46,12 +93,62 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
 
         await harness.ExecuteAsync(CancellationToken.None);
 
-        Assert.Equal("ScheduleClosed", harness.Status);
-        Assert.Equal("Skipped", harness.CycleOutcome);
-        Assert.Equal(0, harness.CompletedCategories);
-        Assert.Equal(2, harness.FailedCategories);
-        Assert.Equal("PRIOR-B", harness.SnapshotEpic("B"));
-        Assert.Equal(0, harness.PublishedCategories);
+        Assert.Equal("Completed", harness.Status);
+        Assert.Equal("Completed", harness.CycleOutcome);
+        Assert.Equal(2, harness.CompletedCategories);
+        Assert.Equal(0, harness.FailedCategories);
+        Assert.Equal("B-EPIC", harness.SnapshotEpic("B"));
+        Assert.Equal(2, harness.PublishedCategories);
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 3, steps 1 and 2.
+    /// Verifies: a scheduled slot is admitted with its exact frozen inputs and the same parent lease reaches both prerequisite and listing provider calls.
+    /// Expected: one slot identity is covered, selected Categories and update count are frozen, and both provider boundaries observe the admitted run ID.
+    /// Why: independently scheduled child jobs could otherwise drift from the run whose schedule and selection were admitted.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteDueCycleAsync_ShouldCarryOneAdmittedParentLease_ThroughCategoryAndListingStages()
+    {
+        var harness = new CycleHarness();
+
+        await harness.ExecuteAsync(CancellationToken.None);
+
+        Assert.Equal(MarketDataFullRunTrigger.Scheduled, harness.AdmissionRequest!.Trigger);
+        Assert.Equal(1, harness.AdmissionRequest.EffectiveUpdatesPerDay);
+        Assert.Equal(["A", "B"], harness.AdmissionRequest.SelectedCategoryCodes);
+        Assert.Contains(
+            new MarketDataFullRunSlotIdentity(
+                harness.AdmissionRequest.TradingDay,
+                harness.AdmissionRequest.ScheduleRevision,
+                0),
+            harness.AdmissionRequest.CoveredSlots);
+        Assert.Equal(harness.FullRunId, harness.CategoryGatewayRunId);
+        Assert.Equal(harness.FullRunId, harness.InstrumentGatewayRunId);
+        Assert.Contains((MarketDataFullRunStage.Categories, "Succeeded"), harness.FullRunStageAttempts);
+        Assert.Contains((MarketDataFullRunStage.Listings, "Succeeded"), harness.FullRunStageAttempts);
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 3, step 4.
+    /// Verifies: a valid in-window Interest trigger admits a full run when timed updates are disabled.
+    /// Expected: the persisted admission uses count zero, records no covered timed slots, and still completes Categories and listing stages.
+    /// Why: zero timed updates must disable only automatic slots, not explicit eligible-day requests.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteDueCycleAsync_ShouldAdmitInterestTrigger_WhenTimedUpdatesAreDisabled()
+    {
+        var harness = new CycleHarness(updatesPerDay: 0);
+        harness.SetIntent(MarketDataFullRunTrigger.Interest);
+
+        await harness.ExecuteAsync(CancellationToken.None);
+
+        Assert.Equal("Completed", harness.Status);
+        Assert.Equal(MarketDataFullRunTrigger.Interest, harness.AdmissionRequest!.Trigger);
+        Assert.Equal(0, harness.AdmissionRequest.EffectiveUpdatesPerDay);
+        Assert.Empty(harness.AdmissionRequest.CoveredSlots);
+        Assert.Contains((MarketDataFullRunStage.Categories, "Succeeded"), harness.FullRunStageAttempts);
+        Assert.Contains((MarketDataFullRunStage.Listings, "Succeeded"), harness.FullRunStageAttempts);
     }
 
     /// <summary>
@@ -192,8 +289,10 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         private readonly FakeScheduleGuard scheduleGuard;
 
         private FakeClock Clock { get; }
+        private int UpdatesPerDay { get; }
         private FakeCycleStore CycleStore { get; } = new();
         private FakeInterestReader InterestReader { get; } = new();
+        private FakeFullRunStore FullRunStore { get; } = new();
         private FakeCategorySnapshotStore CategorySnapshotStore { get; } = new();
         private FakeInstrumentsGateway Gateway { get; } = new();
         private FakeInstrumentWriter Writer { get; } = new();
@@ -203,13 +302,26 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         public int PublishedCategories => Writer.WritesCount;
         public string? CycleOutcome => CycleStore.LastCycleOutcome;
         public bool StartupLeaseRequested => CycleStore.StartupLeaseRequested;
+        public MarketDataFullRunAdmissionRequest? AdmissionRequest => FullRunStore.LastAdmissionRequest;
+        public Guid? FullRunId => FullRunStore.LastLease?.RunId;
+        public Guid? CategoryGatewayRunId => categoryGateway.FullRunId;
+        public int CategoryRefreshCalls => categoryGateway.Calls;
+        public Guid? InstrumentGatewayRunId => Gateway.FullRunId;
+        public int ListingProviderCalls => Gateway.Calls;
+        public IReadOnlyList<(MarketDataFullRunStage Stage, string Status)> FullRunStageAttempts => FullRunStore.StageAttempts;
 
-        public CycleHarness(TradingScheduleConfiguration? schedule = null, DateTimeOffset? now = null)
+        public CycleHarness(
+            TradingScheduleConfiguration? schedule = null,
+            DateTimeOffset? now = null,
+            int updatesPerDay = 1)
         {
             configurationStore = new(schedule ?? Schedule);
             Clock = new(now ?? new DateTimeOffset(2026, 9, 28, 10, 0, 0, TimeSpan.Zero));
+            UpdatesPerDay = updatesPerDay;
             scheduleGuard = new(Clock);
         }
+
+        public void SetIntent(MarketDataFullRunTrigger trigger) => FullRunStore.SetIntent(trigger, Clock.Now);
 
         public void SeedSnapshot(string categoryCode, string epic) =>
             Writer.SeedSnapshot(categoryCode, epic, Clock.Now);
@@ -220,6 +332,33 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
 
         public void ConfigureFailureForFirstSelectedCategory() => Gateway.ConfigureFailureForA();
 
+        public void ConfigureCategoryRefreshUnavailable() => categoryGateway.ConfigureUnavailable();
+
+        public void ConfigureDueFailedItemRetry()
+        {
+            var nowUtc = Clock.Now.ToUniversalTime();
+            var frequency = new MarketCategoryInstrumentFrequency(1, null, null, 20);
+            var configuredSchedule = Schedule with
+            {
+                AppliedBrokerEnvironmentId = FakeEnvironmentResolver.AppliedBrokerEnvironmentId
+            };
+            var scheduleRevision = MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(configuredSchedule, frequency);
+            FullRunStore.SetFailedItemRetry(new(
+                Guid.NewGuid(),
+                BrokerEnvironmentKind.Demo,
+                FakeEnvironmentResolver.AppliedBrokerEnvironmentId,
+                "IgDemo",
+                DateOnly.FromDateTime(nowUtc.UtcDateTime),
+                0,
+                nowUtc.AddMinutes(-1),
+                new DateTimeOffset(2026, 9, 28, 17, 0, 0, TimeSpan.Zero),
+                scheduleRevision,
+                1,
+                1,
+                1,
+                ["A"]));
+        }
+
         public void ConfigureCloseDuringCollection() => Gateway.ConfigureClose(Clock.AdvanceTo);
 
         public Task ConfigureBlockingCollection() => Gateway.ConfigureBlockUntilCancelled();
@@ -227,6 +366,8 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         private MarketCategoryInstrumentCycleCoordinator CreateCoordinator()
         {
             var configurationService = new PlatformConfigurationService(configurationStore);
+            var scheduleGate = new TradingScheduleGate();
+            var schedulePolicy = new MarketCategoryInstrumentSchedulePolicy(scheduleGate, Clock);
             var refreshCategoriesHandler = new RefreshMarketCategoriesHandler(
                 categoryGateway,
                 CategorySnapshotStore,
@@ -234,18 +375,20 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
             return new(
                 configurationService,
                 environmentResolver,
-                new FakeFrequencyReader(),
+                new FakeFrequencyReader(UpdatesPerDay),
+                new(scheduleGate, schedulePolicy),
                 InterestReader,
                 CycleStore,
                 CategorySnapshotStore,
                 refreshCategoriesHandler,
                 Gateway,
                 Writer,
-                new(new TradingScheduleGate(), Clock),
+                schedulePolicy,
                 scheduleGuard,
                 new(),
                 new(),
                 Clock,
+                FullRunStore,
                 new NullApplicationLogger());
         }
 
@@ -261,7 +404,7 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
             new GetMarketCategoryInstrumentStatusHandler(
                 environmentResolver,
                 new PlatformConfigurationService(configurationStore),
-                new FakeFrequencyReader(),
+                new FakeFrequencyReader(UpdatesPerDay),
                 CycleStore,
                 new FakeStatusReader(),
                 new TradingScheduleGate(),
@@ -274,6 +417,148 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 BrokerEnvironmentKind environment, DateOnly tradingDay, CancellationToken cancellationToken) =>
                 Task.FromResult(new MarketCategoryInstrumentCollectionStatus(
                     environment, tradingDay, null, null, null, null, null, 0, 20, []));
+        }
+
+        private sealed class FakeFullRunStore : IMarketDataFullRunStore
+        {
+            private MarketDataFullRunIntent? pendingIntent;
+            private MarketDataFailedItemRetry? pendingFailedItemRetry;
+
+            public MarketDataFullRunAdmissionRequest? LastAdmissionRequest { get; private set; }
+            public MarketDataFullRunLease? LastLease { get; private set; }
+
+            public List<(MarketDataFullRunStage Stage, string Status)> StageAttempts { get; } = [];
+
+            public void SetIntent(MarketDataFullRunTrigger trigger, DateTimeOffset nowUtc) =>
+                pendingIntent = new(trigger, 1, 1, nowUtc);
+
+            public void SetFailedItemRetry(MarketDataFailedItemRetry retry) =>
+                pendingFailedItemRetry = retry;
+
+            public Task<MarketDataFullRunAdmissionResult> TryAdmitAsync(
+                MarketDataFullRunAdmissionRequest request,
+                CancellationToken cancellationToken)
+            {
+                if (request.ResumeOnly)
+                {
+                    return Task.FromResult(new MarketDataFullRunAdmissionResult(
+                        MarketDataFullRunAdmissionStatus.OutsideWindow,
+                        null));
+                }
+
+                LastAdmissionRequest = request;
+                var lease = new MarketDataFullRunLease(
+                    Guid.NewGuid(),
+                    request.Environment,
+                    request.AppliedBrokerEnvironmentId,
+                    request.EndpointProfile,
+                    request.TradingDay,
+                    request.AdmittedAtUtc,
+                    request.WindowEndUtc,
+                    request.ScheduleRevision,
+                    request.EffectiveUpdatesPerDay,
+                    request.CollectionConfigurationVersion,
+                    request.InterestRevision,
+                    request.Trigger,
+                    request.SelectedCategoryCodes,
+                    request.LeaseOwner,
+                    1,
+                    request.AdmittedAtUtc.Add(request.LeaseDuration),
+                    request.CoveredSlots,
+                    request.DetailScheduledSlot);
+                LastLease = lease;
+                pendingIntent = null;
+                return Task.FromResult(new MarketDataFullRunAdmissionResult(
+                    MarketDataFullRunAdmissionStatus.Admitted,
+                    lease));
+            }
+
+            public Task<bool> TryRenewLeaseAsync(
+                MarketDataFullRunLease lease,
+                DateTimeOffset nowUtc,
+                TimeSpan leaseDuration,
+                CancellationToken cancellationToken) => Task.FromResult(true);
+
+            public Task<bool> RecordSlotCoverageAsync(
+                MarketDataFullRunLease lease,
+                MarketDataFullRunSlotIdentity slot,
+                DateTimeOffset coveredAtUtc,
+                CancellationToken cancellationToken) => Task.FromResult(true);
+
+            public Task<bool> RecordStageAttemptAsync(
+                MarketDataFullRunLease lease,
+                MarketDataFullRunStage stage,
+                string status,
+                DateTimeOffset nowUtc,
+                bool succeeded,
+                string? safeReasonCode,
+                CancellationToken cancellationToken)
+            {
+                StageAttempts.Add((stage, status));
+                return Task.FromResult(true);
+            }
+
+            public Task<bool> RecordItemAttemptAsync(
+                MarketDataFullRunLease lease,
+                MarketDataFullRunStage stage,
+                string itemCode,
+                string status,
+                DateTimeOffset nowUtc,
+                bool succeeded,
+                string? safeReasonCode,
+                CancellationToken cancellationToken) => Task.FromResult(true);
+
+            public Task<string?> GetStageStatusAsync(
+                MarketDataFullRunLease lease,
+                MarketDataFullRunStage stage,
+                DateTimeOffset nowUtc,
+                CancellationToken cancellationToken)
+            {
+                if (lease.Trigger is MarketDataFullRunTrigger.FailedItemRetry
+                    && stage is MarketDataFullRunStage.Categories or MarketDataFullRunStage.Listings)
+                {
+                    return Task.FromResult<string?>("Skipped");
+                }
+
+                return Task.FromResult<string?>(StageAttempts.LastOrDefault(item => item.Stage == stage).Status);
+            }
+
+            public Task<IReadOnlySet<string>> GetSucceededItemsAsync(
+                MarketDataFullRunLease lease,
+                MarketDataFullRunStage stage,
+                DateTimeOffset nowUtc,
+                CancellationToken cancellationToken) =>
+                Task.FromResult<IReadOnlySet<string>>(new HashSet<string>(StringComparer.Ordinal));
+
+            public Task<bool> CompleteAsync(
+                MarketDataFullRunLease lease,
+                string outcome,
+                string? safeReasonCode,
+                DateTimeOffset completedAtUtc,
+                CancellationToken cancellationToken) => Task.FromResult(true);
+
+            public Task<MarketDataFullRunIntent?> GetPendingIntentAsync(
+                BrokerEnvironmentKind environment,
+                CancellationToken cancellationToken) => Task.FromResult(pendingIntent);
+
+            public Task<MarketDataFailedItemRetry?> GetPendingFailedItemRetryAsync(
+                BrokerEnvironmentKind environment,
+                DateTimeOffset nowUtc,
+                CancellationToken cancellationToken) =>
+                Task.FromResult(pendingFailedItemRetry);
+
+            public Task RecordIntentAsync(
+                BrokerEnvironmentKind environment,
+                Guid appliedBrokerEnvironmentId,
+                MarketDataFullRunTrigger trigger,
+                long collectionConfigurationVersion,
+                long interestRevision,
+                DateTimeOffset updatedAtUtc,
+                CancellationToken cancellationToken)
+            {
+                pendingIntent = new(trigger, collectionConfigurationVersion, interestRevision, updatedAtUtc);
+                return Task.CompletedTask;
+            }
         }
 
         private sealed class FakeConfigurationStore(TradingScheduleConfiguration schedule) : IPlatformConfigurationStore
@@ -294,7 +579,7 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 new(
                     PlatformEnvironmentKind.Development,
                     BrokerEnvironmentKind.Demo,
-                    schedule,
+                    schedule with { AppliedBrokerEnvironmentId = FakeEnvironmentResolver.AppliedBrokerEnvironmentId },
                     new(1, 1, 2, 10, 60),
                     new("Recorded", null),
                     new(true, true, true),
@@ -306,8 +591,10 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
 
         private sealed class FakeEnvironmentResolver : IAppliedBrokerEnvironmentContextResolver
         {
+            public static Guid AppliedBrokerEnvironmentId { get; } = Guid.NewGuid();
+
             private static readonly AppliedBrokerEnvironmentContext Applied = new(
-                Guid.NewGuid(),
+                AppliedBrokerEnvironmentId,
                 "IG",
                 "Demo",
                 "Active",
@@ -323,12 +610,12 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 Task.FromResult<AppliedBrokerEnvironmentContext?>(Applied);
         }
 
-        private sealed class FakeFrequencyReader : IMarketCategoryInstrumentFrequencyReader
+        private sealed class FakeFrequencyReader(int updatesPerDay = 1) : IMarketCategoryInstrumentFrequencyReader
         {
             Task<MarketCategoryInstrumentFrequency> IMarketCategoryInstrumentFrequencyReader.ReadAsync(
                 BrokerEnvironmentKind appliedBrokerEnvironment,
                 CancellationToken cancellationToken) =>
-                Task.FromResult(new MarketCategoryInstrumentFrequency(1, null, null, 20));
+                Task.FromResult(new MarketCategoryInstrumentFrequency(updatesPerDay, null, null, 20));
         }
 
         private sealed class FakeInterestReader : IMarketCategoryInstrumentInterestReader
@@ -342,15 +629,31 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
 
         private sealed class FakeMarketCategoriesGateway : IMarketCategoriesGateway
         {
+            private bool isUnavailable;
+
+            public Guid? FullRunId { get; private set; }
+            public int Calls { get; private set; }
+
+            public void ConfigureUnavailable() => isUnavailable = true;
+
             Task<MarketCategoriesGatewayResult> IMarketCategoriesGateway.GetAsync(CancellationToken cancellationToken) =>
-                Task.FromResult<MarketCategoriesGatewayResult>(
-                    new MarketCategoriesGatewayResult.Succeeded([new("A", false), new("B", false)]));
+                GetResultAsync();
 
             Task<MarketCategoriesGatewayResult> IMarketCategoriesGateway.GetAsync(
                 MarketCategoryInstrumentRequestBudgetContext requestBudgetContext,
-                CancellationToken cancellationToken) =>
-                Task.FromResult<MarketCategoriesGatewayResult>(
-                    new MarketCategoriesGatewayResult.Succeeded([new("A", false), new("B", false)]));
+                CancellationToken cancellationToken)
+            {
+                FullRunId = requestBudgetContext.FullRunLease?.RunId;
+                return GetResultAsync();
+            }
+
+            private Task<MarketCategoriesGatewayResult> GetResultAsync()
+            {
+                Calls++;
+                return Task.FromResult<MarketCategoriesGatewayResult>(isUnavailable
+                    ? new MarketCategoriesGatewayResult.Failed(MarketCategoriesFailureCategory.Unavailable, "safe")
+                    : new MarketCategoriesGatewayResult.Succeeded([new("A", false), new("B", false)]));
+            }
         }
 
         private sealed class FakeCategorySnapshotStore : IMarketCategorySnapshotStore
@@ -406,12 +709,14 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 MarketCategoryInstrumentCycleLease lease,
                 DateTimeOffset nowUtc,
                 TimeSpan leaseDuration,
-                CancellationToken cancellationToken) => Task.FromResult(nowUtc < lease.WindowEndUtc);
+                CancellationToken cancellationToken) =>
+                Task.FromResult(lease.FullRunLease is not null || nowUtc < lease.WindowEndUtc);
 
             Task<bool> IMarketCategoryInstrumentCycleStore.TryBeginCategoryPrerequisiteAsync(
                 MarketCategoryInstrumentCycleLease lease,
                 DateTimeOffset nowUtc,
-                CancellationToken cancellationToken) => Task.FromResult(nowUtc < lease.WindowEndUtc);
+                CancellationToken cancellationToken) =>
+                Task.FromResult(lease.FullRunLease is not null || nowUtc < lease.WindowEndUtc);
 
             Task<bool> IMarketCategoryInstrumentCycleStore.TryReserveCategoryAttemptAsync(
                 MarketCategoryInstrumentCycleLease lease,
@@ -420,7 +725,7 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 CancellationToken cancellationToken)
             {
                 CategoryAttempts[categoryCode] = CategoryAttempts.GetValueOrDefault(categoryCode) + 1;
-                return Task.FromResult(nowUtc < lease.WindowEndUtc);
+                return Task.FromResult(lease.FullRunLease is not null || nowUtc < lease.WindowEndUtc);
             }
 
             Task<bool> IMarketCategoryInstrumentCycleStore.CompleteCategoryPrerequisiteAsync(
@@ -428,7 +733,8 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 DateTimeOffset nowUtc,
                 bool succeeded,
                 string? safeError,
-                CancellationToken cancellationToken) => Task.FromResult(nowUtc < lease.WindowEndUtc && succeeded);
+                CancellationToken cancellationToken) =>
+                Task.FromResult((lease.FullRunLease is not null || nowUtc < lease.WindowEndUtc) && succeeded);
 
             Task<bool> IMarketCategoryInstrumentCycleStore.CompleteCategoryAttemptAsync(
                 MarketCategoryInstrumentCycleLease lease,
@@ -496,6 +802,9 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
 
         private sealed class FakeInstrumentsGateway : IMarketCategoryInstrumentsGateway
         {
+            public Guid? FullRunId { get; private set; }
+            public int Calls { get; private set; }
+
             private Func<BrokerEnvironmentKind, string, MarketCategoryInstrumentRequestBudgetContext, CancellationToken, Task<MarketCategoryInstrumentCollectionResult>> OnCollect { get; set; } =
                 (_, categoryCode, _, _) => Task.FromResult(
                     (MarketCategoryInstrumentCollectionResult)new MarketCategoryInstrumentCollectionResult.Complete(
@@ -534,8 +843,12 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 BrokerEnvironmentKind appliedBrokerEnvironment,
                 string categoryCode,
                 MarketCategoryInstrumentRequestBudgetContext requestBudgetContext,
-                CancellationToken cancellationToken) =>
-                OnCollect(appliedBrokerEnvironment, categoryCode, requestBudgetContext, cancellationToken);
+                CancellationToken cancellationToken)
+            {
+                Calls++;
+                FullRunId = requestBudgetContext.FullRunLease?.RunId;
+                return OnCollect(appliedBrokerEnvironment, categoryCode, requestBudgetContext, cancellationToken);
+            }
         }
 
         private sealed class FakeInstrumentWriter : IMarketCategoryInstrumentSnapshotWriter

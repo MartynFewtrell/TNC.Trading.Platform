@@ -8,6 +8,7 @@ internal sealed class MarketDetailRunSourceEntity
     public Guid ListingCollectionId { get; set; }
     public long ListingVersion { get; set; }
     public bool IsValidatedComplete { get; set; }
+    public bool IsFresh { get; set; } = true;
     public MarketDetailCollectionRunEntity Run { get; set; } = null!;
     public ICollection<MarketDetailRunMembershipEntity> Memberships { get; set; } = [];
 }

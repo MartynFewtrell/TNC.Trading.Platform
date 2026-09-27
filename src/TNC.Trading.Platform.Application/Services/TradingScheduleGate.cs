@@ -27,7 +27,11 @@ internal sealed class TradingScheduleGate
 
     public TradingScheduleStatus Evaluate(TradingScheduleConfiguration tradingSchedule, DateTimeOffset utcNow)
     {
-        var timeZone = ResolveTimeZone(tradingSchedule.TimeZone);
+        if (!TryResolveTimeZone(tradingSchedule.TimeZone, out var timeZone))
+        {
+            return new TradingScheduleStatus(false, "Trading schedule is inactive because its time zone is invalid.");
+        }
+
         var localNow = TimeZoneInfo.ConvertTime(utcNow, timeZone);
         var currentDate = DateOnly.FromDateTime(localNow.DateTime);
 
@@ -50,7 +54,11 @@ internal sealed class TradingScheduleGate
 
     public DateOnly GetTradingDay(TradingScheduleConfiguration tradingSchedule, DateTimeOffset utcNow)
     {
-        var timeZone = ResolveTimeZone(tradingSchedule.TimeZone);
+        if (!TryResolveTimeZone(tradingSchedule.TimeZone, out var timeZone))
+        {
+            throw new ArgumentException("Trading schedule time zone is invalid.", nameof(tradingSchedule));
+        }
+
         return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(utcNow, timeZone).DateTime);
     }
 
@@ -72,22 +80,6 @@ internal sealed class TradingScheduleGate
             DayOfWeek.Sunday => tradingSchedule.WeekendBehavior is WeekendBehavior.IncludeSunday or WeekendBehavior.IncludeFullWeekend,
             _ => false
         };
-    }
-
-    private static TimeZoneInfo ResolveTimeZone(string configuredTimeZone)
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById(configuredTimeZone);
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.Utc;
-        }
-        catch (InvalidTimeZoneException)
-        {
-            return TimeZoneInfo.Utc;
-        }
     }
 
     public static bool TryResolveTimeZone(string configuredTimeZone, out TimeZoneInfo timeZone)

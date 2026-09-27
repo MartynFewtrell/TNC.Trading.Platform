@@ -25,7 +25,9 @@ internal sealed class RefreshMarketCategoriesHandler(
                 scheduleCancellation!.Token,
                 request.ScheduledLease.WindowEndUtc,
                 request.ScheduledLease.ScheduleRevision,
-                request.ScheduledLease.EffectiveUpdatesPerDay);
+                request.ScheduledLease.EffectiveUpdatesPerDay,
+                AppliedEndpointProfile: request.ScheduledLease.EndpointProfile,
+                FullRunLease: request.ScheduledLease.FullRunLease);
         var token = scheduleCancellation?.Token
             ?? request.ManualBudgetContext?.ScheduleCancellationToken
             ?? cancellationToken;
@@ -51,7 +53,7 @@ internal sealed class RefreshMarketCategoriesHandler(
 
         var succeeded = (MarketCategoriesGatewayResult.Succeeded)result;
         if (request.ScheduledLease is { } lease
-            && (lease.WindowEndUtc <= timeProvider.GetUtcNow().ToUniversalTime()
+            && ((lease.FullRunLease is null && lease.WindowEndUtc <= timeProvider.GetUtcNow().ToUniversalTime())
                 || request.ScheduleCancellationToken.IsCancellationRequested))
         {
             return new(new MarketCategoriesRefreshOutcome.Failed(

@@ -39,9 +39,22 @@ internal sealed class EfMarketCategoryInstrumentSnapshotStore(
     {
         ValidateCompleteCollection(collection, provenance);
         var startTimeUtc = (timeProvider ?? TimeProvider.System).GetUtcNow().ToUniversalTime();
-        if (provenance.ScheduleWindowEndUtc is { } windowEnd && startTimeUtc >= windowEnd)
+        if (provenance.FullRunLease is null
+            && provenance.ScheduleWindowEndUtc is { } windowEnd
+            && startTimeUtc >= windowEnd)
         {
             throw new InvalidOperationException("The Trading window closed before instrument snapshot publication.");
+        }
+
+        if (provenance.FullRunLease is { } fullRunLease
+            && (fullRunLease.Environment != collection.BrokerEnvironment
+                || fullRunLease.AppliedBrokerEnvironmentId == Guid.Empty
+                || fullRunLease.EndpointProfile != provenance.AppliedEndpointProfile
+                || fullRunLease.TradingDay != provenance.TradingDay
+                || fullRunLease.ScheduleRevision != provenance.ScheduleRevision
+                || fullRunLease.WindowEndUtc != provenance.ScheduleWindowEndUtc))
+        {
+            throw new InvalidOperationException("The instrument publication context does not match its admitted full run.");
         }
 
         var environmentId = await EfMarketCategoryInstrumentEnvironmentResolver.ResolveAppliedIdAsync(
@@ -53,6 +66,17 @@ internal sealed class EfMarketCategoryInstrumentSnapshotStore(
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
             System.Data.IsolationLevel.Serializable,
             cancellationToken).ConfigureAwait(false);
+        if (provenance.FullRunLease is { } parentLease
+            && !await EfMarketDataFullRunLeaseGuard.IsActiveInTransactionAsync(
+                dbContext,
+                parentLease,
+                startTimeUtc,
+                contextResolver,
+                cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The full-run lease is stale before instrument snapshot publication.");
+        }
+
         await MarketCategoryInstrumentSqlLock.AcquireAsync(
             dbContext, $"MarketCategoryInstruments/{environmentId:N}", "Shared", cancellationToken).ConfigureAwait(false);
         await MarketCategoryInstrumentSqlLock.AcquireAsync(
@@ -60,7 +84,10 @@ internal sealed class EfMarketCategoryInstrumentSnapshotStore(
         await MarketCategoryInstrumentSqlLock.AcquireAsync(
             dbContext, $"InstrumentCycle/{environmentId:N}/{provenance.TradingDay:yyyyMMdd}/{provenance.ScheduledSlot}", "Exclusive", cancellationToken).ConfigureAwait(false);
         var categoryExists = await dbContext.MarketCategories
-            .AnyAsync(item => item.BrokerEnvironmentId == environmentId && item.Code == collection.CategoryCode, cancellationToken)
+            .AnyAsync(item => item.BrokerEnvironmentId == environmentId
+                && item.Code == collection.CategoryCode
+                && item.IsCurrent,
+                cancellationToken)
             .ConfigureAwait(false);
         if (!categoryExists)
         {
@@ -161,7 +188,10 @@ internal sealed class EfMarketCategoryInstrumentSnapshotStore(
         attempt.UpdatedAtUtc = commitTimeUtc;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         var categoryStillPresent = await dbContext.MarketCategories.AsNoTracking()
-            .AnyAsync(item => item.BrokerEnvironmentId == environmentId && item.Code == collection.CategoryCode, cancellationToken)
+            .AnyAsync(item => item.BrokerEnvironmentId == environmentId
+                && item.Code == collection.CategoryCode
+                && item.IsCurrent,
+                cancellationToken)
             .ConfigureAwait(false);
         var finalCategoryRevision = await dbContext.MarketCategoryCatalogStates.AsNoTracking()
             .Where(item => item.BrokerEnvironmentId == environmentId)
@@ -179,11 +209,23 @@ internal sealed class EfMarketCategoryInstrumentSnapshotStore(
             collection.BrokerEnvironment,
             provenance.AppliedEndpointProfile,
             cancellationToken).ConfigureAwait(false);
-        if (provenance.ScheduleWindowEndUtc is { } finalWindowEnd
+        if (provenance.FullRunLease is null
+            && provenance.ScheduleWindowEndUtc is { } finalWindowEnd
             && ((timeProvider ?? TimeProvider.System).GetUtcNow().ToUniversalTime() >= finalWindowEnd
                 || cancellationToken.IsCancellationRequested))
         {
             throw new InvalidOperationException("The Trading window closed before instrument snapshot commit.");
+        }
+
+        if (provenance.FullRunLease is { } activeParentLease
+            && !await EfMarketDataFullRunLeaseGuard.IsActiveInTransactionAsync(
+                dbContext,
+                activeParentLease,
+                (timeProvider ?? TimeProvider.System).GetUtcNow().ToUniversalTime(),
+                contextResolver,
+                cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The full-run lease expired before instrument snapshot commit.");
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -271,6 +313,7 @@ internal sealed class EfMarketCategoryInstrumentSnapshotStore(
             || provenance.RetrievedAtUtc.Offset != TimeSpan.Zero
             || provenance.LeaseOwner == Guid.Empty
             || provenance.LeaseFence < 1
+            || (provenance.FullRunLease is not null && provenance.ScheduleRevision < 1)
             || metadata.PageSize is < 1 or > MaximumPageSize
             || metadata.ProviderTotalPages is < 1 or > MaximumPages
             || metadata.ProviderTotalResults is < 0 or > MaximumResults

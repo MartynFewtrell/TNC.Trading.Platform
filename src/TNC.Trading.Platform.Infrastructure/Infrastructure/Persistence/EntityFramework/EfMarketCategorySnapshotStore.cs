@@ -25,7 +25,7 @@ internal sealed class EfMarketCategorySnapshotStore(
         }
 
         var categories = await dbContext.MarketCategories.AsNoTracking()
-            .Where(item => item.BrokerEnvironmentId == brokerEnvironmentId)
+            .Where(item => item.BrokerEnvironmentId == brokerEnvironmentId && item.IsCurrent)
             .Select(item => new MarketCategory(item.Code, item.NonTradeable))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -57,16 +57,68 @@ internal sealed class EfMarketCategorySnapshotStore(
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         var nowUtc = (timeProvider ?? TimeProvider.System).GetUtcNow().ToUniversalTime();
+        var fullRunLease = lease?.FullRunLease ?? manualContext?.FullRunLease;
         var windowEndUtc = lease?.WindowEndUtc ?? manualContext?.ScheduleWindowEndUtc;
-        if (windowEndUtc is { } windowEnd
+        if (fullRunLease is null
+            && windowEndUtc is { } windowEnd
             && (nowUtc >= windowEnd || windowEnd.Offset != TimeSpan.Zero))
         {
             throw new InvalidOperationException("The Trading window closed before category snapshot publication.");
         }
 
-        await EnsureManualScheduleActiveAsync(manualEnvironment, manualContext, cancellationToken).ConfigureAwait(false);
+        if (fullRunLease is null)
+        {
+            await EnsureManualScheduleActiveAsync(manualEnvironment, manualContext, cancellationToken).ConfigureAwait(false);
+        }
+
         var brokerEnvironmentId = await ResolveBrokerEnvironmentIdAsync(cancellationToken).ConfigureAwait(false);
+        var operationEnvironment = lease?.BrokerEnvironment ?? manualEnvironment;
+        var operationDay = lease?.TradingDay ?? manualContext?.TradingDay;
+        var operationScheduleRevision = lease?.ScheduleRevision ?? manualContext?.ScheduleRevision;
+        var operationProfile = lease?.EndpointProfile ?? manualContext?.AppliedEndpointProfile;
+        var operationWindowEnd = lease?.WindowEndUtc ?? manualContext?.ScheduleWindowEndUtc;
+        if (fullRunLease is not null
+            && (operationEnvironment != fullRunLease.Environment
+                || operationDay != fullRunLease.TradingDay
+                || operationScheduleRevision != fullRunLease.ScheduleRevision
+                || operationProfile != fullRunLease.EndpointProfile
+                || operationWindowEnd != fullRunLease.WindowEndUtc
+                || brokerEnvironmentId != fullRunLease.AppliedBrokerEnvironmentId))
+        {
+            throw new InvalidOperationException("The category publication context does not match its admitted full run.");
+        }
+
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        if (fullRunLease is not null)
+        {
+            if (!await EfMarketDataFullRunLeaseGuard.IsActiveInTransactionAsync(
+                    dbContext,
+                    fullRunLease,
+                    nowUtc,
+                    contextResolver,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("The full-run lease is stale before category publication.");
+            }
+        }
+        else
+        {
+            await MarketCategoryInstrumentSqlLock.AcquireAsync(
+                dbContext,
+                $"MarketDataFullRuns/{brokerEnvironmentId:N}",
+                "Exclusive",
+                cancellationToken).ConfigureAwait(false);
+            if (await dbContext.MarketDataFullRuns.AsNoTracking().AnyAsync(
+                    item => item.BrokerEnvironmentId == brokerEnvironmentId
+                        && item.Status == "Running"
+                        && item.LeaseExpiresAtUtc > nowUtc,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException(
+                    "A category-only refresh cannot publish while a full market-data run is active.");
+            }
+        }
+
         await MarketCategoryInstrumentSqlLock.AcquireAsync(
             dbContext, $"MarketCategoryInstruments/{brokerEnvironmentId:N}", "Exclusive", cancellationToken).ConfigureAwait(false);
         await MarketCategoryInstrumentSqlLock.AcquireAsync(
@@ -106,23 +158,14 @@ internal sealed class EfMarketCategorySnapshotStore(
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         var existingCodes = existingCategories.Select(item => item.Code).ToHashSet(StringComparer.Ordinal);
-        var removedCodes = existingCodes.Except(requestedCategories.Keys, StringComparer.Ordinal).ToArray();
-        if (removedCodes.Length > 0)
-        {
-            var removedInstrumentRows = await dbContext.MarketCategoryInstruments
-                .Where(item => item.BrokerEnvironmentId == brokerEnvironmentId && removedCodes.Contains(item.CategoryCode))
-                .ToListAsync(cancellationToken).ConfigureAwait(false);
-            var removedInstrumentStates = await dbContext.MarketCategoryInstrumentCatalogStates
-                .Where(item => item.BrokerEnvironmentId == brokerEnvironmentId && removedCodes.Contains(item.CategoryCode))
-                .ToListAsync(cancellationToken).ConfigureAwait(false);
-            dbContext.MarketCategoryInstruments.RemoveRange(removedInstrumentRows);
-            dbContext.MarketCategoryInstrumentCatalogStates.RemoveRange(removedInstrumentStates);
-            dbContext.MarketCategories.RemoveRange(existingCategories.Where(item => removedCodes.Contains(item.Code)));
-        }
 
-        foreach (var category in existingCategories.Where(item => requestedCategories.ContainsKey(item.Code)))
+        foreach (var category in existingCategories)
         {
-            category.NonTradeable = requestedCategories[category.Code].NonTradeable;
+            category.IsCurrent = requestedCategories.TryGetValue(category.Code, out var requestedCategory);
+            if (requestedCategory is not null)
+            {
+                category.NonTradeable = requestedCategory.NonTradeable;
+            }
         }
 
         dbContext.MarketCategories.AddRange(snapshot.Categories
@@ -131,7 +174,8 @@ internal sealed class EfMarketCategorySnapshotStore(
             {
                 BrokerEnvironmentId = brokerEnvironmentId,
                 Code = category.Code,
-                NonTradeable = category.NonTradeable
+                NonTradeable = category.NonTradeable,
+                IsCurrent = true
             }));
 
         var state = await dbContext.MarketCategoryCatalogStates
@@ -154,7 +198,8 @@ internal sealed class EfMarketCategorySnapshotStore(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        if (windowEndUtc is { } commitWindowEnd
+        if (fullRunLease is null
+            && windowEndUtc is { } commitWindowEnd
             && (cancellationToken.IsCancellationRequested
                 || (timeProvider ?? TimeProvider.System).GetUtcNow().ToUniversalTime() >= commitWindowEnd))
         {
@@ -171,14 +216,30 @@ internal sealed class EfMarketCategorySnapshotStore(
                 ?? await GetAppliedEnvironmentKindAsync(cancellationToken).ConfigureAwait(false),
             lease?.EndpointProfile,
             cancellationToken).ConfigureAwait(false);
-        if (windowEndUtc is not null
+        if (fullRunLease is null
+            && windowEndUtc is not null
             && (cancellationToken.IsCancellationRequested
                 || (timeProvider ?? TimeProvider.System).GetUtcNow().ToUniversalTime() >= windowEndUtc))
         {
             throw new InvalidOperationException("The Trading window closed before category snapshot commit.");
         }
 
-        await EnsureManualScheduleActiveAsync(manualEnvironment, manualContext, cancellationToken).ConfigureAwait(false);
+        if (fullRunLease is not null
+            && !await EfMarketDataFullRunLeaseGuard.IsActiveInTransactionAsync(
+                dbContext,
+                fullRunLease,
+                (timeProvider ?? TimeProvider.System).GetUtcNow().ToUniversalTime(),
+                contextResolver,
+                cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The full-run lease expired before category publication committed.");
+        }
+
+        if (fullRunLease is null)
+        {
+            await EnsureManualScheduleActiveAsync(manualEnvironment, manualContext, cancellationToken).ConfigureAwait(false);
+        }
+
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return snapshot with { Revision = nextRevision };
     }

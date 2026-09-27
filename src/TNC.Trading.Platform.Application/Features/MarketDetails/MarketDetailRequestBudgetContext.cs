@@ -1,4 +1,5 @@
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 
 namespace TNC.Trading.Platform.Application.Features.MarketDetails;
 
@@ -12,4 +13,5 @@ internal sealed record MarketDetailRequestBudgetContext(
     long ScheduleRevision,
     int EffectiveUpdatesPerDay,
     string AppliedEndpointProfile,
-    DateTimeOffset WindowEndUtc);
+    DateTimeOffset WindowEndUtc,
+    MarketDataFullRunLease? FullRunLease = null);

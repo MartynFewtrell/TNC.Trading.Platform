@@ -16,15 +16,31 @@ internal sealed class EfMarketDetailRequestBudget(
     {
         var nowUtc = Clock.GetUtcNow().ToUniversalTime();
         if (context.WindowEndUtc.Offset != TimeSpan.Zero
-            || nowUtc >= context.WindowEndUtc
             || context.ScheduleRevision <= 0
             || context.EffectiveUpdatesPerDay is < 1 or > 4
-            || scheduleGuard is null)
+            || (context.FullRunLease is null && nowUtc >= context.WindowEndUtc))
         {
             return false;
         }
 
         if (!await cycleStore.IsDetailRequestLeaseActiveAsync(context, nowUtc, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        if (context.FullRunLease is { } fullRunLease)
+        {
+            return fullRunLease.Environment == context.Environment
+                && fullRunLease.TradingDay == context.TradingDay
+                && fullRunLease.ScheduleRevision == context.ScheduleRevision
+                && fullRunLease.WindowEndUtc == context.WindowEndUtc
+                && string.Equals(
+                    fullRunLease.EndpointProfile,
+                    context.AppliedEndpointProfile,
+                    StringComparison.Ordinal);
+        }
+
+        if (scheduleGuard is null)
         {
             return false;
         }
@@ -56,7 +72,9 @@ internal sealed class EfMarketDetailRequestBudget(
         MarketDetailRequestBudgetContext context,
         CancellationToken cancellationToken)
     {
-        if (!await IsExecutionContextStillActiveAsync(context, cancellationToken).ConfigureAwait(false))
+        if (context.FullRunLease is null
+            && Clock.GetUtcNow().ToUniversalTime() >= context.WindowEndUtc
+            || !await IsExecutionContextStillActiveAsync(context, cancellationToken).ConfigureAwait(false))
         {
             return false;
         }

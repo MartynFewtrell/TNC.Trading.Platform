@@ -1,5 +1,7 @@
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 using TNC.Trading.Platform.Application.Features.GetPlatformStatus.Ports;
+using TNC.Trading.Platform.Application.Features.TradingState;
 using TNC.Trading.Platform.Application.Services;
 
 namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
@@ -9,6 +11,9 @@ internal sealed class EfPlatformStatusProjectionReader(
     PlatformConfigurationService platformConfigurationService,
     IPlatformIgLoginSnapshotStore igLoginSnapshotStore,
     IPlatformIgProofDataStore igProofDataStore,
+    IAppliedBrokerEnvironmentContextResolver appliedEnvironmentResolver,
+    IMarketCategoryInstrumentFrequencyReader frequencyReader,
+    TradingStateEvaluator tradingStateEvaluator,
     TradingScheduleGate tradingScheduleGate,
     TimeProvider timeProvider) : IPlatformStatusProjectionReader
 {
@@ -26,7 +31,16 @@ internal sealed class EfPlatformStatusProjectionReader(
                 TryParseBrokerEnvironment(currentState.BrokerEnvironment),
                 cancellationToken)
             .ConfigureAwait(false);
-        var scheduleStatus = tradingScheduleGate.Evaluate(currentConfiguration.TradingSchedule, timeProvider.GetUtcNow());
+        var nowUtc = timeProvider.GetUtcNow();
+        var scheduleStatus = tradingScheduleGate.Evaluate(currentConfiguration.TradingSchedule, nowUtc);
+        var appliedEnvironment = await appliedEnvironmentResolver.ResolveAppliedAsync(cancellationToken).ConfigureAwait(false);
+        var frequency = await frequencyReader.ReadAsync(currentConfiguration.BrokerEnvironment, cancellationToken).ConfigureAwait(false);
+        var tradingState = tradingStateEvaluator.Evaluate(new(
+            appliedEnvironment,
+            currentConfiguration,
+            frequency,
+            currentState,
+            nowUtc));
         var retryState = new PlatformRetryState(
             currentState.RetryPhase,
             currentState.AutomaticAttemptNumber,
@@ -62,7 +76,8 @@ internal sealed class EfPlatformStatusProjectionReader(
                     currentState.LatestIgLoginSnapshotId,
                     currentState.LatestFailureSummary,
                     latestSnapshot,
-                    latestProofData)),
+                    latestProofData),
+                tradingState),
             currentState.LastValidatedAtUtc);
     }
 

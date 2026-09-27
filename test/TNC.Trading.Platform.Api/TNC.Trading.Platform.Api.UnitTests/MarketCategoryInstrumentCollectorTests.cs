@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using TNC.Trading.Platform.Api.Hosting;
+using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 using TNC.Trading.Platform.Application.Features.MarketDetails;
 
 namespace TNC.Trading.Platform.Api.UnitTests;
@@ -24,6 +26,7 @@ public sealed class MarketCategoryInstrumentCollectorTests
         services.AddSingleton(probe);
         services.AddScoped<IMarketCategoryInstrumentCycleCoordinator, ProbeCoordinator>();
         services.AddScoped<IMarketDetailCollectionCoordinator, ProbeDetailCoordinator>();
+        services.AddScoped<IMarketDataFullRunStore, ProbeFullRunStore>();
         services.AddHostedService<MarketCategoryInstrumentCollector>();
 
         await using var provider = services.BuildServiceProvider(validateScopes: true);
@@ -41,6 +44,7 @@ public sealed class MarketCategoryInstrumentCollectorTests
         Assert.Equal(probe.TickCount, probe.DetailTickCount);
         Assert.Equal(probe.DetailScopeIds.Count, probe.DetailDisposedScopeIds.Count);
         Assert.Equal(probe.DetailScopeIds.Count, probe.DetailScopeIds.Distinct().Count());
+        Assert.Equal(probe.TickCount, probe.FullRunIds.Count);
         Assert.Equal(["listing", "detail", "listing", "detail"], probe.TickOrder);
         Assert.Equal([true, false], probe.StartupChecks);
     }
@@ -57,6 +61,7 @@ public sealed class MarketCategoryInstrumentCollectorTests
         public List<Guid> DetailDisposedScopeIds { get; } = [];
         public List<string> TickOrder { get; } = [];
         public List<bool> StartupChecks { get; } = [];
+        public List<Guid> FullRunIds { get; } = [];
         public int TickCount => Volatile.Read(ref tickCount);
         public int DetailTickCount => Volatile.Read(ref detailTickCount);
 
@@ -94,6 +99,14 @@ public sealed class MarketCategoryInstrumentCollectorTests
             }
         }
 
+        public void RecordFullRun(Guid runId)
+        {
+            lock (FullRunIds)
+            {
+                FullRunIds.Add(runId);
+            }
+        }
+
         public void RecordDetailDisposal(Guid scopeId)
         {
             lock (DetailDisposedScopeIds)
@@ -112,11 +125,30 @@ public sealed class MarketCategoryInstrumentCollectorTests
         public Task<MarketCategoryInstrumentCycleResult> ExecuteDueCycleAsync(CancellationToken cancellationToken, bool isStartupCheck = false)
         {
             probe.RecordTick(scopeId, isStartupCheck);
+            var now = DateTimeOffset.UtcNow;
             return Task.FromResult(new MarketCategoryInstrumentCycleResult(
-                "NotDue",
+                "Admitted",
                 DateTimeOffset.UtcNow.AddMilliseconds(2),
                 0,
-                0));
+                0,
+                FullRunLease: new(
+                    Guid.NewGuid(),
+                    BrokerEnvironmentKind.Demo,
+                    Guid.NewGuid(),
+                    "IgDemo",
+                    DateOnly.FromDateTime(now.UtcDateTime),
+                    now,
+                    now.AddHours(1),
+                    1,
+                    1,
+                    1,
+                    0,
+                    MarketDataFullRunTrigger.Scheduled,
+                    [],
+                    Guid.NewGuid(),
+                    1,
+                    now.AddMinutes(5),
+                    [])));
         }
 
         public ValueTask DisposeAsync()
@@ -132,9 +164,12 @@ public sealed class MarketCategoryInstrumentCollectorTests
     {
         private readonly Guid scopeId = Guid.NewGuid();
 
-        public async Task<CollectMarketDetailsResponse> ExecuteDueCollectionAsync(CancellationToken cancellationToken)
+        public async Task<CollectMarketDetailsResponse> ExecuteDueCollectionAsync(
+            CancellationToken cancellationToken,
+            MarketDataFullRunLease? fullRunLease = null)
         {
             probe.RecordDetailTick(scopeId);
+            probe.RecordFullRun(fullRunLease!.RunId);
             if (probe.DetailTickCount >= 2)
             {
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
@@ -152,5 +187,79 @@ public sealed class MarketCategoryInstrumentCollectorTests
             probe.RecordDetailDisposal(scopeId);
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class ProbeFullRunStore : IMarketDataFullRunStore
+    {
+            public Task<MarketDataFullRunAdmissionResult> TryAdmitAsync(
+                MarketDataFullRunAdmissionRequest request,
+                CancellationToken cancellationToken) =>
+                Task.FromResult(new MarketDataFullRunAdmissionResult(
+                    MarketDataFullRunAdmissionStatus.OutsideWindow,
+                    null));
+
+            public Task<bool> TryRenewLeaseAsync(
+                MarketDataFullRunLease lease,
+                DateTimeOffset nowUtc,
+                TimeSpan leaseDuration,
+                CancellationToken cancellationToken) => Task.FromResult(true);
+
+            public Task<bool> RecordSlotCoverageAsync(
+                MarketDataFullRunLease lease,
+                MarketDataFullRunSlotIdentity slot,
+                DateTimeOffset coveredAtUtc,
+                CancellationToken cancellationToken) => Task.FromResult(true);
+
+            public Task<bool> RecordStageAttemptAsync(
+                MarketDataFullRunLease lease,
+                MarketDataFullRunStage stage,
+                string status,
+                DateTimeOffset nowUtc,
+                bool succeeded,
+                string? safeReasonCode,
+                CancellationToken cancellationToken) => Task.FromResult(true);
+
+            public Task<bool> RecordItemAttemptAsync(
+                MarketDataFullRunLease lease,
+                MarketDataFullRunStage stage,
+                string itemCode,
+                string status,
+                DateTimeOffset nowUtc,
+                bool succeeded,
+                string? safeReasonCode,
+                CancellationToken cancellationToken) => Task.FromResult(true);
+
+            public Task<string?> GetStageStatusAsync(
+                MarketDataFullRunLease lease,
+                MarketDataFullRunStage stage,
+                DateTimeOffset nowUtc,
+                CancellationToken cancellationToken) => Task.FromResult<string?>(null);
+
+            public Task<IReadOnlySet<string>> GetSucceededItemsAsync(
+                MarketDataFullRunLease lease,
+                MarketDataFullRunStage stage,
+                DateTimeOffset nowUtc,
+                CancellationToken cancellationToken) =>
+                Task.FromResult<IReadOnlySet<string>>(new HashSet<string>(StringComparer.Ordinal));
+
+            public Task<bool> CompleteAsync(
+                MarketDataFullRunLease lease,
+                string outcome,
+                string? safeReasonCode,
+                DateTimeOffset completedAtUtc,
+                CancellationToken cancellationToken) => Task.FromResult(true);
+
+            public Task<MarketDataFullRunIntent?> GetPendingIntentAsync(
+                BrokerEnvironmentKind environment,
+                CancellationToken cancellationToken) => Task.FromResult<MarketDataFullRunIntent?>(null);
+
+            public Task RecordIntentAsync(
+                BrokerEnvironmentKind environment,
+                Guid appliedBrokerEnvironmentId,
+                MarketDataFullRunTrigger trigger,
+                long collectionConfigurationVersion,
+                long interestRevision,
+                DateTimeOffset updatedAtUtc,
+                CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

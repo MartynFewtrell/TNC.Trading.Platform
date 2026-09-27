@@ -30,7 +30,8 @@ internal static class EfMarketDetailSourceRevisionGuard
             .Where(interest => interest.BrokerEnvironmentId == environmentId
                 && dbContext.MarketCategories.Any(category =>
                     category.BrokerEnvironmentId == environmentId
-                    && category.Code == interest.CategoryCode))
+                    && category.Code == interest.CategoryCode
+                    && category.IsCurrent))
             .OrderBy(item => item.CategoryCode)
             .Select(item => item.CategoryCode)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
@@ -42,13 +43,13 @@ internal static class EfMarketDetailSourceRevisionGuard
                 item.CategoryCode,
                 item.ListingCollectionId,
                 item.ListingVersion,
-                item.IsValidatedComplete
+                item.IsValidatedComplete,
+                item.IsFresh
             })
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         if (!sources.All(source => source.IsValidatedComplete)
-            || !selectedCategories.SequenceEqual(
-                sources.Select(source => source.CategoryCode),
-                StringComparer.Ordinal)
+            || !sources.Select(source => source.CategoryCode).ToHashSet(StringComparer.Ordinal)
+                .IsSubsetOf(selectedCategories.ToHashSet(StringComparer.Ordinal))
             || (cycle.Outcome != "Completed"
                 && !(cycle.Outcome == "Idle" && selectedCategories.Length == 0)))
         {
@@ -73,9 +74,10 @@ internal static class EfMarketDetailSourceRevisionGuard
                 .Where(item => item.CollectionId == source.ListingCollectionId
                     && item.BrokerEnvironmentId == environmentId
                     && item.CategoryCode == source.CategoryCode
-                    && item.TradingDay == detailRun.TradingDay
-                    && item.ScheduledSlot == detailRun.ScheduledSlot
-                    && item.CategorySnapshotRevision == detailRun.CatalogueRevision
+                    && (!source.IsFresh
+                        || (item.TradingDay == detailRun.TradingDay
+                            && item.ScheduledSlot == detailRun.ScheduledSlot
+                            && item.CategorySnapshotRevision == detailRun.CatalogueRevision))
                     && item.EndpointProfile == detailRun.EndpointProfile
                     && item.SnapshotVersion == source.ListingVersion
                     && item.IsComplete

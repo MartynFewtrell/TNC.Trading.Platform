@@ -10,4 +10,5 @@ internal sealed record PlatformConfigurationUpdate(
     string? Password,
     string ChangedBy,
     int? InstrumentUpdatesPerDay = null,
-    int? ApprovedNonTradingDailyRequestAllowance = null);
+    int? ApprovedNonTradingDailyRequestAllowance = null,
+    int? MarketDataLeadInMinutes = null);

@@ -1,0 +1,3 @@
+namespace TNC.Trading.Platform.Application.Features.AppliedBrokerSchedule;
+
+internal sealed record GetAppliedBrokerScheduleProfileRequest;

@@ -78,39 +78,67 @@ else
             </section>
         </PlatformAccordionSection>
 
-        <PlatformAccordionSection Title="Trading schedule" IsOpen="false">
+        <PlatformAccordionSection Title="Trading Day schedule" IsOpen="false">
             <section class="panel">
-                <div class="platform-form-grid">
-                    <label>
-                        Start of day
-                        <InputText @bind-Value="form.StartOfDayText" type="time" />
-                    </label>
-                    <label>
-                        End of day
-                        <InputText @bind-Value="form.EndOfDayText" type="time" />
-                    </label>
-                    <label>
-                        Trading days (comma separated)
-                        <InputText @bind-Value="form.TradingDaysCsv" />
-                    </label>
-                    <label>
-                        Weekend behavior
-                        <InputSelect @bind-Value="form.TradingSchedule.WeekendBehavior">
-                            <option value="ExcludeWeekends">ExcludeWeekends</option>
-                            <option value="IncludeSaturday">IncludeSaturday</option>
-                            <option value="IncludeSunday">IncludeSunday</option>
-                            <option value="IncludeFullWeekend">IncludeFullWeekend</option>
-                        </InputSelect>
-                    </label>
-                    <label>
-                        Bank holidays (comma separated yyyy-MM-dd)
-                        <InputText @bind-Value="form.BankHolidayCsv" />
-                    </label>
-                    <label>
-                        Time zone
-                        <InputText @bind-Value="form.TradingSchedule.TimeZone" />
-                    </label>
-                </div>
+                <p class="hint">This is the shared Trading Day schedule for the currently applied broker. A selected broker does not take effect until applied after restart.</p>
+                @if (appliedScheduleForm is null)
+                {
+                    <p class="warning" role="status" data-testid="applied-broker-schedule-unavailable">
+                        @(string.IsNullOrWhiteSpace(scheduleMessage) ? "Loading applied broker schedule..." : scheduleMessage)
+                    </p>
+                }
+                else
+                {
+                    <p data-testid="applied-broker-schedule-id">Schedule profile: @appliedScheduleForm.BrokerEnvironmentId</p>
+                    @if (appliedScheduleForm.LegacyReconciliationRequired)
+                    {
+                        <p class="warning" role="alert" data-testid="legacy-schedule-reconciliation-required">
+                            The applied broker schedule differs from the legacy platform schedule. New market-data admission is blocked until you explicitly save or confirm the applied Trading Day schedule.
+                        </p>
+                    }
+                    <div class="platform-form-grid">
+                        <label>
+                            Start of day
+                            <InputText @bind-Value="appliedScheduleForm.StartOfDayText" type="time" />
+                        </label>
+                        <label>
+                            End of day
+                            <InputText @bind-Value="appliedScheduleForm.EndOfDayText" type="time" />
+                        </label>
+                        <label>
+                            Trading days (comma separated)
+                            <InputText @bind-Value="appliedScheduleForm.TradingDaysCsv" />
+                        </label>
+                        <label>
+                            Weekend behavior
+                            <InputSelect @bind-Value="appliedScheduleForm.WeekendBehavior">
+                                <option value="ExcludeWeekends">ExcludeWeekends</option>
+                                <option value="IncludeSaturday">IncludeSaturday</option>
+                                <option value="IncludeSunday">IncludeSunday</option>
+                                <option value="IncludeFullWeekend">IncludeFullWeekend</option>
+                            </InputSelect>
+                        </label>
+                        <label>
+                            Bank holidays (comma separated yyyy-MM-dd)
+                            <InputText @bind-Value="appliedScheduleForm.BankHolidayCsv" />
+                        </label>
+                        <label>
+                            Time zone
+                            <InputText @bind-Value="appliedScheduleForm.TimeZone" />
+                        </label>
+                    </div>
+                    <button class="platform-primary-action" data-testid="applied-broker-schedule-save-button" type="button" disabled="@scheduleSaveInProgress" @onclick="SaveAppliedScheduleAsync">
+                        @(scheduleSaveInProgress
+                            ? "Saving Trading Day..."
+                            : appliedScheduleForm.LegacyReconciliationRequired
+                                ? "Confirm and save Trading Day schedule"
+                                : "Save Trading Day schedule")
+                    </button>
+                    @if (!string.IsNullOrWhiteSpace(scheduleMessage))
+                    {
+                        <p role="status" data-testid="applied-broker-schedule-message">@scheduleMessage</p>
+                    }
+                }
             </section>
         </PlatformAccordionSection>
 
@@ -168,7 +196,7 @@ else
                         <span> for @form.InstrumentCollection.AppliedBrokerEnvironment</span>
                     }
                 </p>
-                <p class="hint">A frequency change takes effect on the next local trading day. A daily allowance of zero pauses provider requests; leaving it unset also keeps collection paused.</p>
+                <p class="hint">Update frequency changes apply immediately. A zero count disables timed updates but not manual or interest-triggered updates. A daily allowance of zero pauses provider requests; leaving it unset also keeps collection paused.</p>
                 @if (form.InstrumentCollection.PendingUpdatesPerDay is not null
                     && form.InstrumentCollection.PendingEffectiveTradingDay is { } effectiveDay)
                 {
@@ -193,14 +221,24 @@ else
                         Collection needs attention: @form.InstrumentCollection.SafeFailure
                     </p>
                 }
+                @if (!string.IsNullOrWhiteSpace(form.InstrumentCollection.CapacityWarning))
+                {
+                    <p class="warning" role="status" data-testid="instrument-collection-capacity-warning">
+                        @form.InstrumentCollection.CapacityWarning
+                    </p>
+                }
                 <div class="platform-form-grid">
                     <label>
-                        Instrument updates per trading day (1–4)
-                        <InputNumber @bind-Value="form.InstrumentUpdatesPerDay" min="1" max="4" data-testid="instrument-updates-per-day" />
+                        Instrument updates per trading day (0 or more; above 4 may exceed quota or capacity)
+                        <InputNumber @bind-Value="form.InstrumentUpdatesPerDay" min="0" data-testid="instrument-updates-per-day" />
                     </label>
                     <label>
                         Approved daily non-trading request allowance (0 pauses)
                         <InputNumber @bind-Value="form.ApprovedNonTradingDailyRequestAllowance" min="0" data-testid="approved-daily-request-allowance" />
+                    </label>
+                    <label>
+                        Market-data lead-in minutes
+                        <InputNumber @bind-Value="form.MarketDataLeadInMinutes" min="0" data-testid="market-data-lead-in-minutes" />
                     </label>
                 </div>
             </section>
@@ -261,6 +299,9 @@ else
     private bool selectionAcknowledged;
     private bool selectionInProgress;
     private string? selectionMessage;
+    private AppliedBrokerScheduleFormModel? appliedScheduleForm;
+    private bool scheduleSaveInProgress;
+    private string? scheduleMessage;
 
     protected override async Task OnInitializedAsync()
     {
@@ -274,6 +315,7 @@ else
 
         await LoadAsync();
         await LoadBrokerSelectionAsync();
+        await LoadAppliedScheduleAsync();
     }
 
     private async Task LoadAsync()
@@ -320,6 +362,49 @@ else
         catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or PlatformScopeChallengeRequiredException)
         {
             selectionMessage = $"Unable to load broker selection: {exception.Message}";
+        }
+    }
+
+    private async Task LoadAppliedScheduleAsync()
+    {
+        try
+        {
+            var schedule = await PlatformApiClient.GetAppliedBrokerScheduleAsync(CancellationToken.None);
+            appliedScheduleForm = AppliedBrokerScheduleFormModel.From(schedule);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or PlatformScopeChallengeRequiredException)
+        {
+            scheduleMessage = $"Unable to load the applied broker schedule: {exception.Message}";
+        }
+    }
+
+    private async Task SaveAppliedScheduleAsync()
+    {
+        if (appliedScheduleForm is null)
+        {
+            return;
+        }
+
+        scheduleSaveInProgress = true;
+        scheduleMessage = null;
+        try
+        {
+            var completingLegacyReconciliation = appliedScheduleForm.LegacyReconciliationRequired;
+            var updated = await PlatformApiClient.UpdateAppliedBrokerScheduleAsync(
+                appliedScheduleForm.ToRequest(),
+                CancellationToken.None);
+            appliedScheduleForm = AppliedBrokerScheduleFormModel.From(updated);
+            scheduleMessage = completingLegacyReconciliation
+                ? "Trading Day schedule saved and legacy reconciliation recorded for the applied broker."
+                : "Trading Day schedule saved for the applied broker.";
+        }
+        catch (Exception exception) when (exception is FormatException or HttpRequestException or InvalidOperationException or PlatformScopeChallengeRequiredException)
+        {
+            scheduleMessage = $"Trading Day schedule save failed: {exception.Message}";
+        }
+        finally
+        {
+            scheduleSaveInProgress = false;
         }
     }
 

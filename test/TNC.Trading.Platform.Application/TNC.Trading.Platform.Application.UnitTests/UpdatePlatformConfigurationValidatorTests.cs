@@ -42,18 +42,30 @@ public sealed class UpdatePlatformConfigurationValidatorTests
     }
 
     /// <summary>
-    /// Trace: Market Category Instruments Work Item 5, step 2.
+    /// Trace: Trading-Day Market Data Work Item 1, step 2.
     /// Verifies: an operator cannot configure more collection slots than the schedule policy supports.
-    /// Expected: validation reports the instrument frequency field for an out-of-range value.
-    /// Why: frequency bounds are shared between API and application callers and prevent invalid slot arithmetic.
+    /// Expected: validation reports the instrument frequency field for a negative value.
+    /// Why: counts are nonnegative with no arbitrary upper bound, but negative slot counts are invalid.
     /// </summary>
     [Fact]
-    public void Validate_ShouldRejectUnsupportedInstrumentFrequency_WhenConfigurationIsUpdated()
+    public void Validate_ShouldRejectNegativeInstrumentFrequency_WhenConfigurationIsUpdated()
     {
         var exception = Assert.Throws<ConfigurationValidationException>(() =>
-            new UpdatePlatformConfigurationValidator().Validate(CreateUpdate(instrumentUpdatesPerDay: 5)));
+            new UpdatePlatformConfigurationValidator().Validate(CreateUpdate(instrumentUpdatesPerDay: -1)));
 
         Assert.Contains(nameof(PlatformConfigurationUpdate.InstrumentUpdatesPerDay), exception.Errors.Keys);
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 1, step 2.
+    /// Verifies: a positive daily update count above the warning threshold is not rejected by validation.
+    /// Expected: five updates per day pass input validation.
+    /// Why: provider capacity guidance is a nonblocking warning, not a configuration limit.
+    /// </summary>
+    [Fact]
+    public void Validate_ShouldAcceptFrequencyAboveFour_WhenConfigurationIsUpdated()
+    {
+        new UpdatePlatformConfigurationValidator().Validate(CreateUpdate(instrumentUpdatesPerDay: 5));
     }
 
     /// <summary>

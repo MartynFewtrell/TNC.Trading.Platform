@@ -12,7 +12,6 @@ internal sealed class UpdatePlatformConfigurationHandler(
     IAppliedBrokerEnvironmentContextResolver? appliedEnvironmentResolver = null,
     IMarketCategoryInstrumentFrequencyReader? frequencyReader = null,
     IMarketCategoryInstrumentFrequencyWriter? frequencyWriter = null,
-    MarketCategoryInstrumentSchedulePolicy? schedulePolicy = null,
     IMarketCategoryInstrumentStatusReader? statusReader = null,
     TradingScheduleGate? scheduleGate = null,
     TimeProvider? timeProvider = null)
@@ -24,7 +23,8 @@ internal sealed class UpdatePlatformConfigurationHandler(
 
         var result = await committer.CommitAsync(request.Update, cancellationToken).ConfigureAwait(false);
         if (request.Update.InstrumentUpdatesPerDay is not null
-            || request.Update.ApprovedNonTradingDailyRequestAllowance is not null)
+            || request.Update.ApprovedNonTradingDailyRequestAllowance is not null
+            || request.Update.MarketDataLeadInMinutes is not null)
         {
             await SaveInstrumentCollectionSettingsAsync(request.Update, cancellationToken).ConfigureAwait(false);
         }
@@ -40,7 +40,7 @@ internal sealed class UpdatePlatformConfigurationHandler(
         PlatformConfigurationUpdate update,
         CancellationToken cancellationToken)
     {
-        if (appliedEnvironmentResolver is null || frequencyReader is null || frequencyWriter is null || schedulePolicy is null)
+        if (appliedEnvironmentResolver is null || frequencyReader is null || frequencyWriter is null)
         {
             throw new InvalidOperationException("Instrument collection configuration is unavailable.");
         }
@@ -52,31 +52,16 @@ internal sealed class UpdatePlatformConfigurationHandler(
         }
 
         var current = await frequencyReader.ReadAsync(environment, cancellationToken).ConfigureAwait(false);
-        var pendingFrequency = current.PendingUpdatesPerDay;
-        var effectiveTradingDay = current.PendingEffectiveTradingDay;
-        if (update.InstrumentUpdatesPerDay is { } requestedFrequency)
-        {
-            if (requestedFrequency == current.CurrentUpdatesPerDay)
-            {
-                pendingFrequency = null;
-                effectiveTradingDay = null;
-            }
-            else if (requestedFrequency != current.PendingUpdatesPerDay)
-            {
-                pendingFrequency = requestedFrequency;
-                effectiveTradingDay = schedulePolicy.GetNextEffectiveTradingDay(update.TradingSchedule)
-                    ?? throw new InvalidOperationException("A valid next trading day could not be resolved for the configured schedule.");
-            }
-        }
-
         await frequencyWriter.SaveAsync(
             environment,
             current with
             {
-                PendingUpdatesPerDay = pendingFrequency,
-                PendingEffectiveTradingDay = effectiveTradingDay,
+                CurrentUpdatesPerDay = update.InstrumentUpdatesPerDay ?? current.CurrentUpdatesPerDay,
+                PendingUpdatesPerDay = update.InstrumentUpdatesPerDay is null ? current.PendingUpdatesPerDay : null,
+                PendingEffectiveTradingDay = update.InstrumentUpdatesPerDay is null ? current.PendingEffectiveTradingDay : null,
                 ApprovedNonTradingDailyRequestAllowance =
-                    update.ApprovedNonTradingDailyRequestAllowance ?? current.ApprovedNonTradingDailyRequestAllowance
+                    update.ApprovedNonTradingDailyRequestAllowance ?? current.ApprovedNonTradingDailyRequestAllowance,
+                LeadInMinutes = update.MarketDataLeadInMinutes ?? current.LeadInMinutes
             },
             cancellationToken).ConfigureAwait(false);
     }

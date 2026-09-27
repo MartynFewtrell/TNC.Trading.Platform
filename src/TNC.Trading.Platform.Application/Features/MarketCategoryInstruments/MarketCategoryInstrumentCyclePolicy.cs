@@ -14,7 +14,17 @@ internal sealed class MarketCategoryInstrumentCyclePolicy
             return new(MarketCategoryInstrumentCyclePlanStatus.CategoryPrerequisiteFailed, [], []);
         }
 
-        var currentCodes = saved.Snapshot.Categories
+        return AfterCategorySnapshot(saved.Snapshot, interests);
+    }
+
+    public MarketCategoryInstrumentCyclePlan AfterCategorySnapshot(
+        MarketCategorySnapshot snapshot,
+        IReadOnlyList<MarketCategoryInstrumentInterest> interests)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(interests);
+
+        var currentCodes = snapshot.Categories
             .Select(category => category.Code)
             .ToHashSet(StringComparer.Ordinal);
         var selectedCodes = interests

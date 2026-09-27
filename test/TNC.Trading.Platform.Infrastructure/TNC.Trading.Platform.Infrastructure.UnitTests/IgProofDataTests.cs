@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.AppliedBrokerSchedule;
 using TNC.Trading.Platform.Application.Features.PlatformAuthentication.Ports;
 using TNC.Trading.Platform.Application.Features.ReconcilePlatformAuthentication;
 using TNC.Trading.Platform.Application.Services;
@@ -250,7 +251,8 @@ public class IgProofDataTests
             configuration,
             credentialService,
             timeProvider,
-            new PlatformEnvironmentContext(PlatformEnvironmentKind.Test));
+            new PlatformEnvironmentContext(PlatformEnvironmentKind.Test),
+            InMemoryAppliedBrokerScheduleProfileStore.ForConfiguration(configuration));
     }
 
     private static NotificationDispatcher CreateNotificationDispatcher(PlatformDbContext dbContext, TimeProvider timeProvider)

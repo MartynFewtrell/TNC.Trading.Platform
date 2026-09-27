@@ -50,6 +50,12 @@ internal static class GetPlatformConfigurationMapping
                 response.InstrumentCollectionStatus?.UsedRequestBudget,
                 response.InstrumentCollectionStatus?.CycleOutcome
                     ?? response.InstrumentCollectionStatus?.CategoryPrerequisiteOutcome,
-                response.InstrumentCollectionStatus?.SafeCategoryFailure));
+                response.InstrumentCollectionStatus?.SafeCategoryFailure,
+                response.InstrumentCollectionFrequency?.LeadInMinutes,
+                GetCapacityWarning(response.InstrumentCollectionFrequency?.CurrentUpdatesPerDay)));
     }
+
+    internal static string? GetCapacityWarning(int? updatesPerDay) => updatesPerDay is > 4
+        ? "More than four timed updates per day may exceed the approved IG request allowance or available provider capacity."
+        : null;
 }

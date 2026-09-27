@@ -244,9 +244,9 @@ public sealed class MarketDetailSqlIntegrationTests(SqlServerDatabaseFixture fix
 
     /// <summary>
     /// Trace: Market Details Work Item 4, step 1.
-    /// Verifies: the detail source reader freezes only currently selected categories after the exact listing cycle has completed.
-    /// Expected: a dormant category is omitted and the selected category's current complete collection and EPIC are returned.
-    /// Why: market details must follow the current selected universe and never substitute unrelated or last-good listings.
+    /// Verifies: the detail source reader freezes currently selected categories after the listing cycle has completed.
+    /// Expected: a dormant category is omitted and the selected category's complete current listing is returned as fresh.
+    /// Why: market details must follow the admitted selected universe and distinguish current listing data from fallback provenance.
     /// </summary>
     [Fact]
     public async Task ReadListingSourcesAsync_ShouldReturnOnlySelectedCurrentSources_WhenCycleCompleted()
@@ -292,16 +292,17 @@ public sealed class MarketDetailSqlIntegrationTests(SqlServerDatabaseFixture fix
         Assert.Equal(CollectionId("CAT-A"), source.CollectionId);
         Assert.Equal(1, source.Version);
         Assert.Equal(["CS.D.ADAUSD.CFD.IP"], source.Epics);
+        Assert.True(source.IsFresh);
     }
 
     /// <summary>
     /// Trace: Market Details Work Item 4, step 1.
     /// Verifies: an out-of-sync selected listing source invalidates the entire frozen source set.
-    /// Expected: prerequisites are false and the mismatched category is not returned as a usable source.
-    /// Why: missing or stale selected listings must block aggregate coverage instead of shrinking the denominator.
+    /// Expected: the valid Category source remains usable while the Category with a mismatched pointer is omitted.
+    /// Why: one failed listing must not prevent details for other validated EPICs from progressing.
     /// </summary>
     [Fact]
-    public async Task ReadListingSourcesAsync_ShouldInvalidateSnapshot_WhenSelectedSourceIsOutOfSync()
+    public async Task ReadListingSourcesAsync_ShouldKeepValidSources_WhenOneSelectedSourceIsOutOfSync()
     {
         await fixture.ResetDatabaseAsync();
         await using var context = fixture.CreateDbContext();
@@ -338,10 +339,56 @@ public sealed class MarketDetailSqlIntegrationTests(SqlServerDatabaseFixture fix
             "IgDemo",
             fixture.CancellationToken);
 
-        Assert.False(snapshot.PrerequisitesValidated);
+        Assert.True(snapshot.PrerequisitesValidated);
         Assert.True(snapshot.HasSelectedCurrentCategories);
         Assert.Single(snapshot.Sources);
         Assert.DoesNotContain(snapshot.Sources, source => source.CategoryCode == "CAT-B");
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 4, step 1.
+    /// Verifies: a missing fresh listing for a selected Category falls back only to its currently pointed, validated listing from the same endpoint profile.
+    /// Expected: the last-good EPIC set is returned with stale provenance and the detail prerequisites remain usable.
+    /// Why: a failed listing refresh must not suppress details for known validated Instruments or mislabel them as fresh.
+    /// </summary>
+    [Fact]
+    public async Task ReadListingSourcesAsync_ShouldUseLastGoodListingAsStaleFallback_WhenCurrentSlotHasNoListing()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        await context.Database.MigrateAsync(fixture.CancellationToken);
+        var environmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(context, fixture.CancellationToken);
+        var lastGoodAtUtc = new DateTimeOffset(2026, 9, 25, 12, 0, 0, TimeSpan.Zero);
+        var requestedDay = new DateOnly(2026, 9, 26);
+        await SeedListingsAsync(context, environmentId, lastGoodAtUtc, new Dictionary<string, string[]>
+        {
+            ["CAT-A"] = ["CS.D.ADAUSD.CFD.IP"]
+        });
+        context.InstrumentCollectionCycleStates.Add(new()
+        {
+            BrokerEnvironmentId = environmentId,
+            TradingDay = requestedDay,
+            ScheduledSlot = 0,
+            ScheduleRevision = 1,
+            CategoryPrerequisite = "Succeeded",
+            Outcome = "Completed"
+        });
+        await context.SaveChangesAsync(fixture.CancellationToken);
+
+        var reader = new EfMarketDetailListingSourceReader(
+            context,
+            new FakeAppliedEnvironmentResolver(environmentId));
+        var snapshot = await reader.ReadAsync(
+            new(BrokerEnvironmentKind.Demo, requestedDay, 0),
+            scheduleRevision: 1,
+            "IgDemo",
+            fixture.CancellationToken);
+
+        Assert.True(snapshot.PrerequisitesValidated);
+        var source = Assert.Single(snapshot.Sources);
+        Assert.Equal(["CS.D.ADAUSD.CFD.IP"], source.Epics);
+        Assert.True(source.IsValidatedComplete);
+        Assert.False(source.IsFresh);
     }
 
     /// <summary>

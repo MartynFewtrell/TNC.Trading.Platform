@@ -62,7 +62,18 @@ internal sealed class SqlBrokerEnvironmentCatalogService(
             BrokerEnvironmentId = id,
             CurrentUpdatesPerDay = 1
         });
-        dbContext.BrokerEnvironmentScheduleProfiles.Add(new BrokerEnvironmentScheduleProfileEntity { BrokerEnvironmentId = id, DefaultsVersion = defaults.Version, TradingHoursStart = defaults.TradingHoursStart, TradingHoursEnd = defaults.TradingHoursEnd, TradingDaysCsv = defaults.TradingDaysCsv, WeekendBehavior = defaults.WeekendBehavior, BankHolidayExclusionsJson = defaults.BankHolidayExclusionsJson, TimeZone = defaults.TimeZone });
+        var schedule = AppliedBrokerScheduleDefaults.Create();
+        dbContext.BrokerEnvironmentScheduleProfiles.Add(new BrokerEnvironmentScheduleProfileEntity
+        {
+            BrokerEnvironmentId = id,
+            DefaultsVersion = defaults.Version,
+            TradingHoursStart = schedule.StartOfDay,
+            TradingHoursEnd = schedule.EndOfDay,
+            TradingDaysCsv = string.Join(',', schedule.TradingDays),
+            WeekendBehavior = schedule.WeekendBehavior.ToString(),
+            BankHolidayExclusionsJson = System.Text.Json.JsonSerializer.Serialize(schedule.BankHolidayExclusions),
+            TimeZone = schedule.TimeZone
+        });
         dbContext.BrokerEnvironmentRetryProfiles.Add(new BrokerEnvironmentRetryProfileEntity { BrokerEnvironmentId = id, DefaultsVersion = defaults.Version, InitialDelaySeconds = defaults.RetryInitialDelaySeconds, MaxAutomaticRetries = defaults.RetryMaxAutomaticRetries, Multiplier = defaults.RetryMultiplier, MaxDelaySeconds = defaults.RetryMaxDelaySeconds, PeriodicDelayMinutes = defaults.RetryPeriodicDelayMinutes });
         dbContext.BrokerEnvironmentNotificationProfiles.Add(new BrokerEnvironmentNotificationProfileEntity { BrokerEnvironmentId = id, DefaultsVersion = defaults.Version, Provider = defaults.NotificationProvider, EmailTo = defaults.NotificationEmailTo, Enabled = false });
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

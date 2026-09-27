@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketDetails;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 
 namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
@@ -14,14 +15,13 @@ internal sealed class EfMarketDetailRunStore(
     IMarketDetailObservationWriter
 {
     private const int MaximumBatchSize = 500;
-    private const int MaximumOutstandingBatchSize = 50;
     private const int MaximumCapacityTargets = 15_000;
     private const int MaximumTargetAttempts = 3;
     private const int DetailSchemaVersion = 1;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
 
-    public async Task<MarketDetailRunLease?> TryAcquireAsync(
+    public Task<MarketDetailRunLease?> TryAcquireAsync(
         MarketDetailRunKey key,
         MarketDetailRevisions revisions,
         string appliedEndpointProfile,
@@ -29,9 +29,65 @@ internal sealed class EfMarketDetailRunStore(
         DateTimeOffset nowUtc,
         TimeSpan leaseDuration,
         DateTimeOffset windowEndUtc,
+        CancellationToken cancellationToken) =>
+        TryAcquireCoreAsync(
+            key,
+            revisions,
+            appliedEndpointProfile,
+            owner,
+            nowUtc,
+            leaseDuration,
+            windowEndUtc,
+            null,
+            cancellationToken);
+
+    public Task<MarketDetailRunLease?> TryAcquireForFullRunAsync(
+        MarketDetailRunKey key,
+        MarketDetailRevisions revisions,
+        string appliedEndpointProfile,
+        Guid owner,
+        DateTimeOffset nowUtc,
+        TimeSpan leaseDuration,
+        DateTimeOffset windowEndUtc,
+        MarketDataFullRunLease fullRunLease,
+        CancellationToken cancellationToken) =>
+        TryAcquireCoreAsync(
+            key,
+            revisions,
+            appliedEndpointProfile,
+            owner,
+            nowUtc,
+            leaseDuration,
+            windowEndUtc,
+            fullRunLease,
+            cancellationToken);
+
+    private async Task<MarketDetailRunLease?> TryAcquireCoreAsync(
+        MarketDetailRunKey key,
+        MarketDetailRevisions revisions,
+        string appliedEndpointProfile,
+        Guid owner,
+        DateTimeOffset nowUtc,
+        TimeSpan leaseDuration,
+        DateTimeOffset windowEndUtc,
+        MarketDataFullRunLease? fullRunLease,
         CancellationToken cancellationToken)
     {
-        ValidateAcquireArguments(key, revisions, appliedEndpointProfile, owner, nowUtc, leaseDuration, windowEndUtc);
+        ValidateAcquireArguments(
+            key,
+            revisions,
+            appliedEndpointProfile,
+            owner,
+            nowUtc,
+            leaseDuration,
+            windowEndUtc,
+            fullRunLease);
+        if (fullRunLease is not null
+            && !IsFullRunLeaseCompatible(fullRunLease, key, revisions, appliedEndpointProfile, windowEndUtc))
+        {
+            return null;
+        }
+
         var environmentId = await EfMarketCategoryInstrumentEnvironmentResolver.ResolveAppliedIdAsync(
             dbContext,
             contextResolver,
@@ -41,6 +97,17 @@ internal sealed class EfMarketDetailRunStore(
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
             System.Data.IsolationLevel.Serializable,
             cancellationToken).ConfigureAwait(false);
+        if (fullRunLease is not null
+            && !await EfMarketDataFullRunLeaseGuard.IsActiveInTransactionAsync(
+                dbContext,
+                fullRunLease,
+                nowUtc,
+                contextResolver,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
         await AcquireRunLockAsync(environmentId, key, cancellationToken).ConfigureAwait(false);
         var appliedEnvironment = await dbContext.BrokerEnvironments.AsNoTracking()
             .Where(item => item.BrokerEnvironmentId == environmentId)
@@ -73,6 +140,11 @@ internal sealed class EfMarketDetailRunStore(
         }
 
         var expiresAtUtc = Min(nowUtc + leaseDuration, windowEndUtc);
+        if (fullRunLease is not null)
+        {
+            expiresAtUtc = nowUtc + leaseDuration;
+        }
+
         if (run is null)
         {
             run = new MarketDetailCollectionRunEntity
@@ -98,7 +170,7 @@ internal sealed class EfMarketDetailRunStore(
         else
         {
             if (run.Status is "Complete" or "Superseded"
-                || run.WindowEndUtc <= nowUtc
+                || (fullRunLease is null && run.WindowEndUtc <= nowUtc)
                 || run.LeaseExpiresAtUtc > nowUtc)
             {
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -122,7 +194,7 @@ internal sealed class EfMarketDetailRunStore(
             cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        return ToLease(run, key.Environment);
+        return ToLease(run, key.Environment, fullRunLease);
     }
 
     public async Task<MarketDetailRunStatus> StageUniverseAsync(
@@ -185,7 +257,8 @@ internal sealed class EfMarketDetailRunStore(
             CategoryCode = source.CategoryCode,
             ListingCollectionId = source.CollectionId,
             ListingVersion = source.Version,
-            IsValidatedComplete = source.IsValidatedComplete
+            IsValidatedComplete = source.IsValidatedComplete,
+            IsFresh = source.IsFresh
         }).ToArray();
         var targets = universe.Targets.Select(target => new MarketDetailRunTargetEntity
         {
@@ -233,18 +306,21 @@ internal sealed class EfMarketDetailRunStore(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(lease);
-        if (maximumCount is < 1 or > MaximumOutstandingBatchSize)
+        if (maximumCount is < 1 or > MaximumCapacityTargets)
         {
             throw new ArgumentOutOfRangeException(nameof(maximumCount));
         }
 
         var environmentId = await ResolveAndValidateLeaseEnvironmentAsync(lease, cancellationToken).ConfigureAwait(false);
         await ValidateOwnedRunForReadAsync(lease, environmentId, cancellationToken).ConfigureAwait(false);
+        var isFailedItemFollowUp = lease.FullRunLease?.Trigger is MarketDataFullRunTrigger.FailedItemRetry;
         var rows = await dbContext.MarketDetailRunTargets.AsNoTracking()
             .Where(item => item.RunId == lease.RunId
                 && item.BrokerEnvironmentId == environmentId
-                && (item.Status == "Pending" || item.Status == "Failed")
-                && item.Attempts < MaximumTargetAttempts)
+                && (isFailedItemFollowUp
+                    ? item.Status == "Failed" && item.CanRetry && item.Attempts == MaximumTargetAttempts
+                    : (item.Status == "Pending" || (item.Status == "Failed" && item.CanRetry))
+                        && item.Attempts < MaximumTargetAttempts))
             .OrderBy(item => item.Epic)
             .Take(maximumCount)
             .Select(item => new
@@ -275,11 +351,14 @@ internal sealed class EfMarketDetailRunStore(
         ArgumentNullException.ThrowIfNull(lease);
         var environmentId = await ResolveAndValidateLeaseEnvironmentAsync(lease, cancellationToken).ConfigureAwait(false);
         await ValidateOwnedRunForReadAsync(lease, environmentId, cancellationToken).ConfigureAwait(false);
+        var isFailedItemFollowUp = lease.FullRunLease?.Trigger is MarketDataFullRunTrigger.FailedItemRetry;
         var rows = await dbContext.MarketDetailRunTargets.AsNoTracking()
             .Where(item => item.RunId == lease.RunId
                 && item.BrokerEnvironmentId == environmentId
-                && (item.Status == "Pending" || item.Status == "Failed")
-                && item.Attempts < MaximumTargetAttempts)
+                && (isFailedItemFollowUp
+                    ? item.Status == "Failed" && item.CanRetry && item.Attempts == MaximumTargetAttempts
+                    : (item.Status == "Pending" || (item.Status == "Failed" && item.CanRetry))
+                        && item.Attempts < MaximumTargetAttempts))
             .OrderBy(item => item.Epic)
             .Take(MaximumCapacityTargets + 1)
             .Select(item => new MarketDetailCapacityTarget(item.Epic, item.Attempts))
@@ -335,6 +414,9 @@ internal sealed class EfMarketDetailRunStore(
             positiveProviderEvidence: false);
         target.Attempts = checked(target.Attempts + 1);
         target.Status = excludesTarget ? "Excluded" : "Failed";
+        target.CanRetry = lease.FullRunLease?.Trigger is not MarketDataFullRunTrigger.FailedItemRetry
+            && !excludesTarget
+            && failure.IsRetryable;
         target.SafeFailureCode = failure.Kind.ToString();
         target.ExclusionEvidenceCode = excludesTarget ? failure.Kind.ToString() : null;
         target.ExcludedAtUtc = excludesTarget ? failedAtUtc : null;
@@ -636,9 +718,10 @@ internal sealed class EfMarketDetailRunStore(
             join category in dbContext.MarketCategories.AsNoTracking()
                 on new { interest.BrokerEnvironmentId, interest.CategoryCode } equals new { category.BrokerEnvironmentId, CategoryCode = category.Code }
             where interest.BrokerEnvironmentId == environmentId
+                && category.IsCurrent
             select interest.CategoryCode).ToListAsync(cancellationToken).ConfigureAwait(false);
         var suppliedCategories = universe.Sources.Select(item => item.CategoryCode).ToHashSet(StringComparer.Ordinal);
-        if (!currentInterestedCategories.ToHashSet(StringComparer.Ordinal).SetEquals(suppliedCategories))
+        if (!suppliedCategories.IsSubsetOf(currentInterestedCategories.ToHashSet(StringComparer.Ordinal)))
         {
             return "ListingSourceSetChanged";
         }
@@ -659,7 +742,11 @@ internal sealed class EfMarketDetailRunStore(
                     && item.BrokerEnvironmentId == environmentId
                     && item.CategoryCode == source.CategoryCode
                     && item.SnapshotVersion == source.Version
-                    && item.CategorySnapshotRevision == lease.Revisions.CatalogueRevision
+                    && item.EndpointProfile == lease.AppliedEndpointProfile
+                    && (!source.IsFresh
+                        || (item.TradingDay == lease.Key.TradingDay
+                            && item.ScheduledSlot == lease.Key.SlotIndex
+                            && item.CategorySnapshotRevision == lease.Revisions.CatalogueRevision))
                     && item.IsComplete)
                 .Select(item => new { item.CollectionId, item.SnapshotVersion })
                 .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
@@ -697,7 +784,7 @@ internal sealed class EfMarketDetailRunStore(
         var persistedSources = await dbContext.MarketDetailRunSources.AsNoTracking()
             .Where(item => item.RunId == run.RunId)
             .OrderBy(item => item.CategoryCode)
-            .Select(item => new { item.CategoryCode, item.ListingCollectionId, item.ListingVersion })
+            .Select(item => new { item.CategoryCode, item.ListingCollectionId, item.ListingVersion, item.IsFresh })
             .ToListAsync(cancellationToken).ConfigureAwait(false);
         var persistedTargets = await dbContext.MarketDetailRunTargets.AsNoTracking()
             .Where(item => item.RunId == run.RunId)
@@ -712,7 +799,8 @@ internal sealed class EfMarketDetailRunStore(
             || persistedSources.Where((item, index) =>
                 item.CategoryCode != expectedSources[index].CategoryCode
                 || item.ListingCollectionId != expectedSources[index].CollectionId
-                || item.ListingVersion != expectedSources[index].Version).Any())
+                || item.ListingVersion != expectedSources[index].Version
+                || item.IsFresh != expectedSources[index].IsFresh).Any())
         {
             return false;
         }
@@ -822,8 +910,26 @@ internal sealed class EfMarketDetailRunStore(
             cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("The market-detail run no longer exists in the applied environment.");
         var nowUtc = clock.GetUtcNow().ToUniversalTime();
+        if (lease.FullRunLease is { } fullRunLease
+            && (!IsFullRunLeaseCompatible(
+                    fullRunLease,
+                    lease.Key,
+                    lease.Revisions,
+                    lease.AppliedEndpointProfile,
+                    lease.WindowEndUtc)
+                || !await EfMarketDataFullRunLeaseGuard.IsActiveInTransactionAsync(
+                    dbContext,
+                    fullRunLease,
+                    nowUtc,
+                    contextResolver,
+                    cancellationToken).ConfigureAwait(false)))
+        {
+            throw new InvalidOperationException("The parent full-run lease is stale or its frozen provenance changed.");
+        }
+
         if (run.LeaseOwner != lease.Owner || run.LeaseFence != lease.Fence
-            || run.LeaseExpiresAtUtc is not { } leaseExpiresAtUtc || leaseExpiresAtUtc <= nowUtc || run.WindowEndUtc <= nowUtc
+            || run.LeaseExpiresAtUtc is not { } leaseExpiresAtUtc || leaseExpiresAtUtc <= nowUtc
+            || (lease.FullRunLease is null && run.WindowEndUtc <= nowUtc)
             || run.EndpointProfile != lease.AppliedEndpointProfile
             || run.CatalogueRevision != lease.Revisions.CatalogueRevision
             || run.InterestRevision != lease.Revisions.InterestRevision
@@ -852,8 +958,26 @@ internal sealed class EfMarketDetailRunStore(
             item => item.RunId == lease.RunId && item.BrokerEnvironmentId == environmentId,
             cancellationToken).ConfigureAwait(false);
         var nowUtc = clock.GetUtcNow().ToUniversalTime();
+        if (lease.FullRunLease is { } fullRunLease
+            && (!IsFullRunLeaseCompatible(
+                    fullRunLease,
+                    lease.Key,
+                    lease.Revisions,
+                    lease.AppliedEndpointProfile,
+                    lease.WindowEndUtc)
+                || !await EfMarketDataFullRunLeaseGuard.IsActiveAsync(
+                    dbContext,
+                    fullRunLease,
+                    nowUtc,
+                    contextResolver,
+                    cancellationToken).ConfigureAwait(false)))
+        {
+            throw new InvalidOperationException("The parent full-run lease is stale or its frozen provenance changed.");
+        }
+
         if (run is null || run.LeaseOwner != lease.Owner || run.LeaseFence != lease.Fence
-            || run.LeaseExpiresAtUtc is not { } leaseExpiresAtUtc || leaseExpiresAtUtc <= nowUtc || run.WindowEndUtc <= nowUtc
+            || run.LeaseExpiresAtUtc is not { } leaseExpiresAtUtc || leaseExpiresAtUtc <= nowUtc
+            || (lease.FullRunLease is null && run.WindowEndUtc <= nowUtc)
             || run.Status != "Collecting" || run.EndpointProfile != lease.AppliedEndpointProfile
             || run.CatalogueRevision != lease.Revisions.CatalogueRevision
             || run.InterestRevision != lease.Revisions.InterestRevision
@@ -882,7 +1006,8 @@ internal sealed class EfMarketDetailRunStore(
 
     private static MarketDetailRunLease ToLease(
         MarketDetailCollectionRunEntity run,
-        BrokerEnvironmentKind environment) =>
+        BrokerEnvironmentKind environment,
+        MarketDataFullRunLease? fullRunLease = null) =>
         new(
             run.RunId,
             new(environment, run.TradingDay, run.ScheduledSlot),
@@ -891,7 +1016,8 @@ internal sealed class EfMarketDetailRunStore(
             run.LeaseExpiresAtUtc!.Value,
             run.WindowEndUtc,
             run.EndpointProfile,
-            new(run.CatalogueRevision, run.InterestRevision, run.ScheduleRevision));
+            new(run.CatalogueRevision, run.InterestRevision, run.ScheduleRevision),
+            fullRunLease);
 
     private static string ToStoredStatus(MarketDetailRunStatus status) => status switch
     {
@@ -910,7 +1036,8 @@ internal sealed class EfMarketDetailRunStore(
         Guid owner,
         DateTimeOffset nowUtc,
         TimeSpan leaseDuration,
-        DateTimeOffset windowEndUtc)
+        DateTimeOffset windowEndUtc,
+        MarketDataFullRunLease? fullRunLease)
     {
         ArgumentNullException.ThrowIfNull(key);
         ArgumentNullException.ThrowIfNull(revisions);
@@ -925,11 +1052,24 @@ internal sealed class EfMarketDetailRunStore(
             || nowUtc.Offset != TimeSpan.Zero
             || windowEndUtc.Offset != TimeSpan.Zero
             || leaseDuration <= TimeSpan.Zero
-            || windowEndUtc <= nowUtc)
+            || (fullRunLease is null && windowEndUtc <= nowUtc))
         {
             throw new ArgumentException("The market-detail run key, revisions, profile, or lease window is invalid.");
         }
     }
+
+    private static bool IsFullRunLeaseCompatible(
+        MarketDataFullRunLease fullRunLease,
+        MarketDetailRunKey key,
+        MarketDetailRevisions revisions,
+        string appliedEndpointProfile,
+        DateTimeOffset windowEndUtc) =>
+        fullRunLease.Environment == key.Environment
+        && fullRunLease.TradingDay == key.TradingDay
+        && fullRunLease.ScheduleRevision == revisions.ScheduleRevision
+        && fullRunLease.InterestRevision == revisions.InterestRevision
+        && fullRunLease.WindowEndUtc == windowEndUtc
+        && string.Equals(fullRunLease.EndpointProfile, appliedEndpointProfile, StringComparison.Ordinal);
 
     private async Task AcquireRunLockAsync(
         Guid environmentId,

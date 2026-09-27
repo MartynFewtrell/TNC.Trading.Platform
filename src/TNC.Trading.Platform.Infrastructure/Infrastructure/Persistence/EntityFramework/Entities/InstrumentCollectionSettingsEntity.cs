@@ -7,4 +7,6 @@ internal sealed class InstrumentCollectionSettingsEntity
     public int? PendingUpdatesPerDay { get; set; }
     public DateOnly? PendingEffectiveTradingDay { get; set; }
     public int? ApprovedNonTradingDailyRequestAllowance { get; set; }
+    public int LeadInMinutes { get; set; } = 15;
+    public long ConfigurationVersion { get; set; } = 1;
 }

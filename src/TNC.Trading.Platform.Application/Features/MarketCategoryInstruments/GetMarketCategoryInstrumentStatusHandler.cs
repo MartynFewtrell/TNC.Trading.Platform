@@ -25,7 +25,16 @@ internal sealed class GetMarketCategoryInstrumentStatusHandler(
         }
 
         var configuration = await configurationService.GetRuntimeAsync(null, environment, cancellationToken).ConfigureAwait(false);
-        var tradingDay = scheduleGate.GetTradingDay(configuration.TradingSchedule, clock.GetUtcNow());
+        DateOnly tradingDay;
+        try
+        {
+            tradingDay = scheduleGate.GetTradingDay(configuration.TradingSchedule, clock.GetUtcNow());
+        }
+        catch (ArgumentException)
+        {
+            return new(false, environment, null, null, false, null, null, "InvalidTradingSchedule");
+        }
+
         MarketCategoryInstrumentFrequency frequency;
         try
         {
@@ -43,7 +52,8 @@ internal sealed class GetMarketCategoryInstrumentStatusHandler(
             environment,
             configuration.TradingSchedule,
             frequency,
-            previousProgress));
+            previousProgress,
+            IsLegacyScheduleReconciliationRequired: configuration.MarketDataScheduleReconciliationRequired));
         var effectiveFrequency = frequency.ForTradingDay(tradingDay);
         var collectionStatus = await statusReader.ReadAsync(environment, tradingDay, cancellationToken).ConfigureAwait(false);
         return new(
@@ -55,7 +65,7 @@ internal sealed class GetMarketCategoryInstrumentStatusHandler(
             decision.SlotIndex,
             decision.IsDue
                 ? clock.GetUtcNow().ToUniversalTime()
-                : schedulePolicy.GetNextWakeUpUtc(configuration.TradingSchedule, effectiveFrequency),
+                : schedulePolicy.GetNextScheduledStartUtc(configuration.TradingSchedule, effectiveFrequency),
             decision.BlockReason?.ToString());
     }
 }

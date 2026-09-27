@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 
@@ -97,23 +98,18 @@ internal sealed class BrokerEnvironmentCatalogIntegrityService(
             .OrderBy(item => item.ConfigurationId)
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
+        var schedule = AppliedBrokerScheduleDefaults.Create();
         defaults = new BrokerEnvironmentDefaultsEntity
         {
             BrokerEnvironmentDefaultsId = DefaultsId,
             Version = 1,
             IsActive = true,
-            TradingHoursStart = configuration?.TradingHoursStart ?? new TimeOnly(8, 0),
-            TradingHoursEnd = configuration?.TradingHoursEnd ?? new TimeOnly(16, 30),
-            TradingDaysCsv = string.IsNullOrWhiteSpace(configuration?.TradingDaysCsv)
-                ? "Monday,Tuesday,Wednesday,Thursday,Friday"
-                : configuration.TradingDaysCsv,
-            WeekendBehavior = string.IsNullOrWhiteSpace(configuration?.WeekendBehavior)
-                ? "ExcludeWeekends"
-                : configuration.WeekendBehavior,
-            BankHolidayExclusionsJson = string.IsNullOrWhiteSpace(configuration?.BankHolidayExclusionsJson)
-                ? "[]"
-                : configuration.BankHolidayExclusionsJson,
-            TimeZone = string.IsNullOrWhiteSpace(configuration?.TimeZone) ? "UTC" : configuration.TimeZone,
+            TradingHoursStart = schedule.StartOfDay,
+            TradingHoursEnd = schedule.EndOfDay,
+            TradingDaysCsv = string.Join(',', schedule.TradingDays),
+            WeekendBehavior = schedule.WeekendBehavior.ToString(),
+            BankHolidayExclusionsJson = System.Text.Json.JsonSerializer.Serialize(schedule.BankHolidayExclusions),
+            TimeZone = schedule.TimeZone,
             RetryInitialDelaySeconds = configuration?.RetryInitialDelaySeconds ?? 1,
             RetryMaxAutomaticRetries = configuration?.RetryMaxAutomaticRetries ?? 5,
             RetryMultiplier = configuration?.RetryMultiplier ?? 2,
@@ -139,16 +135,17 @@ internal sealed class BrokerEnvironmentCatalogIntegrityService(
                 item => item.BrokerEnvironmentId == DemoBrokerEnvironmentId,
                 cancellationToken).ConfigureAwait(false))
         {
+            var schedule = AppliedBrokerScheduleDefaults.Create();
             dbContext.BrokerEnvironmentScheduleProfiles.Add(new BrokerEnvironmentScheduleProfileEntity
             {
                 BrokerEnvironmentId = DemoBrokerEnvironmentId,
                 DefaultsVersion = defaults.Version,
-                TradingHoursStart = defaults.TradingHoursStart,
-                TradingHoursEnd = defaults.TradingHoursEnd,
-                TradingDaysCsv = defaults.TradingDaysCsv,
-                WeekendBehavior = defaults.WeekendBehavior,
-                BankHolidayExclusionsJson = defaults.BankHolidayExclusionsJson,
-                TimeZone = defaults.TimeZone
+                TradingHoursStart = schedule.StartOfDay,
+                TradingHoursEnd = schedule.EndOfDay,
+                TradingDaysCsv = string.Join(',', schedule.TradingDays),
+                WeekendBehavior = schedule.WeekendBehavior.ToString(),
+                BankHolidayExclusionsJson = System.Text.Json.JsonSerializer.Serialize(schedule.BankHolidayExclusions),
+                TimeZone = schedule.TimeZone
             });
             changed = true;
         }

@@ -1,12 +1,14 @@
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.TradingState;
 using TNC.Trading.Platform.Application.Services;
 
 namespace TNC.Trading.Platform.Application.UnitTests.Features.MarketCategoryInstruments;
 
 public sealed class RefreshMarketCategoriesManuallyHandlerTests
 {
+    private static readonly Guid AppliedBrokerId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static readonly DateTimeOffset Now = new(2026, 9, 28, 12, 0, 0, TimeSpan.Zero);
 
     /// <summary>
@@ -55,7 +57,9 @@ public sealed class RefreshMarketCategoriesManuallyHandlerTests
         ScheduleGuard guard)
     {
         var clock = new TestClock();
-        var policy = new MarketCategoryInstrumentSchedulePolicy(new TradingScheduleGate(), clock);
+        var scheduleGate = new TradingScheduleGate();
+        var policy = new MarketCategoryInstrumentSchedulePolicy(scheduleGate, clock);
+        var tradingStateEvaluator = new TradingStateEvaluator(scheduleGate, policy);
         var refresh = new RefreshMarketCategoriesHandler(gateway, new CategoryStore(), TimeProvider.System, guard);
         return new(
             new AppliedEnvironmentResolver(),
@@ -63,12 +67,13 @@ public sealed class RefreshMarketCategoriesManuallyHandlerTests
             new FrequencyReader(),
             guard,
             policy,
+            tradingStateEvaluator,
             clock,
             refresh);
     }
 
     private static TradingScheduleConfiguration CreateSchedule(IReadOnlyList<DayOfWeek> tradingDays) =>
-        new(new TimeOnly(8, 0), new TimeOnly(16, 0), tradingDays, WeekendBehavior.ExcludeWeekends, [], "UTC");
+        new(new TimeOnly(8, 0), new TimeOnly(16, 0), tradingDays, WeekendBehavior.ExcludeWeekends, [], "UTC", AppliedBrokerId);
 
     private static PlatformConfigurationSnapshot CreateSnapshot(TradingScheduleConfiguration schedule) =>
         new(
@@ -87,7 +92,7 @@ public sealed class RefreshMarketCategoriesManuallyHandlerTests
     {
         public Task<AppliedBrokerEnvironmentContext?> ResolveAppliedAsync(CancellationToken cancellationToken) =>
             Task.FromResult<AppliedBrokerEnvironmentContext?>(new(
-                Guid.NewGuid(),
+                AppliedBrokerId,
                 "IG",
                 "Demo",
                 "Active",

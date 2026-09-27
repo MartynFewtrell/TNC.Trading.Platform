@@ -1,5 +1,6 @@
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.TradingState;
 using TNC.Trading.Platform.Application.Services;
 
 namespace TNC.Trading.Platform.Application.Features.MarketCategories;
@@ -10,6 +11,7 @@ internal sealed class RefreshMarketCategoriesManuallyHandler(
     IMarketCategoryInstrumentFrequencyReader frequencyReader,
     IMarketCategoryInstrumentScheduleGuard scheduleGuard,
     MarketCategoryInstrumentSchedulePolicy schedulePolicy,
+    TradingStateEvaluator tradingStateEvaluator,
     IMarketCategoryInstrumentClock clock,
     RefreshMarketCategoriesHandler refreshHandler)
 {
@@ -35,13 +37,27 @@ internal sealed class RefreshMarketCategoriesManuallyHandler(
             return Failure(MarketCategoriesFailureCategory.AllowanceExceeded);
         }
 
+        var tradingState = tradingStateEvaluator.Evaluate(new(
+            applied,
+            configuration,
+            frequency,
+            null,
+            clock.GetUtcNow()));
+        if (!tradingState.CanStartMarketDataUpdate)
+        {
+            return Failure(tradingState.MarketDataBlockReasons.Contains(TradingStateBlockReason.RequestAllowanceNotApproved)
+                ? MarketCategoriesFailureCategory.AllowanceExceeded
+                : MarketCategoriesFailureCategory.ScheduleClosed);
+        }
+
         var decision = schedulePolicy.Evaluate(new(
             true,
             true,
             environment,
             configuration.TradingSchedule,
             frequency,
-            null));
+            null,
+            IsLegacyScheduleReconciliationRequired: configuration.MarketDataScheduleReconciliationRequired));
         if (!decision.IsDue
             || decision.TradingDay is not { } tradingDay
             || decision.SlotIndex is not { } slot
@@ -66,7 +82,7 @@ internal sealed class RefreshMarketCategoriesManuallyHandler(
             0,
             scheduleCancellation.Token,
             windowEnd,
-            MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(configuration.TradingSchedule),
+            MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(configuration.TradingSchedule, frequency),
             updatesPerDay,
             applied.EndpointProfile,
             true);

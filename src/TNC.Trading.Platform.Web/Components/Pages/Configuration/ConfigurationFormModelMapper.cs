@@ -15,10 +15,6 @@ internal static class ConfigurationFormModelMapper
             BankHolidayExclusions = configuration.TradingSchedule.BankHolidayExclusions,
             TimeZone = configuration.TradingSchedule.TimeZone
         },
-        StartOfDayText = configuration.TradingSchedule.StartOfDay.ToString("HH:mm"),
-        EndOfDayText = configuration.TradingSchedule.EndOfDay.ToString("HH:mm"),
-        TradingDaysCsv = string.Join(',', configuration.TradingSchedule.TradingDays),
-        BankHolidayCsv = string.Join(',', configuration.TradingSchedule.BankHolidayExclusions.Select(item => item.ToString("yyyy-MM-dd"))),
         RetryPolicy = new UpdateRetryPolicyViewModel
         {
             InitialDelaySeconds = configuration.RetryPolicy.InitialDelaySeconds,
@@ -38,8 +34,9 @@ internal static class ConfigurationFormModelMapper
         InstrumentUpdatesPerDay = configuration.InstrumentCollection?.PendingUpdatesPerDay
             ?? configuration.InstrumentCollection?.CurrentUpdatesPerDay,
         ApprovedNonTradingDailyRequestAllowance = configuration.InstrumentCollection?.ApprovedNonTradingDailyRequestAllowance,
+        MarketDataLeadInMinutes = configuration.InstrumentCollection?.LeadInMinutes ?? 15,
         InstrumentCollection = configuration.InstrumentCollection
-            ?? new(false, "SettingsUnavailable", null, null, null, null, null, null, null, null)
+            ?? new(false, "SettingsUnavailable", null, null, null, null, null, null, null, null, null, null)
     };
 
     public static UpdatePlatformConfigurationViewModel ToRequest(ConfigurationFormModel form) => new()
@@ -48,11 +45,11 @@ internal static class ConfigurationFormModelMapper
         BrokerEnvironment = form.BrokerEnvironment,
         TradingSchedule = new UpdateTradingScheduleViewModel
         {
-            StartOfDay = TimeOnly.Parse(form.StartOfDayText),
-            EndOfDay = TimeOnly.Parse(form.EndOfDayText),
-            TradingDays = ParseTradingDays(form.TradingDaysCsv),
+            StartOfDay = form.TradingSchedule.StartOfDay,
+            EndOfDay = form.TradingSchedule.EndOfDay,
+            TradingDays = form.TradingSchedule.TradingDays,
             WeekendBehavior = form.TradingSchedule.WeekendBehavior,
-            BankHolidayExclusions = ParseBankHolidays(form.BankHolidayCsv),
+            BankHolidayExclusions = form.TradingSchedule.BankHolidayExclusions,
             TimeZone = form.TradingSchedule.TimeZone
         },
         RetryPolicy = new UpdateRetryPolicyViewModel
@@ -76,23 +73,7 @@ internal static class ConfigurationFormModelMapper
         },
         ChangedBy = form.ChangedBy,
         InstrumentUpdatesPerDay = form.InstrumentUpdatesPerDay,
-        ApprovedNonTradingDailyRequestAllowance = form.ApprovedNonTradingDailyRequestAllowance
+        ApprovedNonTradingDailyRequestAllowance = form.ApprovedNonTradingDailyRequestAllowance,
+        MarketDataLeadInMinutes = form.MarketDataLeadInMinutes
     };
-
-    private static IReadOnlyList<DayOfWeek> ParseTradingDays(string value) =>
-        value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(item => Enum.Parse<DayOfWeek>(item, ignoreCase: true))
-            .ToArray();
-
-    private static IReadOnlyList<DateOnly> ParseBankHolidays(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return [];
-        }
-
-        return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(DateOnly.Parse)
-            .ToArray();
-    }
 }

@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 using TNC.Trading.Platform.Application.Features.MarketDetails;
 
 namespace TNC.Trading.Platform.Api.Hosting;
@@ -50,12 +51,15 @@ internal sealed class MarketCategoryInstrumentCollector(
                     }
                 }
 
-                await using (var detailScope = serviceScopeFactory.CreateAsyncScope())
+                if (result.FullRunLease is { } fullRunLease)
                 {
+                    await using var detailScope = serviceScopeFactory.CreateAsyncScope();
                     try
                     {
                         var detailCoordinator = detailScope.ServiceProvider.GetRequiredService<IMarketDetailCollectionCoordinator>();
-                        detailResult = await detailCoordinator.ExecuteDueCollectionAsync(stoppingToken).ConfigureAwait(false);
+                        detailResult = await detailCoordinator.ExecuteDueCollectionAsync(
+                            stoppingToken,
+                            fullRunLease).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                     {
@@ -63,7 +67,41 @@ internal sealed class MarketCategoryInstrumentCollector(
                     }
                     catch (Exception exception)
                     {
-                        logger.LogError(exception, "Scheduled market-detail collection tick failed.");
+                        logger.LogError(exception, "Full-run market-detail stage failed.");
+                    }
+
+                    var detailsSucceeded = detailResult.Status == MarketDetailRunStatus.Complete
+                        && detailResult.Counts.CompletedCount == detailResult.Counts.ExpectedCount;
+                    var fullRunStore = detailScope.ServiceProvider.GetRequiredService<IMarketDataFullRunStore>();
+                    if (detailResult.Status != MarketDetailRunStatus.Running)
+                    {
+                        var stageRecorded = await fullRunStore.RecordStageAttemptAsync(
+                            fullRunLease,
+                            MarketDataFullRunStage.Details,
+                            detailsSucceeded ? "Succeeded" : "Failed",
+                            timeProvider.GetUtcNow().ToUniversalTime(),
+                            detailsSucceeded,
+                            detailsSucceeded ? null : "DetailStageIncomplete",
+                            stoppingToken).ConfigureAwait(false);
+                        if (!stageRecorded)
+                        {
+                            logger.LogWarning(
+                                "Full-run {RunId} could not record its detail-stage outcome; the fenced lease may have expired or the stage attempt limit may have been reached.",
+                                fullRunLease.RunId);
+                        }
+
+                        var fullRunCompleted = await fullRunStore.CompleteAsync(
+                            fullRunLease,
+                            result.FailedCategories == 0 && detailsSucceeded ? "Succeeded" : "Partial",
+                            result.FailedCategories == 0 && detailsSucceeded ? null : "StageIncomplete",
+                            timeProvider.GetUtcNow().ToUniversalTime(),
+                            stoppingToken).ConfigureAwait(false);
+                        if (!fullRunCompleted)
+                        {
+                            logger.LogWarning(
+                                "Full-run {RunId} could not be completed because its fenced lease is no longer active.",
+                                fullRunLease.RunId);
+                        }
                     }
                 }
             }

@@ -63,4 +63,23 @@ public sealed class MarketDetailCapacityPolicyTests
         Assert.Equal(3, estimate.WorstCaseRequests);
         Assert.Equal(1, estimate.MarketBatches);
     }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 4, step 2.
+    /// Verifies: the single failed-item follow-up reserves one provider round for a target whose initial full-run attempts are exhausted.
+    /// Expected: the exhausted target is accepted only in follow-up mode and budgeted as one session, one request, and one authentication replay.
+    /// Why: recovery must be costed against the active allowance without reopening the three-attempt loop.
+    /// </summary>
+    [Fact]
+    public void Estimate_ShouldReserveOneAttempt_WhenBudgetingFailedItemFollowUp()
+    {
+        var estimate = new MarketDetailCapacityPolicy().Estimate(
+            [new("CS.D.ADAUSD.CFD.IP", 3)],
+            isFailedItemFollowUp: true);
+
+        Assert.Equal(2, estimate.NoRetryRequests);
+        Assert.Equal(1, estimate.RetryAndReauthenticationReserve);
+        Assert.Equal(3, estimate.WorstCaseRequests);
+        Assert.Equal(1, estimate.MarketBatches);
+    }
 }

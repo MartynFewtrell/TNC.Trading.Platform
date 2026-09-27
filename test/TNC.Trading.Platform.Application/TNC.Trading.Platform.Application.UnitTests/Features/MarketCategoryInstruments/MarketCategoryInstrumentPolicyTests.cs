@@ -1,6 +1,7 @@
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 using TNC.Trading.Platform.Application.Services;
 
 namespace TNC.Trading.Platform.Application.UnitTests.Features.MarketCategoryInstruments;
@@ -219,12 +220,12 @@ public sealed class MarketCategoryInstrumentPolicyTests
 
     /// <summary>
     /// Trace: Market Category Instruments Work Item 1, step 3.
-    /// Verifies: pending frequency is selected only on its persisted effective local trading day.
-    /// Expected: the old frequency applies before that date and the pending frequency applies on that date.
-    /// Why: operator saves must not change a partially completed day's slot keys.
+    /// Verifies: persisted legacy pending frequency data does not override the authoritative current count.
+    /// Expected: the current count is returned both before and on the legacy effective date.
+    /// Why: pending values must only be promoted by an explicit operator save, not by schedule policy.
     /// </summary>
     [Fact]
-    public void ForTradingDay_ShouldUsePendingFrequencyOnlyOnEffectiveDay()
+    public void ForTradingDay_ShouldKeepCurrentFrequency_WhenLegacyPendingValueExists()
     {
         var frequency = new MarketCategoryInstrumentFrequency(
             1,
@@ -232,7 +233,174 @@ public sealed class MarketCategoryInstrumentPolicyTests
             new DateOnly(2026, 3, 31));
 
         Assert.Equal(1, frequency.ForTradingDay(new DateOnly(2026, 3, 30)));
-        Assert.Equal(3, frequency.ForTradingDay(new DateOnly(2026, 3, 31)));
+        Assert.Equal(1, frequency.ForTradingDay(new DateOnly(2026, 3, 31)));
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 1, step 2; Non-negotiable Behaviour 2.
+    /// Verifies: zero disables timed starts while an arbitrarily high positive count remains valid.
+    /// Expected: zero has no due slot or next timed start, while Int32.MaxValue is accepted at the opening.
+    /// Why: operators need a real timed-off state and the old four-update cap must not reject configuration.
+    /// </summary>
+    [Fact]
+    public void Evaluate_ShouldAllowZeroAndUnboundedFrequency_WhenTimedScheduleIsEvaluated()
+    {
+        var schedule = CreateSchedule("UTC", new TimeOnly(8, 0), new TimeOnly(17, 0), [DayOfWeek.Monday]);
+        var zeroPolicy = CreatePolicy(new DateTimeOffset(2026, 3, 30, 10, 0, 0, TimeSpan.Zero));
+        var zeroFrequency = new MarketCategoryInstrumentFrequency(0, null, null);
+        var zeroDecision = zeroPolicy.Evaluate(CreateRequest(schedule, zeroFrequency));
+
+        var unboundedDecision = CreatePolicy(new DateTimeOffset(2026, 3, 30, 8, 0, 0, TimeSpan.Zero))
+            .Evaluate(CreateRequest(schedule, new MarketCategoryInstrumentFrequency(int.MaxValue, null, null)));
+
+        Assert.False(zeroDecision.IsDue);
+        Assert.Equal(MarketCategoryInstrumentScheduleBlockReason.TimedUpdatesDisabled, zeroDecision.BlockReason);
+        Assert.Equal(0, zeroDecision.EffectiveUpdatesPerDay);
+        Assert.Null(zeroPolicy.GetNextScheduledStartUtc(schedule, zeroFrequency.ForTradingDay(new DateOnly(2026, 3, 30))));
+        Assert.True(unboundedDecision.IsDue);
+        Assert.Equal(int.MaxValue, unboundedDecision.EffectiveUpdatesPerDay);
+        Assert.Equal(0, unboundedDecision.SlotIndex);
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 1, step 3.
+    /// Verifies: slot starts partition the complete same-day window using equal local-time intervals.
+    /// Expected: a 08:00–17:00 window with three starts reports 08:00, 11:00 and 14:00 as successive starts.
+    /// Why: durable slot identity and operator previews must agree on deterministic wall-clock boundaries.
+    /// </summary>
+    [Fact]
+    public void GetNextScheduledStartUtc_ShouldUseEqualWallClockIntervals_WhenWindowHasThreeStarts()
+    {
+        var schedule = CreateSchedule("UTC", new TimeOnly(8, 0), new TimeOnly(17, 0), [DayOfWeek.Monday]);
+        var beforeOpening = CreatePolicy(new DateTimeOffset(2026, 3, 30, 7, 0, 0, TimeSpan.Zero))
+            .GetNextScheduledStartUtc(schedule, 3);
+        var betweenFirstAndSecond = CreatePolicy(new DateTimeOffset(2026, 3, 30, 9, 0, 0, TimeSpan.Zero))
+            .GetNextScheduledStartUtc(schedule, 3);
+        var betweenSecondAndThird = CreatePolicy(new DateTimeOffset(2026, 3, 30, 12, 0, 0, TimeSpan.Zero))
+            .GetNextScheduledStartUtc(schedule, 3);
+
+        Assert.Equal(new DateTimeOffset(2026, 3, 30, 8, 0, 0, TimeSpan.Zero), beforeOpening);
+        Assert.Equal(new DateTimeOffset(2026, 3, 30, 11, 0, 0, TimeSpan.Zero), betweenFirstAndSecond);
+        Assert.Equal(new DateTimeOffset(2026, 3, 30, 14, 0, 0, TimeSpan.Zero), betweenSecondAndThird);
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 1, step 3.
+    /// Verifies: a slot becomes current at its exact floor-rounded start, including a non-integral interval boundary.
+    /// Expected: the first of seven slots is superseded exactly at 08:00 plus floor(nine hours / seven).
+    /// Why: rounding must match the durable slot-start formula and must not defer admission by a tick.
+    /// </summary>
+    [Fact]
+    public void Evaluate_ShouldAdvanceAtFloorRoundedStart_WhenWindowDoesNotDivideEvenly()
+    {
+        var schedule = CreateSchedule("UTC", new TimeOnly(8, 0), new TimeOnly(17, 0), [DayOfWeek.Monday]);
+        var slotStart = new TimeOnly(9, 17, 8).Add(TimeSpan.FromTicks(5_714_285));
+        var now = new DateTimeOffset(new DateOnly(2026, 3, 30).ToDateTime(slotStart, DateTimeKind.Utc));
+        var decision = CreatePolicy(now)
+            .Evaluate(CreateRequest(schedule, new MarketCategoryInstrumentFrequency(7, null, null)));
+
+        Assert.True(decision.IsDue);
+        Assert.Equal(1, decision.SlotIndex);
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Delivery Plan, Work Item 1 configuration identity.
+    /// Verifies schedule revisions include the applied profile and collection count/lead-in revisions.
+    /// Expected: changing any identity or admission parameter changes the revision.
+    /// Why: active runs must not continue under configuration values that an Operator has replaced.
+    /// </summary>
+    [Fact]
+    public void GetScheduleRevision_ShouldChange_WhenAppliedProfileOrCollectionSettingsChange()
+    {
+        var schedule = CreateSchedule("UTC", new TimeOnly(8, 0), new TimeOnly(17, 0), [DayOfWeek.Monday]) with
+        {
+            AppliedBrokerEnvironmentId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            ScheduleVersion = 2
+        };
+        var frequency = new MarketCategoryInstrumentFrequency(3, null, null, 50, 15, 4);
+        var revision = MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(schedule, frequency);
+
+        Assert.NotEqual(revision, MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(
+            schedule with { ScheduleVersion = 3 },
+            frequency));
+        Assert.NotEqual(revision, MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(
+            schedule,
+            frequency with { LeadInMinutes = 16 }));
+        Assert.NotEqual(revision, MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(
+            schedule,
+            frequency with { ConfigurationVersion = 5 }));
+        Assert.NotEqual(revision, MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(
+            schedule,
+            frequency with { CurrentUpdatesPerDay = 4 }));
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data delivery plan, Work Item 3, step 4.
+    /// Verifies only future starts inside the configured lead-in interval are covered; disabled timed updates cover none.
+    /// Expected: 10:45 covers the 11:00 slot with a 15-minute lead-in, while one tick earlier and count zero do not.
+    /// Why: interest/manual runs must avoid queuing a duplicate update for a near-future slot without inventing a timed start.
+    /// </summary>
+    [Fact]
+    public void GetSlotsCoveredByLeadIn_ShouldCoverOnlyFutureSlotsInsideLeadIn_WhenRunIsTriggered()
+    {
+        var tradingDay = new DateOnly(2026, 9, 28);
+        var schedule = CreateSchedule("UTC", new TimeOnly(8, 0), new TimeOnly(17, 0), [DayOfWeek.Monday]);
+        var frequency = new MarketCategoryInstrumentFrequency(3, null, null, 100, 15);
+        var policy = CreatePolicy(new DateTimeOffset(2026, 9, 28, 10, 45, 0, TimeSpan.Zero));
+        var covered = policy.GetSlotsCoveredByLeadIn(
+            schedule,
+            frequency,
+            tradingDay,
+            new DateTimeOffset(2026, 9, 28, 10, 45, 0, TimeSpan.Zero));
+
+        Assert.Equal(
+            [new MarketDataFullRunSlotIdentity(
+                tradingDay,
+                MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(schedule, frequency),
+                1)],
+            covered);
+        Assert.Empty(policy.GetSlotsCoveredByLeadIn(
+            schedule,
+            frequency,
+            tradingDay,
+            new DateTimeOffset(2026, 9, 28, 10, 44, 59, TimeSpan.Zero)));
+        Assert.Empty(policy.GetSlotsCoveredByLeadIn(
+            schedule,
+            frequency with { CurrentUpdatesPerDay = 0 },
+            tradingDay,
+            new DateTimeOffset(2026, 9, 28, 10, 45, 0, TimeSpan.Zero)));
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 1, step 3; Non-negotiable Behaviour 2.
+    /// Verifies: a scheduled local start inside a spring-forward gap advances to the first valid instant.
+    /// Expected: 02:30 in New York on the spring transition resolves to 03:00 local, or 07:00 UTC.
+    /// Why: nonexistent wall-clock starts must not be interpreted using an invalid or host-dependent offset.
+    /// </summary>
+    [Fact]
+    public void GetNextScheduledStartUtc_ShouldAdvanceAcrossDstGap_WhenOpeningTimeDoesNotExist()
+    {
+        var schedule = CreateSchedule("America/New_York", new TimeOnly(2, 30), new TimeOnly(4, 0), [DayOfWeek.Sunday]);
+        var nextStart = CreatePolicy(new DateTimeOffset(2026, 3, 8, 5, 0, 0, TimeSpan.Zero))
+            .GetNextScheduledStartUtc(schedule, 1);
+
+        Assert.Equal(new DateTimeOffset(2026, 3, 8, 7, 0, 0, TimeSpan.Zero), nextStart);
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 1, step 3; Non-negotiable Behaviour 2.
+    /// Verifies: an ambiguous fall-back start resolves to the first occurrence of its local wall time.
+    /// Expected: 01:30 in New York on the autumn transition resolves to 05:30 UTC, not the repeated 06:30 UTC instant.
+    /// Why: a repeated clock hour must not create a second scheduled start for the same local slot.
+    /// </summary>
+    [Fact]
+    public void GetNextScheduledStartUtc_ShouldChooseFirstOccurrence_WhenOpeningTimeIsAmbiguous()
+    {
+        var schedule = CreateSchedule("America/New_York", new TimeOnly(1, 30), new TimeOnly(2, 30), [DayOfWeek.Sunday]);
+        var nextStart = CreatePolicy(new DateTimeOffset(2026, 11, 1, 4, 0, 0, TimeSpan.Zero))
+            .GetNextScheduledStartUtc(schedule, 1);
+
+        Assert.Equal(new DateTimeOffset(2026, 11, 1, 5, 30, 0, TimeSpan.Zero), nextStart);
     }
 
     /// <summary>
@@ -283,7 +451,7 @@ public sealed class MarketCategoryInstrumentPolicyTests
 
     /// <summary>
     /// Trace: Market Category Instruments Work Item 1, step 3; Non-negotiable Behaviour 3.
-    /// Verifies: disabled schedules, unsupported applied environments and invalid frequencies fail closed.
+    /// Verifies: disabled schedules, unsupported applied environments and negative frequencies fail closed.
     /// Expected: each unsafe configuration is blocked before a due slot is produced.
     /// Why: no invalid local or environment context may lead to provider activity.
     /// </summary>
@@ -295,13 +463,18 @@ public sealed class MarketCategoryInstrumentPolicyTests
 
         var disabled = policy.Evaluate(CreateRequest(schedule, new MarketCategoryInstrumentFrequency(1, null, null)) with { IsScheduleEnabled = false });
         var unsupported = policy.Evaluate(CreateRequest(schedule, new MarketCategoryInstrumentFrequency(1, null, null)) with { IsAppliedEnvironmentSupported = false });
-        var invalidFrequency = policy.Evaluate(CreateRequest(schedule, new MarketCategoryInstrumentFrequency(5, null, null)));
+        var reconciliationRequired = policy.Evaluate(CreateRequest(schedule, new MarketCategoryInstrumentFrequency(1, null, null)) with
+        {
+            IsLegacyScheduleReconciliationRequired = true
+        });
+        var invalidFrequency = policy.Evaluate(CreateRequest(schedule, new MarketCategoryInstrumentFrequency(-1, null, null)));
         var invalidTimeZone = policy.Evaluate(CreateRequest(
             schedule with { TimeZone = "Missing/Trading_Zone" },
             new MarketCategoryInstrumentFrequency(1, null, null)));
 
         Assert.Equal(MarketCategoryInstrumentScheduleBlockReason.ScheduleDisabled, disabled.BlockReason);
         Assert.Equal(MarketCategoryInstrumentScheduleBlockReason.UnsupportedAppliedEnvironment, unsupported.BlockReason);
+        Assert.Equal(MarketCategoryInstrumentScheduleBlockReason.LegacyScheduleReconciliationRequired, reconciliationRequired.BlockReason);
         Assert.Equal(MarketCategoryInstrumentScheduleBlockReason.InvalidFrequency, invalidFrequency.BlockReason);
         Assert.Equal(MarketCategoryInstrumentScheduleBlockReason.InvalidSchedule, invalidTimeZone.BlockReason);
     }

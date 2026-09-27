@@ -118,6 +118,35 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
         return content ?? throw new InvalidOperationException("Updated platform configuration response was empty.");
     }
 
+    public async Task<AppliedBrokerScheduleViewModel> GetAppliedBrokerScheduleAsync(CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(
+            HttpMethod.Get,
+            "/api/platform/configuration/applied-broker-schedule",
+            [PlatformAuthenticationDefaults.Scopes.Operator],
+            cancellationToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<AppliedBrokerScheduleViewModel>(JsonOptions, cancellationToken)
+            ?? throw new InvalidOperationException("Applied broker Trading Day schedule response was empty.");
+    }
+
+    public async Task<AppliedBrokerScheduleViewModel> UpdateAppliedBrokerScheduleAsync(
+        UpdateAppliedBrokerScheduleViewModel schedule,
+        CancellationToken cancellationToken)
+    {
+        using var request = await CreateAuthorizedRequestAsync(
+            HttpMethod.Put,
+            "/api/platform/configuration/applied-broker-schedule",
+            [PlatformAuthenticationDefaults.Scopes.Operator],
+            cancellationToken);
+        request.Content = JsonContent.Create(schedule, options: JsonOptions);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<AppliedBrokerScheduleViewModel>(JsonOptions, cancellationToken)
+            ?? throw new InvalidOperationException("Updated applied broker Trading Day schedule response was empty.");
+    }
+
     public async Task<ManualRetryViewModel> TriggerManualRetryAsync(CancellationToken cancellationToken)
     {
         using var request = await CreateAuthorizedRequestAsync(

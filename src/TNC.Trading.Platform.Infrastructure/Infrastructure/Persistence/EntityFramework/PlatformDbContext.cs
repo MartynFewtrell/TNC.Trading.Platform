@@ -59,6 +59,12 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
     internal DbSet<MarketDetailCurrentEntity> MarketDetailCurrent => Set<MarketDetailCurrentEntity>();
     internal DbSet<MarketDetailEligibilityEntity> MarketDetailEligibility => Set<MarketDetailEligibilityEntity>();
     internal DbSet<IgProviderRateReservationEntity> IgProviderRateReservations => Set<IgProviderRateReservationEntity>();
+    internal DbSet<MarketDataFullRunEntity> MarketDataFullRuns => Set<MarketDataFullRunEntity>();
+    internal DbSet<MarketDataFullRunCategoryEntity> MarketDataFullRunCategories => Set<MarketDataFullRunCategoryEntity>();
+    internal DbSet<MarketDataFullRunSlotCoverageEntity> MarketDataFullRunSlotCoverages => Set<MarketDataFullRunSlotCoverageEntity>();
+    internal DbSet<MarketDataFullRunStageEntity> MarketDataFullRunStages => Set<MarketDataFullRunStageEntity>();
+    internal DbSet<MarketDataFullRunItemEntity> MarketDataFullRunItems => Set<MarketDataFullRunItemEntity>();
+    internal DbSet<MarketDataFullRunIntentEntity> MarketDataFullRunIntents => Set<MarketDataFullRunIntentEntity>();
 
     internal DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
@@ -119,6 +125,8 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.Property(item => item.BankHolidayExclusionsJson).IsRequired();
             entity.Property(item => item.TimeZone).HasMaxLength(64).IsRequired();
             entity.HasOne<BrokerEnvironmentEntity>().WithMany().HasForeignKey(item => item.BrokerEnvironmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable("BrokerEnvironmentScheduleProfiles", table =>
+                table.HasCheckConstraint("CK_BrokerEnvironmentScheduleProfiles_ScheduleVersion", "[ScheduleVersion] >= 1"));
         });
 
         modelBuilder.Entity<BrokerEnvironmentRetryProfileEntity>(entity =>
@@ -348,6 +356,7 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
                 .OnDelete(DeleteBehavior.Restrict);
             entity.Property(item => item.Code).HasMaxLength(128).IsRequired();
             entity.Property(item => item.NonTradeable).IsRequired();
+            entity.Property(item => item.IsCurrent).HasDefaultValue(true);
         });
 
         modelBuilder.Entity<MarketCategoryInterestStateEntity>(entity =>
@@ -375,9 +384,11 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.HasOne<BrokerEnvironmentEntity>().WithMany().HasForeignKey(item => item.BrokerEnvironmentId).OnDelete(DeleteBehavior.Restrict);
             entity.ToTable("InstrumentCollectionSettings", table =>
             {
-                table.HasCheckConstraint("CK_InstrumentCollectionSettings_CurrentFrequency", "[CurrentUpdatesPerDay] BETWEEN 1 AND 4");
-                table.HasCheckConstraint("CK_InstrumentCollectionSettings_PendingFrequency", "[PendingUpdatesPerDay] IS NULL OR [PendingUpdatesPerDay] BETWEEN 1 AND 4");
+                table.HasCheckConstraint("CK_InstrumentCollectionSettings_CurrentFrequency", "[CurrentUpdatesPerDay] >= 0");
+                table.HasCheckConstraint("CK_InstrumentCollectionSettings_PendingFrequency", "[PendingUpdatesPerDay] IS NULL OR [PendingUpdatesPerDay] >= 0");
                 table.HasCheckConstraint("CK_InstrumentCollectionSettings_Allowance", "[ApprovedNonTradingDailyRequestAllowance] IS NULL OR [ApprovedNonTradingDailyRequestAllowance] >= 0");
+                table.HasCheckConstraint("CK_InstrumentCollectionSettings_LeadInMinutes", "[LeadInMinutes] >= 0");
+                table.HasCheckConstraint("CK_InstrumentCollectionSettings_ConfigurationVersion", "[ConfigurationVersion] >= 1");
             });
         });
 
@@ -392,7 +403,7 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.ToTable("InstrumentCollectionCycleStates", table =>
             {
                 table.HasCheckConstraint("CK_InstrumentCollectionCycleStates_UsedRequestBudget", "[UsedRequestBudget] >= 0");
-                table.HasCheckConstraint("CK_InstrumentCollectionCycleStates_Slot", "[ScheduledSlot] BETWEEN 0 AND 3");
+                table.HasCheckConstraint("CK_InstrumentCollectionCycleStates_Slot", "[ScheduledSlot] >= 0");
                 table.HasCheckConstraint("CK_InstrumentCollectionCycleStates_LeaseFence", "[LeaseFence] >= 0");
                 table.HasCheckConstraint("CK_InstrumentCollectionCycleStates_PrerequisiteAttempts", "[CategoryPrerequisiteAttempts] BETWEEN 0 AND 3");
                 table.HasCheckConstraint("CK_InstrumentCollectionCycleStates_PrerequisiteLeaseFence", "[CategoryPrerequisiteLeaseFence] >= 0");
@@ -411,7 +422,7 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.ToTable("InstrumentCollectionCategoryAttempts", table =>
             {
                 table.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_Attempts", "[Attempts] BETWEEN 0 AND 3");
-                table.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_Slot", "[ScheduledSlot] BETWEEN 0 AND 3");
+                table.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_Slot", "[ScheduledSlot] >= 0");
                 table.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_LeaseFence", "[LeaseFence] >= 0");
                 table.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_CategoryCode", "LEN(LTRIM(RTRIM([CategoryCode]))) > 0");
             });
@@ -466,8 +477,8 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
                     "[IsComplete] = 0 OR ([PageCount] > 0 AND [ResultCount] >= 0 AND [ResultCount] = [ProviderTotalResults] AND [PageCount] = [ProviderTotalPages])");
                 table.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_EndpointProfile", "LEN(LTRIM(RTRIM([EndpointProfile]))) > 0");
                 table.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_CategoryCode", "LEN(LTRIM(RTRIM([CategoryCode]))) > 0");
-                table.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_Slot", "[ScheduledSlot] BETWEEN 0 AND 3");
-                table.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_Frequency", "[EffectiveUpdatesPerDay] BETWEEN 1 AND 4");
+                table.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_Slot", "[ScheduledSlot] >= 0");
+                table.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_Frequency", "[EffectiveUpdatesPerDay] >= 0");
                 table.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_SnapshotVersion", "[SnapshotVersion] > 0");
                 table.HasCheckConstraint("CK_MarketCategoryInstrumentCollectionRuns_CategoryRevision", "[CategorySnapshotRevision] >= 0");
             });
@@ -503,7 +514,7 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.ToTable("MarketDetailCollectionRuns", table =>
             {
                 table.HasCheckConstraint("CK_MarketDetailCollectionRuns_EndpointProfile", "LEN(LTRIM(RTRIM([EndpointProfile]))) > 0");
-                table.HasCheckConstraint("CK_MarketDetailCollectionRuns_Slot", "[ScheduledSlot] BETWEEN 0 AND 3");
+                table.HasCheckConstraint("CK_MarketDetailCollectionRuns_Slot", "[ScheduledSlot] >= 0");
                 table.HasCheckConstraint("CK_MarketDetailCollectionRuns_Revisions", "[CatalogueRevision] >= 0 AND [InterestRevision] >= 0 AND [ScheduleRevision] >= 0");
                 table.HasCheckConstraint("CK_MarketDetailCollectionRuns_Counts", "[ExpectedCount] >= 0 AND [CompletedCount] BETWEEN 0 AND [ExpectedCount] AND [ExcludedCount] >= 0");
                 table.HasCheckConstraint("CK_MarketDetailCollectionRuns_LeaseFence", "[LeaseFence] >= 0");
@@ -515,6 +526,7 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.HasKey(item => new { item.RunId, item.CategoryCode });
             entity.HasAlternateKey(item => new { item.RunId, item.BrokerEnvironmentId, item.CategoryCode });
             entity.Property(item => item.CategoryCode).HasMaxLength(128).IsRequired();
+            entity.Property(item => item.IsFresh).HasDefaultValue(true);
             entity.HasOne(item => item.Run).WithMany(item => item.Sources)
                 .HasForeignKey(item => new { item.RunId, item.BrokerEnvironmentId })
                 .HasPrincipalKey(item => new { item.RunId, item.BrokerEnvironmentId })
@@ -537,6 +549,7 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.HasAlternateKey(item => new { item.RunId, item.BrokerEnvironmentId, item.Epic });
             entity.Property(item => item.Epic).HasMaxLength(64).UseCollation("Latin1_General_100_BIN2").IsRequired();
             entity.Property(item => item.Status).HasMaxLength(16).IsRequired();
+            entity.Property(item => item.CanRetry).HasDefaultValue(true);
             entity.Property(item => item.SafeFailureCode).HasMaxLength(128);
             entity.Property(item => item.ExclusionEvidenceCode).HasMaxLength(128);
             entity.HasOne(item => item.Run).WithMany(item => item.Targets)
@@ -665,6 +678,114 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
                 table.HasCheckConstraint("CK_IgProviderRateReservations_ScopeType", "[ScopeType] IN ('App', 'Account')");
                 table.HasCheckConstraint("CK_IgProviderRateReservations_ScopeHash", "LEN([ScopeHash]) = 64");
             });
+        });
+
+        modelBuilder.Entity<MarketDataFullRunEntity>(entity =>
+        {
+            entity.HasKey(item => item.RunId);
+            entity.HasAlternateKey(item => new { item.RunId, item.BrokerEnvironmentId });
+            entity.HasOne<BrokerEnvironmentEntity>().WithMany()
+                .HasForeignKey(item => item.BrokerEnvironmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.Property(item => item.EndpointProfile).HasMaxLength(128).IsRequired();
+            entity.Property(item => item.Trigger).HasMaxLength(24).IsRequired();
+            entity.Property(item => item.Status).HasMaxLength(24).IsRequired();
+            entity.Property(item => item.CurrentStage).HasMaxLength(24).IsRequired();
+            entity.Property(item => item.Outcome).HasMaxLength(24);
+            entity.Property(item => item.SafeReasonCode).HasMaxLength(128);
+            entity.HasIndex(item => item.BrokerEnvironmentId)
+                .IsUnique()
+                .HasFilter("[Status] = 'Running'");
+            entity.HasIndex(item => new { item.BrokerEnvironmentId, item.AdmittedAtUtc });
+            entity.ToTable("MarketDataFullRuns", table =>
+            {
+                table.HasCheckConstraint("CK_MarketDataFullRuns_EndpointProfile", "LEN(LTRIM(RTRIM([EndpointProfile]))) > 0");
+                table.HasCheckConstraint("CK_MarketDataFullRuns_Versions", "[ScheduleRevision] > 0 AND [EffectiveUpdatesPerDay] >= 0 AND [CollectionConfigurationVersion] >= 1 AND [InterestRevision] >= 0");
+                table.HasCheckConstraint("CK_MarketDataFullRuns_LeaseFence", "[LeaseFence] >= 0");
+                table.HasCheckConstraint("CK_MarketDataFullRuns_Window", "[WindowEndUtc] > [AdmittedAtUtc]");
+                table.HasCheckConstraint("CK_MarketDataFullRuns_DetailScheduledSlot", "[DetailScheduledSlot] IS NULL OR [DetailScheduledSlot] >= 0");
+                table.HasCheckConstraint("CK_MarketDataFullRuns_FailedItemFollowUp", "[FailedItemFollowUpRunId] IS NULL OR [FailedItemFollowUpDueAtUtc] IS NOT NULL");
+            });
+        });
+
+        modelBuilder.Entity<MarketDataFullRunCategoryEntity>(entity =>
+        {
+            entity.HasKey(item => new { item.RunId, item.CategoryCode });
+            entity.Property(item => item.CategoryCode).HasMaxLength(128).IsRequired();
+            entity.HasOne<MarketDataFullRunEntity>().WithMany()
+                .HasForeignKey(item => item.RunId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable("MarketDataFullRunCategories", table =>
+                table.HasCheckConstraint("CK_MarketDataFullRunCategories_CategoryCode", "LEN(LTRIM(RTRIM([CategoryCode]))) > 0"));
+        });
+
+        modelBuilder.Entity<MarketDataFullRunSlotCoverageEntity>(entity =>
+        {
+            entity.HasKey(item => new
+            {
+                item.BrokerEnvironmentId,
+                item.TradingDay,
+                item.ScheduleRevision,
+                item.ScheduledSlot
+            });
+            entity.HasOne<BrokerEnvironmentEntity>().WithMany()
+                .HasForeignKey(item => item.BrokerEnvironmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<MarketDataFullRunEntity>().WithMany()
+                .HasForeignKey(item => new { item.RunId, item.BrokerEnvironmentId })
+                .HasPrincipalKey(item => new { item.RunId, item.BrokerEnvironmentId })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.Property(item => item.CoverageKind).HasMaxLength(24).IsRequired();
+            entity.HasIndex(item => item.RunId);
+            entity.ToTable("MarketDataFullRunSlotCoverages", table =>
+            {
+                table.HasCheckConstraint("CK_MarketDataFullRunSlotCoverages_ScheduleRevision", "[ScheduleRevision] > 0");
+                table.HasCheckConstraint("CK_MarketDataFullRunSlotCoverages_Slot", "[ScheduledSlot] >= 0");
+            });
+        });
+
+        modelBuilder.Entity<MarketDataFullRunStageEntity>(entity =>
+        {
+            entity.HasKey(item => new { item.RunId, item.Stage });
+            entity.Property(item => item.Stage).HasMaxLength(24).IsRequired();
+            entity.Property(item => item.Status).HasMaxLength(24).IsRequired();
+            entity.Property(item => item.SafeReasonCode).HasMaxLength(128);
+            entity.HasOne<MarketDataFullRunEntity>().WithMany()
+                .HasForeignKey(item => item.RunId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.ToTable("MarketDataFullRunStages", table =>
+            {
+                table.HasCheckConstraint("CK_MarketDataFullRunStages_Attempts", "[Attempts] BETWEEN 0 AND 3");
+            });
+        });
+
+        modelBuilder.Entity<MarketDataFullRunItemEntity>(entity =>
+        {
+            entity.HasKey(item => new { item.RunId, item.Stage, item.ItemCode });
+            entity.Property(item => item.Stage).HasMaxLength(24).IsRequired();
+            entity.Property(item => item.ItemCode).HasMaxLength(128).IsRequired();
+            entity.Property(item => item.Status).HasMaxLength(24).IsRequired();
+            entity.Property(item => item.SafeReasonCode).HasMaxLength(128);
+            entity.HasOne<MarketDataFullRunEntity>().WithMany()
+                .HasForeignKey(item => item.RunId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(item => new { item.RunId, item.Status });
+            entity.ToTable("MarketDataFullRunItems", table =>
+            {
+                table.HasCheckConstraint("CK_MarketDataFullRunItems_Attempts", "[Attempts] BETWEEN 0 AND 3");
+                table.HasCheckConstraint("CK_MarketDataFullRunItems_ItemCode", "LEN(LTRIM(RTRIM([ItemCode]))) > 0");
+            });
+        });
+
+        modelBuilder.Entity<MarketDataFullRunIntentEntity>(entity =>
+        {
+            entity.HasKey(item => item.BrokerEnvironmentId);
+            entity.HasOne<BrokerEnvironmentEntity>().WithMany()
+                .HasForeignKey(item => item.BrokerEnvironmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.Property(item => item.Trigger).HasMaxLength(24).IsRequired();
+            entity.ToTable("MarketDataFullRunIntents", table =>
+                table.HasCheckConstraint("CK_MarketDataFullRunIntents_Versions", "[CollectionConfigurationVersion] >= 1 AND [InterestRevision] >= 0"));
         });
 
         modelBuilder.Entity<AccountDetailsAccountEntity>(entity =>

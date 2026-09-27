@@ -13,6 +13,19 @@ internal sealed class EfMarketDetailListingSourceReader(
         MarketDetailRunKey key,
         long scheduleRevision,
         string appliedEndpointProfile,
+        CancellationToken cancellationToken) =>
+        await ReadAsync(
+            key,
+            scheduleRevision,
+            appliedEndpointProfile,
+            frozenCategoryCodes: null,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<MarketDetailListingSourceSnapshot> ReadAsync(
+        MarketDetailRunKey key,
+        long scheduleRevision,
+        string appliedEndpointProfile,
+        IReadOnlyList<string>? frozenCategoryCodes,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(key);
@@ -35,15 +48,21 @@ internal sealed class EfMarketDetailListingSourceReader(
             .SingleOrDefaultAsync(item => item.BrokerEnvironmentId == environmentId, cancellationToken)
             .ConfigureAwait(false);
         var categoryCodes = await dbContext.MarketCategories.AsNoTracking()
-            .Where(item => item.BrokerEnvironmentId == environmentId)
+            .Where(item => item.BrokerEnvironmentId == environmentId && item.IsCurrent)
             .Select(item => item.Code)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         var currentCategorySet = categoryCodes.ToHashSet(StringComparer.Ordinal);
-        var selectedCodes = await dbContext.MarketCategoryInterests.AsNoTracking()
-            .Where(item => item.BrokerEnvironmentId == environmentId && currentCategorySet.Contains(item.CategoryCode))
-            .OrderBy(item => item.CategoryCode)
-            .Select(item => item.CategoryCode)
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        var selectedCodes = frozenCategoryCodes is null
+            ? await dbContext.MarketCategoryInterests.AsNoTracking()
+                .Where(item => item.BrokerEnvironmentId == environmentId && currentCategorySet.Contains(item.CategoryCode))
+                .OrderBy(item => item.CategoryCode)
+                .Select(item => item.CategoryCode)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false)
+            : frozenCategoryCodes
+                .Where(currentCategorySet.Contains)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(item => item, StringComparer.Ordinal)
+                .ToArray();
 
         var cycle = await dbContext.InstrumentCollectionCycleStates.AsNoTracking()
             .SingleOrDefaultAsync(item => item.BrokerEnvironmentId == environmentId
@@ -70,17 +89,14 @@ internal sealed class EfMarketDetailListingSourceReader(
                     .SingleOrDefaultAsync(item => item.CollectionId == currentState.CollectionId
                         && item.BrokerEnvironmentId == environmentId
                         && item.CategoryCode == categoryCode
-                        && item.TradingDay == key.TradingDay
-                        && item.ScheduledSlot == key.SlotIndex
-                        && item.CategorySnapshotRevision == catalogueRevision
                         && item.EndpointProfile == appliedEndpointProfile
+                        && item.SnapshotVersion == currentState.SnapshotVersion
                         && item.IsComplete
                         && (item.QualityStatus == "CompleteValidated"
                             || item.QualityStatus == "CompleteValidatedWithOptionalValuesMissing"),
                         cancellationToken).ConfigureAwait(false);
-            if (run is null || currentState!.SnapshotVersion != run.SnapshotVersion)
+            if (run is null)
             {
-                prerequisitesValidated = false;
                 continue;
             }
 
@@ -91,16 +107,16 @@ internal sealed class EfMarketDetailListingSourceReader(
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false);
             if (epics.Length != run.ResultCount)
             {
-                prerequisitesValidated = false;
                 continue;
             }
 
-            sources.Add(new(categoryCode, run.CollectionId, run.SnapshotVersion, true, epics));
-        }
-
-        if (sources.Count != selectedCodes.Length)
-        {
-            prerequisitesValidated = false;
+            var isFresh = run.TradingDay == key.TradingDay
+                && run.ScheduledSlot == key.SlotIndex
+                && run.CategorySnapshotRevision == catalogueRevision;
+            sources.Add(new(categoryCode, run.CollectionId, run.SnapshotVersion, true, epics)
+            {
+                IsFresh = isFresh
+            });
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);

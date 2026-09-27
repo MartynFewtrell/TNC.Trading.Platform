@@ -198,12 +198,8 @@ namespace TNC.Trading.Platform.Infrastructure.Infrastructure.Persistence.EntityF
                      [WeekendBehavior], [BankHolidayExclusionsJson], [TimeZone], [RetryInitialDelaySeconds], [RetryMaxAutomaticRetries],
                      [RetryMultiplier], [RetryMaxDelaySeconds], [RetryPeriodicDelayMinutes], [NotificationProvider], [NotificationEmailTo], [CreatedAtUtc])
                     SELECT @defaultsId, 1, 1,
-                        COALESCE([TradingHoursStart], CAST('08:00:00' AS time)),
-                        COALESCE([TradingHoursEnd], CAST('16:30:00' AS time)),
-                        COALESCE(NULLIF([TradingDaysCsv], ''), 'Monday,Tuesday,Wednesday,Thursday,Friday'),
-                        COALESCE(NULLIF([WeekendBehavior], ''), 'ExcludeWeekends'),
-                        COALESCE(NULLIF([BankHolidayExclusionsJson], ''), '[]'),
-                        COALESCE(NULLIF([TimeZone], ''), 'UTC'),
+                        CAST('08:00:00' AS time), CAST('17:00:00' AS time),
+                        'Monday,Tuesday,Wednesday,Thursday,Friday', 'ExcludeWeekends', '[]', 'Europe/London',
                         COALESCE([RetryInitialDelaySeconds], 1), COALESCE([RetryMaxAutomaticRetries], 5),
                         COALESCE([RetryMultiplier], 2), COALESCE([RetryMaxDelaySeconds], 60), COALESCE([RetryPeriodicDelayMinutes], 5),
                         COALESCE(NULLIF([NotificationProvider], ''), 'RecordedOnly'), [NotificationEmailTo], @now
@@ -230,7 +226,8 @@ namespace TNC.Trading.Platform.Infrastructure.Infrastructure.Persistence.EntityF
                 BEGIN
                     INSERT INTO [BrokerEnvironmentScheduleProfiles]
                     ([BrokerEnvironmentId], [DefaultsVersion], [TradingHoursStart], [TradingHoursEnd], [TradingDaysCsv], [WeekendBehavior], [BankHolidayExclusionsJson], [TimeZone])
-                    SELECT @demoId, [Version], [TradingHoursStart], [TradingHoursEnd], [TradingDaysCsv], [WeekendBehavior], [BankHolidayExclusionsJson], [TimeZone]
+                    SELECT @demoId, [Version], CAST('08:00:00' AS time), CAST('17:00:00' AS time),
+                        'Monday,Tuesday,Wednesday,Thursday,Friday', 'ExcludeWeekends', '[]', 'Europe/London'
                     FROM [BrokerEnvironmentDefaults] WHERE [Version] = 1;
                     INSERT INTO [BrokerEnvironmentRetryProfiles]
                     ([BrokerEnvironmentId], [DefaultsVersion], [InitialDelaySeconds], [MaxAutomaticRetries], [Multiplier], [MaxDelaySeconds], [PeriodicDelayMinutes])
@@ -247,7 +244,8 @@ namespace TNC.Trading.Platform.Infrastructure.Infrastructure.Persistence.EntityF
                 BEGIN
                     INSERT INTO [BrokerEnvironmentScheduleProfiles]
                     ([BrokerEnvironmentId], [DefaultsVersion], [TradingHoursStart], [TradingHoursEnd], [TradingDaysCsv], [WeekendBehavior], [BankHolidayExclusionsJson], [TimeZone])
-                    SELECT @liveId, [Version], [TradingHoursStart], [TradingHoursEnd], [TradingDaysCsv], [WeekendBehavior], [BankHolidayExclusionsJson], [TimeZone]
+                    SELECT @liveId, [Version], CAST('08:00:00' AS time), CAST('17:00:00' AS time),
+                        'Monday,Tuesday,Wednesday,Thursday,Friday', 'ExcludeWeekends', '[]', 'Europe/London'
                     FROM [BrokerEnvironmentDefaults] WHERE [Version] = 1;
                     INSERT INTO [BrokerEnvironmentRetryProfiles]
                     ([BrokerEnvironmentId], [DefaultsVersion], [InitialDelaySeconds], [MaxAutomaticRetries], [Multiplier], [MaxDelaySeconds], [PeriodicDelayMinutes])

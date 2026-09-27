@@ -6,4 +6,6 @@ internal sealed record TradingScheduleConfiguration(
     IReadOnlyList<DayOfWeek> TradingDays,
     WeekendBehavior WeekendBehavior,
     IReadOnlyList<DateOnly> BankHolidayExclusions,
-    string TimeZone);
+    string TimeZone,
+    Guid? AppliedBrokerEnvironmentId = null,
+    long ScheduleVersion = 1);

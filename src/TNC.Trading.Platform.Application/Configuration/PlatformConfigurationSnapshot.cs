@@ -10,4 +10,5 @@ internal sealed record PlatformConfigurationSnapshot(
     bool LiveOptionVisible,
     bool LiveOptionAvailable,
     DateTimeOffset UpdatedAtUtc,
-    bool RestartRequired);
+    bool RestartRequired,
+    bool MarketDataScheduleReconciliationRequired = false);

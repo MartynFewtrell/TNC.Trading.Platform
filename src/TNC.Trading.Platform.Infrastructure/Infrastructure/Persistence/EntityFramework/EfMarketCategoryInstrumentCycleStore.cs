@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketDetails;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 
 namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
@@ -76,7 +77,8 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
             leaseDuration,
             cancellationToken,
             lease.WindowEndUtc,
-            isStartupCheck);
+            isStartupCheck,
+            lease.FullRunLease);
 
     public Task<bool> TryRenewLeaseAsync(
         MarketCategoryInstrumentCycleLease lease,
@@ -92,7 +94,8 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
             nowUtc,
             leaseDuration,
             cancellationToken,
-            lease.WindowEndUtc);
+            lease.FullRunLease is null ? lease.WindowEndUtc : null,
+            lease.FullRunLease);
 
     public Task<bool> TryBeginCategoryPrerequisiteAsync(
         MarketCategoryInstrumentCycleLease lease,
@@ -100,7 +103,7 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         CancellationToken cancellationToken) =>
         TryBeginCategoryPrerequisiteAsync(
             lease.BrokerEnvironment, lease.TradingDay, lease.ScheduledSlot, lease.Owner, lease.Fence,
-            nowUtc, cancellationToken, lease.WindowEndUtc);
+            nowUtc, cancellationToken, lease.WindowEndUtc, lease.FullRunLease);
 
     public Task<bool> TryReserveCategoryAttemptAsync(
         MarketCategoryInstrumentCycleLease lease,
@@ -109,7 +112,7 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         CancellationToken cancellationToken) =>
         TryReserveCategoryAttemptAsync(
             lease.BrokerEnvironment, lease.TradingDay, lease.ScheduledSlot, categoryCode, lease.Owner, lease.Fence,
-            nowUtc, cancellationToken, lease.WindowEndUtc);
+            nowUtc, cancellationToken, lease.WindowEndUtc, lease.FullRunLease);
 
     public Task<bool> CompleteCategoryPrerequisiteAsync(
         MarketCategoryInstrumentCycleLease lease,
@@ -119,7 +122,7 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         CancellationToken cancellationToken) =>
         CompleteCategoryPrerequisiteAsync(
             lease.BrokerEnvironment, lease.TradingDay, lease.ScheduledSlot, lease.Owner, lease.Fence,
-            nowUtc, succeeded, safeError, cancellationToken, lease.WindowEndUtc);
+            nowUtc, succeeded, safeError, cancellationToken, lease.WindowEndUtc, lease.FullRunLease);
 
     public Task<bool> CompleteCategoryAttemptAsync(
         MarketCategoryInstrumentCycleLease lease,
@@ -130,7 +133,7 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         CancellationToken cancellationToken) =>
         CompleteCategoryAttemptAsync(
             lease.BrokerEnvironment, lease.TradingDay, lease.ScheduledSlot, categoryCode, lease.Owner, lease.Fence,
-            nowUtc, succeeded, safeError, cancellationToken, lease.WindowEndUtc);
+            nowUtc, succeeded, safeError, cancellationToken, lease.WindowEndUtc, lease.FullRunLease);
 
     public async Task<bool> HasRequestBudgetAsync(
         MarketCategoryInstrumentCycleLease lease,
@@ -145,11 +148,28 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
             .Where(item => item.BrokerEnvironmentId == environmentId && item.TradingDay == lease.TradingDay)
             .SumAsync(item => (int?)item.UsedRequestBudget, cancellationToken).ConfigureAwait(false) ?? 0;
         var current = await FindCycleAsync(environmentId, lease.TradingDay, lease.ScheduledSlot, cancellationToken).ConfigureAwait(false);
+        var parentLeaseIsActive = lease.FullRunLease is null
+            || await IsFullRunLeaseActiveAsync(
+                lease.FullRunLease,
+                Clock.GetUtcNow().ToUniversalTime(),
+                cancellationToken).ConfigureAwait(false);
         return allowance is > 0
             && (long)used < allowance.Value
             && OwnsLiveLease(current, lease.Owner, lease.Fence, Clock.GetUtcNow().ToUniversalTime())
-            && Clock.GetUtcNow().ToUniversalTime() < lease.WindowEndUtc;
+            && (lease.FullRunLease is not null || Clock.GetUtcNow().ToUniversalTime() < lease.WindowEndUtc)
+            && parentLeaseIsActive;
     }
+
+    internal Task<bool> IsFullRunLeaseActiveAsync(
+        MarketDataFullRunLease lease,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken) =>
+        EfMarketDataFullRunLeaseGuard.IsActiveAsync(
+            dbContext,
+            lease,
+            nowUtc,
+            contextResolver,
+            cancellationToken);
 
     public Task<bool> CompleteCycleAsync(
         MarketCategoryInstrumentCycleLease lease,
@@ -214,15 +234,31 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         TimeSpan leaseDuration,
         CancellationToken cancellationToken,
         DateTimeOffset? windowEndUtc = null,
-        bool isStartupCheck = false)
+        bool isStartupCheck = false,
+        MarketDataFullRunLease? fullRunLease = null)
     {
         ValidateLeaseRequest(scheduledSlot, scheduleRevision, leaseOwner, nowUtc, leaseDuration);
-        if (windowEndUtc is { } windowEnd && (windowEnd.Offset != TimeSpan.Zero || nowUtc >= windowEnd))
+        if (fullRunLease is null
+            && windowEndUtc is { } windowEnd
+            && (windowEnd.Offset != TimeSpan.Zero || nowUtc >= windowEnd))
         {
             return null;
         }
+
         var environmentId = await ResolveEnvironmentIdAsync(environment, cancellationToken).ConfigureAwait(false);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        if (fullRunLease is not null
+            && (!IsFullRunLeaseCompatible(fullRunLease, environment, tradingDay, windowEndUtc, scheduleRevision)
+                || !await EfMarketDataFullRunLeaseGuard.IsActiveInTransactionAsync(
+                    dbContext,
+                    fullRunLease,
+                    nowUtc,
+                    contextResolver,
+                    cancellationToken).ConfigureAwait(false)))
+        {
+            return null;
+        }
+
         await AcquireCycleLockAsync(environmentId, tradingDay, scheduledSlot, cancellationToken).ConfigureAwait(false);
         var state = await FindCycleAsync(environmentId, tradingDay, scheduledSlot, cancellationToken).ConfigureAwait(false);
         if (state is null)
@@ -285,18 +321,35 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         DateTimeOffset nowUtc,
         TimeSpan leaseDuration,
         CancellationToken cancellationToken,
-        DateTimeOffset? windowEndUtc = null)
+        DateTimeOffset? windowEndUtc = null,
+        MarketDataFullRunLease? fullRunLease = null)
     {
         ValidateLeaseRequest(scheduledSlot, 0, leaseOwner, nowUtc, leaseDuration);
-        if (windowEndUtc is { } windowEnd && (windowEnd.Offset != TimeSpan.Zero || nowUtc >= windowEnd))
+        if (fullRunLease is null
+            && windowEndUtc is { } windowEnd
+            && (windowEnd.Offset != TimeSpan.Zero || nowUtc >= windowEnd))
         {
             return false;
         }
+
         var environmentId = await ResolveEnvironmentIdAsync(environment, cancellationToken).ConfigureAwait(false);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        if (fullRunLease is not null
+            && (!IsFullRunLeaseCompatible(fullRunLease, environment, tradingDay, windowEndUtc)
+                || !await EfMarketDataFullRunLeaseGuard.IsActiveInTransactionAsync(
+                    dbContext,
+                    fullRunLease,
+                    nowUtc,
+                    contextResolver,
+                    cancellationToken).ConfigureAwait(false)))
+        {
+            return false;
+        }
+
         await AcquireCycleLockAsync(environmentId, tradingDay, scheduledSlot, cancellationToken).ConfigureAwait(false);
         var state = await FindCycleAsync(environmentId, tradingDay, scheduledSlot, cancellationToken).ConfigureAwait(false);
-        if (!OwnsLiveLease(state, leaseOwner, leaseFence, nowUtc))
+        if (!OwnsLiveLease(state, leaseOwner, leaseFence, nowUtc)
+            || (fullRunLease is not null && state!.ScheduleRevision != fullRunLease.ScheduleRevision))
         {
             return false;
         }
@@ -316,15 +369,24 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         long leaseFence,
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken,
-        DateTimeOffset? windowEndUtc = null)
+        DateTimeOffset? windowEndUtc = null,
+        MarketDataFullRunLease? fullRunLease = null)
     {
-        if (windowEndUtc is { } windowEnd && nowUtc >= windowEnd)
+        if (fullRunLease is null && windowEndUtc is { } windowEnd && nowUtc >= windowEnd)
         {
             return false;
         }
 
         var environmentId = await ResolveEnvironmentIdAsync(environment, cancellationToken).ConfigureAwait(false);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        if (fullRunLease is not null
+            && (!IsFullRunLeaseCompatible(fullRunLease, environment, tradingDay, windowEndUtc)
+                || !await EfMarketDataFullRunLeaseGuard.IsActiveInTransactionAsync(
+                    dbContext, fullRunLease, nowUtc, contextResolver, cancellationToken).ConfigureAwait(false)))
+        {
+            return false;
+        }
+
         await AcquireCycleLockAsync(environmentId, tradingDay, scheduledSlot, cancellationToken).ConfigureAwait(false);
         var state = await FindCycleAsync(environmentId, tradingDay, scheduledSlot, cancellationToken).ConfigureAwait(false);
         if (!OwnsLiveLease(state, leaseOwner, leaseFence, nowUtc)
@@ -354,9 +416,10 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         long leaseFence,
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken,
-        DateTimeOffset? windowEndUtc = null)
+        DateTimeOffset? windowEndUtc = null,
+        MarketDataFullRunLease? fullRunLease = null)
     {
-        if (windowEndUtc is { } windowEnd && nowUtc >= windowEnd)
+        if (fullRunLease is null && windowEndUtc is { } windowEnd && nowUtc >= windowEnd)
         {
             return false;
         }
@@ -364,6 +427,14 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         ValidateCategoryCode(categoryCode);
         var environmentId = await ResolveEnvironmentIdAsync(environment, cancellationToken).ConfigureAwait(false);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        if (fullRunLease is not null
+            && (!IsFullRunLeaseCompatible(fullRunLease, environment, tradingDay, windowEndUtc)
+                || !await EfMarketDataFullRunLeaseGuard.IsActiveInTransactionAsync(
+                    dbContext, fullRunLease, nowUtc, contextResolver, cancellationToken).ConfigureAwait(false)))
+        {
+            return false;
+        }
+
         await AcquireCycleLockAsync(environmentId, tradingDay, scheduledSlot, cancellationToken).ConfigureAwait(false);
         var cycle = await FindCycleAsync(environmentId, tradingDay, scheduledSlot, cancellationToken).ConfigureAwait(false);
         if (!OwnsLiveLease(cycle, leaseOwner, leaseFence, nowUtc) || cycle!.CategoryPrerequisite != "Succeeded")
@@ -416,15 +487,29 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         DateTimeOffset nowUtc,
         int requestCount,
         CancellationToken cancellationToken,
-        DateTimeOffset? windowEndUtc = null)
+        DateTimeOffset? windowEndUtc = null,
+        MarketDataFullRunLease? fullRunLease = null)
     {
-        if (requestCount < 1 || (windowEndUtc is { } windowEnd && nowUtc >= windowEnd))
+        if (requestCount < 1
+            || (fullRunLease is null && windowEndUtc is { } windowEnd && nowUtc >= windowEnd))
         {
             return false;
         }
 
         var environmentId = await ResolveEnvironmentIdAsync(environment, cancellationToken).ConfigureAwait(false);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        if (fullRunLease is not null
+            && (!IsFullRunLeaseCompatible(fullRunLease, environment, tradingDay, windowEndUtc)
+                || !await EfMarketDataFullRunLeaseGuard.IsActiveInTransactionAsync(
+                    dbContext,
+                    fullRunLease,
+                    nowUtc,
+                    contextResolver,
+                    cancellationToken).ConfigureAwait(false)))
+        {
+            return false;
+        }
+
         await MarketCategoryInstrumentSqlLock.AcquireAsync(
             dbContext, GetBudgetLockResource(environmentId, tradingDay), "Exclusive", cancellationToken).ConfigureAwait(false);
         var dailyRequestAllowance = await dbContext.InstrumentCollectionSettings
@@ -438,6 +523,10 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
 
         var cycle = await FindCycleAsync(environmentId, tradingDay, scheduledSlot, cancellationToken).ConfigureAwait(false);
         if (!OwnsLiveLease(cycle, leaseOwner, leaseFence, nowUtc))
+        {
+            return false;
+        }
+        if (fullRunLease is not null && cycle!.ScheduleRevision != fullRunLease.ScheduleRevision)
         {
             return false;
         }
@@ -463,6 +552,18 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         CancellationToken cancellationToken)
     {
         if (!IsValidDetailBudgetContext(context, nowUtc))
+        {
+            return false;
+        }
+
+        if (context.FullRunLease is { } fullRunLease
+            && (!IsFullRunLeaseCompatible(
+                    fullRunLease,
+                    context.Environment,
+                    context.TradingDay,
+                    context.WindowEndUtc,
+                    context.ScheduleRevision)
+                || !await IsFullRunLeaseActiveAsync(fullRunLease, nowUtc, cancellationToken).ConfigureAwait(false)))
         {
             return false;
         }
@@ -547,6 +648,23 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         var environmentId = await ResolveEnvironmentIdAsync(context.Environment, cancellationToken).ConfigureAwait(false);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
             IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        if (context.FullRunLease is { } parentLease
+            && (!IsFullRunLeaseCompatible(
+                    parentLease,
+                    context.Environment,
+                    context.TradingDay,
+                    context.WindowEndUtc,
+                    context.ScheduleRevision)
+                || !await EfMarketDataFullRunLeaseGuard.IsActiveInTransactionAsync(
+                    dbContext,
+                    parentLease,
+                    nowUtc,
+                    contextResolver,
+                    cancellationToken).ConfigureAwait(false)))
+        {
+            return false;
+        }
+
         await MarketCategoryInstrumentSqlLock.AcquireAsync(
             dbContext,
             GetBudgetLockResource(environmentId, context.TradingDay),
@@ -599,7 +717,9 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
             return false;
         }
 
-        run.LeaseExpiresAtUtc = Min(nowUtc.AddMinutes(2), run.WindowEndUtc);
+        run.LeaseExpiresAtUtc = context.FullRunLease is { } activeFullRunLease
+            ? Min(nowUtc.AddMinutes(2), activeFullRunLease.LeaseExpiresAtUtc)
+            : Min(nowUtc.AddMinutes(2), run.WindowEndUtc);
         run.UpdatedAtUtc = nowUtc;
         cycle.UsedRequestBudget = checked(cycle.UsedRequestBudget + 1);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -610,7 +730,8 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
             context.Environment,
             context.AppliedEndpointProfile,
             cancellationToken).ConfigureAwait(false);
-        if (Clock.GetUtcNow().ToUniversalTime() >= context.WindowEndUtc)
+        if (context.FullRunLease is null
+            && Clock.GetUtcNow().ToUniversalTime() >= context.WindowEndUtc)
         {
             throw new InvalidOperationException("The trading window closed before request budget reservation.");
         }
@@ -627,20 +748,58 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         DateTimeOffset nowUtc,
         DateTimeOffset windowEndUtc,
         int requestCount,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        await TryConsumeManualRequestBudgetAsync(
+            environment,
+            tradingDay,
+            scheduledSlot,
+            scheduleRevision,
+            nowUtc,
+            windowEndUtc,
+            requestCount,
+            cancellationToken,
+            null).ConfigureAwait(false);
+
+    internal async Task<bool> TryConsumeManualRequestBudgetAsync(
+        BrokerEnvironmentKind environment,
+        DateOnly tradingDay,
+        int scheduledSlot,
+        long scheduleRevision,
+        DateTimeOffset nowUtc,
+        DateTimeOffset windowEndUtc,
+        int requestCount,
+        CancellationToken cancellationToken,
+        MarketDataFullRunLease? fullRunLease)
     {
         if (scheduledSlot is < 0 or > 3
             || scheduleRevision <= 0
             || requestCount < 1
             || nowUtc.Offset != TimeSpan.Zero
             || windowEndUtc.Offset != TimeSpan.Zero
-            || nowUtc >= windowEndUtc)
+            || (fullRunLease is null && nowUtc >= windowEndUtc))
         {
             return false;
         }
 
         var environmentId = await ResolveEnvironmentIdAsync(environment, cancellationToken).ConfigureAwait(false);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        if (fullRunLease is not null
+            && (!IsFullRunLeaseCompatible(
+                    fullRunLease,
+                    environment,
+                    tradingDay,
+                    windowEndUtc,
+                    scheduleRevision)
+                || !await EfMarketDataFullRunLeaseGuard.IsActiveInTransactionAsync(
+                    dbContext,
+                    fullRunLease,
+                    nowUtc,
+                    contextResolver,
+                    cancellationToken).ConfigureAwait(false)))
+        {
+            return false;
+        }
+
         await MarketCategoryInstrumentSqlLock.AcquireAsync(
             dbContext, GetBudgetLockResource(environmentId, tradingDay), "Exclusive", cancellationToken).ConfigureAwait(false);
         var dailyRequestAllowance = await dbContext.InstrumentCollectionSettings
@@ -676,7 +835,7 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         cycle.UsedRequestBudget = checked(cycle.UsedRequestBudget + requestCount);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await VerifyAppliedAsync(environmentId, environment, cancellationToken).ConfigureAwait(false);
-        if (Clock.GetUtcNow().ToUniversalTime() >= windowEndUtc)
+        if (fullRunLease is null && Clock.GetUtcNow().ToUniversalTime() >= windowEndUtc)
         {
             throw new InvalidOperationException("The Trading window closed before request budget reservation.");
         }
@@ -695,9 +854,10 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         bool succeeded,
         string? safeError,
         CancellationToken cancellationToken,
-        DateTimeOffset? windowEndUtc = null)
+        DateTimeOffset? windowEndUtc = null,
+        MarketDataFullRunLease? fullRunLease = null)
     {
-        if (succeeded && windowEndUtc is { } windowEnd && nowUtc >= windowEnd)
+        if (fullRunLease is null && succeeded && windowEndUtc is { } windowEnd && nowUtc >= windowEnd)
         {
             return false;
         }
@@ -705,6 +865,14 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         ValidateSafeError(safeError);
         var environmentId = await ResolveEnvironmentIdAsync(environment, cancellationToken).ConfigureAwait(false);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        if (fullRunLease is not null
+            && (!IsFullRunLeaseCompatible(fullRunLease, environment, tradingDay, windowEndUtc)
+                || !await EfMarketDataFullRunLeaseGuard.IsActiveInTransactionAsync(
+                    dbContext, fullRunLease, nowUtc, contextResolver, cancellationToken).ConfigureAwait(false)))
+        {
+            return false;
+        }
+
         await AcquireCycleLockAsync(environmentId, tradingDay, scheduledSlot, cancellationToken).ConfigureAwait(false);
         var state = await FindCycleAsync(environmentId, tradingDay, scheduledSlot, cancellationToken).ConfigureAwait(false);
         if (!OwnsLiveLease(state, leaseOwner, leaseFence, nowUtc)
@@ -738,9 +906,10 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         bool succeeded,
         string? safeError,
         CancellationToken cancellationToken,
-        DateTimeOffset? windowEndUtc = null)
+        DateTimeOffset? windowEndUtc = null,
+        MarketDataFullRunLease? fullRunLease = null)
     {
-        if (succeeded && windowEndUtc is { } windowEnd && nowUtc >= windowEnd)
+        if (fullRunLease is null && succeeded && windowEndUtc is { } windowEnd && nowUtc >= windowEnd)
         {
             return false;
         }
@@ -749,6 +918,14 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         ValidateSafeError(safeError);
         var environmentId = await ResolveEnvironmentIdAsync(environment, cancellationToken).ConfigureAwait(false);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        if (fullRunLease is not null
+            && (!IsFullRunLeaseCompatible(fullRunLease, environment, tradingDay, windowEndUtc)
+                || !await EfMarketDataFullRunLeaseGuard.IsActiveInTransactionAsync(
+                    dbContext, fullRunLease, nowUtc, contextResolver, cancellationToken).ConfigureAwait(false)))
+        {
+            return false;
+        }
+
         await AcquireCycleLockAsync(environmentId, tradingDay, scheduledSlot, cancellationToken).ConfigureAwait(false);
         var cycle = await FindCycleAsync(environmentId, tradingDay, scheduledSlot, cancellationToken).ConfigureAwait(false);
         var attempt = await dbContext.InstrumentCollectionCategoryAttempts.SingleOrDefaultAsync(
@@ -855,6 +1032,19 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         && state.LeaseFence == fence
         && state.LeaseExpiresAtUtc > nowUtc;
 
+    private static bool IsFullRunLeaseCompatible(
+        MarketDataFullRunLease lease,
+        BrokerEnvironmentKind environment,
+        DateOnly tradingDay,
+        DateTimeOffset? windowEndUtc,
+        long? scheduleRevision = null) =>
+        lease.Environment == environment
+        && lease.TradingDay == tradingDay
+        && lease.ScheduleRevision > 0
+        && (scheduleRevision is null || lease.ScheduleRevision == scheduleRevision)
+        && (windowEndUtc is null || lease.WindowEndUtc == windowEndUtc)
+        && lease.WindowEndUtc.Offset == TimeSpan.Zero;
+
     private static bool IsValidDetailBudgetContext(
         MarketDetailRequestBudgetContext context,
         DateTimeOffset nowUtc) =>
@@ -866,7 +1056,18 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
         && !string.IsNullOrWhiteSpace(context.AppliedEndpointProfile)
         && context.WindowEndUtc.Offset == TimeSpan.Zero
         && nowUtc.Offset == TimeSpan.Zero
-        && nowUtc < context.WindowEndUtc;
+        && (context.FullRunLease is { } fullRunLease
+            ? IsFullRunLeaseCompatible(
+                fullRunLease,
+                context.Environment,
+                context.TradingDay,
+                context.WindowEndUtc,
+                context.ScheduleRevision)
+                && string.Equals(
+                    fullRunLease.EndpointProfile,
+                    context.AppliedEndpointProfile,
+                    StringComparison.Ordinal)
+            : nowUtc < context.WindowEndUtc);
 
     private static DateTimeOffset Min(DateTimeOffset left, DateTimeOffset right) => left <= right ? left : right;
 

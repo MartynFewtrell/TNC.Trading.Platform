@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.AccountDetails;
 using TNC.Trading.Platform.Application.Features.AccountPreferences;
+using TNC.Trading.Platform.Application.Features.AppliedBrokerSchedule;
 using TNC.Trading.Platform.Application.Features.GetIgLoginHistory;
 using TNC.Trading.Platform.Application.Features.GetPlatformConfiguration;
 using TNC.Trading.Platform.Application.Features.GetPlatformEvents;
@@ -12,6 +13,7 @@ using TNC.Trading.Platform.Application.Features.MarketDetails;
 using TNC.Trading.Platform.Application.Features.ReconcilePlatformAuthentication;
 using TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent;
 using TNC.Trading.Platform.Application.Features.TriggerManualAuthRetry;
+using TNC.Trading.Platform.Application.Features.TradingState;
 using TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration;
 using TNC.Trading.Platform.Application.Services;
 
@@ -33,6 +35,7 @@ internal static class PlatformApplicationServiceCollectionExtensions
         services.AddScoped<TradingScheduleGate>();
         services.AddScoped<IMarketCategoryInstrumentClock, TimeProviderMarketCategoryInstrumentClock>();
         services.AddScoped<MarketCategoryInstrumentSchedulePolicy>();
+        services.AddScoped<TradingStateEvaluator>();
         services.AddScoped<IMarketCategoryInstrumentScheduleGuard, MarketCategoryInstrumentScheduleGuard>();
         services.AddSingleton<MarketCategoryInstrumentCyclePolicy>();
         services.AddSingleton<MarketCategoryInstrumentRetryPolicy>();
@@ -52,6 +55,9 @@ internal static class PlatformApplicationServiceCollectionExtensions
         services.AddScoped<UpdatePlatformConfigurationValidator>();
         services.AddScoped<GetPlatformStatusHandler>();
         services.AddScoped<GetPlatformConfigurationHandler>();
+        services.AddScoped<GetAppliedBrokerScheduleProfileHandler>();
+        services.AddScoped<AppliedBrokerScheduleProfileValidator>();
+        services.AddScoped<UpdateAppliedBrokerScheduleProfileHandler>();
         services.AddScoped<UpdatePlatformConfigurationHandler>();
         services.AddScoped<TriggerManualAuthRetryHandler>();
         services.AddScoped<GetPlatformEventsHandler>();

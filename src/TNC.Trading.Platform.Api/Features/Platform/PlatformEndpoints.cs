@@ -9,6 +9,7 @@ using TNC.Trading.Platform.Api.Features.GetPlatformEvents;
 using TNC.Trading.Platform.Api.Features.GetPlatformStatus;
 using TNC.Trading.Platform.Api.Features.TriggerManualAuthRetry;
 using TNC.Trading.Platform.Api.Features.UpdatePlatformConfiguration;
+using TNC.Trading.Platform.Api.Features.AppliedBrokerSchedule;
 using TNC.Trading.Platform.Api.Infrastructure.Platform;
 using TNC.Trading.Platform.Application.Authentication;
 using TNC.Trading.Platform.Application.Features.AccountPreferences;
@@ -58,6 +59,7 @@ internal static class PlatformEndpoints
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
         platform.MapPut("/configuration", UpdatePlatformConfigurationAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
+        AppliedBrokerScheduleEndpoints.Map(platform);
         platform.MapPost("/auth/manual-retry", TriggerManualAuthRetryAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator);
         platform.MapPost("/auth/audit", RecordAuthAuditEventAsync)

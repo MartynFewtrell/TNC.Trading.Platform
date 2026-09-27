@@ -2,7 +2,7 @@
 title: Runtime behavior
 description: Startup, supervision, broker authentication, retry, notification, and retention behavior
 author: TNC Trading
-ms.date: 2026-09-25
+ms.date: 2026-09-26
 ms.topic: concept
 ---
 
@@ -52,51 +52,88 @@ saved SQL data. Category interest, instrument browsing, and collector-status
 reads do not call IG. A new category starts unchecked. Interest is shared by
 operators within the environment; an interest whose category disappears is
 shown as dormant and becomes eligible again only if that category returns.
-Adding or removing interest affects a later slot and never starts a provider
-request immediately.
+Adding or removing interest records a coalesced durable full-run intent; the
+hosted collector admits it only inside the current eligible Trading Day. The
+edit request itself does not call IG.
 
-The independent API worker checks the currently due slot after persistence
-bootstrap without blocking API readiness. It uses the applied environment's
-trading schedule, time zone, active days, holidays, and start-inclusive /
-end-exclusive window. The active day is divided into the configured number of
-slots. Missed slots are recorded as gaps rather than replayed after restart;
-there is no after-hours catch-up. Frequency changes take effect on the next
-local trading day. Unsupported or unconfigured applied environments, a
-disabled/invalid schedule, and absent/invalid capacity pause collection before
-IG is called.
+The API worker re-evaluates shared trading state after persistence bootstrap
+without blocking API readiness. The applied environment's calendar, named
+time zone, eligible days, holidays, and start-inclusive / end-exclusive window
+define the active Trading Day. A positive configured update count divides
+that day into deterministic equal slots. A late startup coalesces uncovered
+same-day slots into one catch-up run; earlier days are never replayed.
+Frequency, window, and calendar edits take effect immediately for new
+admissions. Unsupported applied environments, unsafe schedule settings,
+reconciliation blocks, and absent/invalid capacity prevent a new provider run.
 
-On each API process startup, the worker checks the applied trading schedule
-immediately. If startup falls inside an active trading window, it attempts one
-fresh collection of the current slot even if that slot completed before the
-restart. The SQL lease still fences concurrent workers, and previous daily
-request usage remains counted toward the allowance. Each successful repeat
-publishes a newer current snapshot and retains the earlier completed runs and
-observations for the same category, trading day, and slot. The schema migration
-replaces the unique completed-run slot index with a nonunique filtered index;
-existing history is preserved. Later polling ticks in the
-same process do not repeat the completed slot. A schedule edit during an active
-window also permits the revised slot to run without replaying other missed
-slots; no collection is performed outside the configured trading window.
+All scheduled and interest-triggered collection enters one serializable
+environment-scoped full-run admission. An active run wins over another
+trigger, and the SQL-backed renewable fence supports takeover after lease
+expiry. Startup and polling discover expired active runs without creating a
+new run when nothing is due. Successful Categories and listing items are read
+from persisted stage/item progress on resume and are not repeated. Covered
+slot identities persist with their run; a still-active run can cover a slot
+that arrives during execution, and a trigger in the configured lead-in covers
+the upcoming slot. Scheduled and catch-up admission suppresses a slot already
+covered for the same applied endpoint profile; changing the applied profile
+invalidates coverage from the previous profile. Previous daily request usage
+remains counted toward the approved allowance.
 
-For each due slot, a durable environment/day/slot lease coordinates replicas.
-The worker refreshes and validates the full category catalogue first, records
-that prerequisite, then intersects the current selection with currently
-listed categories. With no interested categories, the cycle records idle after
-the category refresh. Interested categories are collected independently and
-sequentially by provider page; a failure in one category does not invalidate
-another category's outcome. Schedule, applied environment, lease, and shared
-request allowance are rechecked around provider calls and before snapshot
-publication. The category prerequisite and each category have bounded retries;
-rate limiting or exhausted allowance pauses safely instead of retrying without
-limit.
+Each admitted run freezes its Trading Day, schedule revision, timed update
+count, selected Categories, source revisions, trigger, and covered slots. The
+host refreshes and validates Categories first, intersects that catalogue with
+the frozen interest selection, completes those listing attempts, then freezes
+the validated EPIC membership used for detail collection. With no selected
+Categories, it records an explicit Categories-only success and makes no
+listing or detail requests. Category/list/detail stages share the parent run
+lease, allowance checks, applied-environment validation, and cancellation
+boundary; provider I/O remains outside SQL transactions. An admitted run may
+finish and publish after the timed window closes while its parent lease and
+safety context remain valid. Closing still prevents new admissions.
 
-`InstrumentUpdatesPerDay` defaults to one and is bounded from one to four.
-Requests for higher frequency require an operator-approved, environment-
-specific non-trading allowance and measured capacity. The allowance is shared
-with category, session, and instrument requests; frequency is not an HTTP
-quota. An unset or zero allowance pauses provider collection. The status API
-and UI report used/approved request counts, due/next slot, outcomes and safe
-failure categories without provider response bodies or credentials.
+`InstrumentUpdatesPerDay` defaults to one, accepts zero or any higher
+nonnegative count, and applies immediately when saved. Values above four
+produce a warning rather than an arbitrary frequency limit. The allowance is
+shared with category, session, and instrument requests; frequency is not an
+HTTP quota. An unset or zero allowance pauses provider collection. A zero
+frequency removes timed starts and reports no next scheduled start, but does
+not disable eligible interest-triggered work. The configurable lead-in
+persists near-future coverage. The legacy manual category-refresh route and
+the dedicated operator full-update/status API are still being aligned in later
+delivery work. The shared status evaluation reports separate trading and
+market-data capabilities so degraded trading readiness does not itself block
+collection, and market-data access does not grant trading permission.
+
+The applied broker profile is authoritative for the shared market-data
+calendar and window. If legacy platform schedule values require operator
+reconciliation, runtime configuration and authentication reconciliation
+remain available, while new market-data admission reports an explicit
+reconciliation block until the operator saves the applied schedule. The
+status response carries the applied environment ID, schedule revision,
+collection configuration version, trading day, next window boundaries, next
+timed start, and separate trade/market-data reason-code arrays. A missing or
+unsafe applied environment does not produce a successful capability.
+
+The durable full-run store persists one environment-scoped run, frozen
+category selection and schedule inputs, stage/item attempts, safe outcomes,
+last-success timestamps, slot coverage, and a renewable fenced lease. Parent
+lease validation protects category and instrument publication, market-detail
+run operations, and allowance reservations; stale fences cannot commit. The
+legacy category-only publication path takes the same environment lock and
+refuses to mutate Categories while a full run is active. Manual admission,
+the protected status API, and UI updates remain later delivery work.
+
+Provider-removed Categories are retained as non-current records rather than
+deleting their last-good listing and detail observations; new selection and
+collection use only current Categories. For a selected Category whose current
+full-run listing is unavailable, detail collection can use only the
+last-pointed complete, validated listing from the same applied endpoint
+profile, and persists that source as stale rather than fresh. Other available
+Category sources continue independently. If a Category refresh fails after
+its bounded retries, the collector may continue from a non-empty persisted
+last-good catalogue; the Category stage remains failed and the full run is
+reported as partial. It does not treat the old catalogue as a successful
+refresh.
 
 In addition to the environment/day allowance, all IG HTTP gateways use a
 shared SQL-backed rolling request limiter across API replicas. It applies the
@@ -111,26 +148,36 @@ The active slot deadline is not extended when a request must wait for rate
 capacity.
 
 Market-detail collection runs as a separate scoped step after each listing
-collector tick. It uses the same due slot and proceeds only after the current
-category catalogue, Operator interest, successful category prerequisite, and
-each selected category's complete listing snapshot have been validated for
-that exact trading day and slot. The selected sources and their revisions are
-frozen into an independently leased detail run; duplicate EPICs across
-categories share one provider target while retaining all category
-memberships. A failed or stale selected listing blocks coverage and never
-falls back to a last-good snapshot.
+collector tick. It uses the admitted run's frozen Category selection and
+proceeds from complete validated listing snapshots for that slot. If the
+current listing source is unavailable, it may use the last-pointed complete,
+validated listing from the same applied endpoint profile; that source is
+persisted as stale. Categories with no valid pointed listing are omitted so
+other valid sources can continue. Duplicate EPICs across Categories share
+one provider target while retaining all Category memberships.
 
-Each worker tick requests at most 50 outstanding EPICs and resumes only
-pending or retryable failures from the frozen run. Before collection, the
-coordinator estimates the remaining session, bulk, reauthentication, retry,
-shared allowance, rate-spacing, and trading-window cost. Missing or
-insufficient capacity blocks the run rather than sending an unbounded
-request. Schedule, environment/profile, source revisions, lease fence, and
-allowance are checked around provider work and before each result is
-published. A changed source supersedes aggregate coverage while preserving
-already validated observations as history. The existing worker continues to
-recheck at most every 30 seconds; slot closure prevents further provider calls
-and does not cause a next-day replay.
+The detail coordinator reads up to the bounded 15,000-EPIC universe and sends
+requests in batches of at most 50. Retryable EPIC failures receive no more than
+three attempts in the full run, with two- and five-second waits before the
+second and third attempts. Completed or excluded EPICs are not repeated.
+After a retryable EPIC exhausts those attempts, SQL can persist one follow-up
+run due 15 minutes after the latest third failure. That run is admitted only
+before the frozen trading window closes, skips the Category and listing
+stages, and selects only retryable EPICs already at three attempts. It makes
+no scheduled-slot coverage and cannot schedule another follow-up. Pending
+follow-ups are durably cancelled at close; normal allowance, request-rate,
+profile, lease, and source-revision checks still apply.
+
+Before collection, the coordinator estimates the remaining session, bulk,
+reauthentication, retry, shared allowance, rate-spacing, and trading-window
+cost. Missing or insufficient capacity blocks the run rather than sending an
+unbounded request. Schedule, environment/profile, source revisions, lease
+fence, and allowance are checked around provider work and before each result
+is published. A changed source supersedes aggregate coverage while preserving
+already validated observations as history. The existing worker rechecks at
+most every 30 seconds; an already-admitted, fenced full run may finish after
+close, but a failed-item follow-up cannot start after close or cause a
+next-day replay.
 
 To retry a slot with a failed category during its trading window, apply pending database
 migrations, restart the API with the current build, then run the guarded

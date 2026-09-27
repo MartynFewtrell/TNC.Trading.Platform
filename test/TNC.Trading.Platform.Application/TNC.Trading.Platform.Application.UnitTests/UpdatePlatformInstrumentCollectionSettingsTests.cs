@@ -29,20 +29,41 @@ public sealed class UpdatePlatformInstrumentCollectionSettingsTests
     }
 
     /// <summary>
-    /// Trace: Market Category Instruments Work Item 5, step 2.
-    /// Verifies: a changed frequency becomes pending on the next local trading day and retains the current allowance.
-    /// Expected: the current frequency is unchanged, pending frequency is 3 for Tuesday, and the allowance remains 30.
-    /// Why: schedule-sensitive frequency changes must not alter an already-running local trading day.
+    /// Trace: Trading-Day Market Data Work Item 1, step 2.
+    /// Verifies: a changed frequency becomes effective immediately and clears legacy pending state.
+    /// Expected: the saved count is 3, both pending fields are cleared, and the allowance remains 30.
+    /// Why: schedule edits apply promptly and cannot leave an older next-day value competing with the new setting.
     /// </summary>
     [Fact]
-    public async Task HandleAsync_ShouldScheduleFrequencyForNextTradingDay_WhenFrequencyChanges()
+    public async Task HandleAsync_ShouldSaveFrequencyImmediately_WhenFrequencyChanges()
     {
-        var settings = new FrequencySettingsStore(new(1, null, null, 30));
+        var settings = new FrequencySettingsStore(new(1, 2, new DateOnly(2026, 9, 29), 30));
         var handler = CreateHandler(settings);
 
         await handler.HandleAsync(new(CreateUpdate(instrumentUpdatesPerDay: 3)), CancellationToken.None);
 
-        Assert.Equal(new(1, 3, new DateOnly(2026, 9, 29), 30), settings.Current);
+        Assert.Equal(new(3, null, null, 30), settings.Current);
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 1, step 2.
+    /// Verifies: zero disables timed updates and values above four are accepted by the configuration workflow.
+    /// Expected: both zero and five are persisted as the current count without pending values.
+    /// Why: count zero is an explicit timed-off state and the previous four-update cap is advisory only.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(5)]
+    public async Task HandleAsync_ShouldPersistNonnegativeCountImmediately_WhenFrequencyIsChanged(int requestedCount)
+    {
+        var settings = new FrequencySettingsStore(new(1, null, null, 30));
+        var handler = CreateHandler(settings);
+
+        await handler.HandleAsync(new(CreateUpdate(instrumentUpdatesPerDay: requestedCount)), CancellationToken.None);
+
+        Assert.Equal(requestedCount, settings.Current.CurrentUpdatesPerDay);
+        Assert.Null(settings.Current.PendingUpdatesPerDay);
+        Assert.Null(settings.Current.PendingEffectiveTradingDay);
     }
 
     /// <summary>
@@ -72,7 +93,6 @@ public sealed class UpdatePlatformInstrumentCollectionSettingsTests
         var committer = new Committer();
         var reconciler = new Reconciler();
         var resolver = new AppliedEnvironmentResolver();
-        var policy = new MarketCategoryInstrumentSchedulePolicy(new TradingScheduleGate(), new TestClock());
         return new(
             committer,
             new ReconcilePlatformAuthenticationHandler(reconciler),
@@ -80,7 +100,6 @@ public sealed class UpdatePlatformInstrumentCollectionSettingsTests
             resolver,
             settings,
             settings,
-            policy,
             statusReader,
             new TradingScheduleGate(),
             new FixedTimeProvider(Now));
@@ -166,13 +185,6 @@ public sealed class UpdatePlatformInstrumentCollectionSettingsTests
             Current = frequency;
             return Task.CompletedTask;
         }
-    }
-
-    private sealed class TestClock : IMarketCategoryInstrumentClock
-    {
-        public DateTimeOffset GetUtcNow() => Now;
-        public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken) => Task.CompletedTask;
-        public CancellationTokenSource CreateDeadlineCancellationSource(TimeSpan delay) => new(delay);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 
@@ -16,11 +17,23 @@ public sealed class EfMarketCategoryInstrumentPersistenceTests
         await using var context = InfrastructureReflection.CreateDbContext();
         var environmentId = await SeedEnvironmentAsync(context);
         var resolver = new FakeResolver(environmentId);
+        context.InstrumentCollectionSettings.Add(new InstrumentCollectionSettingsEntity
+        {
+            BrokerEnvironmentId = environmentId,
+            CurrentUpdatesPerDay = 1,
+            ConfigurationVersion = 1
+        });
+        await context.SaveChangesAsync();
         var categoryStore = new EfMarketCategorySnapshotStore(context, resolver);
-        var interestStore = new EfMarketCategoryInstrumentInterestStore(context, resolver);
+        var fullRunStore = new EfMarketDataFullRunStore(context, resolver);
+        var interestStore = new EfMarketCategoryInstrumentInterestStore(context, fullRunStore, resolver);
         await categoryStore.ReplaceAsync(CategorySnapshot("A", "B"), CancellationToken.None);
         await interestStore.SaveAsync(BrokerEnvironmentKind.Demo,
             [new("A", true), new("B", true)], 0, CancellationToken.None);
+        var intent = await fullRunStore.GetPendingIntentAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
+        Assert.Equal(MarketDataFullRunTrigger.Interest, intent?.Trigger);
+        Assert.Equal(1, intent?.CollectionConfigurationVersion);
+        Assert.Equal(1, intent?.InterestRevision);
 
         await categoryStore.ReplaceAsync(CategorySnapshot("A", "C"), CancellationToken.None);
         var duringRemoval = await interestStore.ReadAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
@@ -41,7 +54,16 @@ public sealed class EfMarketCategoryInstrumentPersistenceTests
     {
         await using var context = InfrastructureReflection.CreateDbContext();
         var environmentId = await SeedEnvironmentAsync(context);
-        var store = new EfMarketCategoryInstrumentInterestStore(context, new FakeResolver(environmentId));
+        var resolver = new FakeResolver(environmentId);
+        context.InstrumentCollectionSettings.Add(new InstrumentCollectionSettingsEntity
+        {
+            BrokerEnvironmentId = environmentId,
+            CurrentUpdatesPerDay = 1,
+            ConfigurationVersion = 1
+        });
+        await context.SaveChangesAsync();
+        var fullRunStore = new EfMarketDataFullRunStore(context, resolver);
+        var store = new EfMarketCategoryInstrumentInterestStore(context, fullRunStore, resolver);
         await new EfMarketCategorySnapshotStore(context, new FakeResolver(environmentId))
             .ReplaceAsync(CategorySnapshot("A", "B"), CancellationToken.None);
 
@@ -62,16 +84,21 @@ public sealed class EfMarketCategoryInstrumentPersistenceTests
         await using var context = InfrastructureReflection.CreateDbContext();
         var environmentId = await SeedEnvironmentAsync(context);
         var resolver = new FakeResolver(environmentId);
-        var store = new EfMarketCategoryInstrumentFrequencyStore(context, resolver);
+        var fullRunStore = new EfMarketDataFullRunStore(context, resolver);
+        var store = new EfMarketCategoryInstrumentFrequencyStore(context, fullRunStore, resolver);
         await Assert.ThrowsAsync<InvalidOperationException>(() => store.ReadAsync(BrokerEnvironmentKind.Demo, CancellationToken.None));
         await store.InitializeDefaultAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
 
         var frequency = new MarketCategoryInstrumentFrequency(1, 3, new DateOnly(2026, 9, 25), 20);
         await store.SaveAsync(BrokerEnvironmentKind.Demo, frequency, CancellationToken.None);
 
-        Assert.Equal(frequency, await store.ReadAsync(BrokerEnvironmentKind.Demo, CancellationToken.None));
+        Assert.Equal(frequency with { ConfigurationVersion = 2 }, await store.ReadAsync(BrokerEnvironmentKind.Demo, CancellationToken.None));
+        var intent = await fullRunStore.GetPendingIntentAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
+        Assert.Equal(MarketDataFullRunTrigger.Configuration, intent?.Trigger);
+        Assert.Equal(2, intent?.CollectionConfigurationVersion);
+        Assert.Equal(0, intent?.InterestRevision);
         var persisted = await context.InstrumentCollectionSettings.SingleAsync();
-        persisted.PendingUpdatesPerDay = 5;
+        persisted.PendingUpdatesPerDay = -1;
         await context.SaveChangesAsync();
         await Assert.ThrowsAsync<InvalidOperationException>(() => store.ReadAsync(BrokerEnvironmentKind.Demo, CancellationToken.None));
     }

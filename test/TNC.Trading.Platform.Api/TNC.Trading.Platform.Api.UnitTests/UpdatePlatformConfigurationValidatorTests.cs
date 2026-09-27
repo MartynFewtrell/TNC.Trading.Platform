@@ -35,6 +35,44 @@ public class UpdatePlatformConfigurationValidatorTests
         validator.Validate(request);
     }
 
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 1, step 2.
+    /// Verifies: transport validation allows counts above the former four-update cap.
+    /// Expected: five updates per day passes validation because high counts produce a warning, not rejection.
+    /// Why: the API must not impose a stricter count limit than the application schedule policy.
+    /// </summary>
+    [Fact]
+    public void Validate_ShouldAcceptFrequencyAboveFour_WhenRequestIsValid()
+    {
+        var validator = new UpdatePlatformConfigurationValidator();
+        var request = CreateRequest("Demo", new TimeOnly(8, 0), new TimeOnly(17, 0)) with
+        {
+            InstrumentUpdatesPerDay = 5
+        };
+
+        validator.Validate(request);
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 1, step 2.
+    /// Verifies: transport validation rejects negative timed-update counts.
+    /// Expected: the validation problem identifies the frequency field.
+    /// Why: only zero or positive counts have well-defined schedule behavior.
+    /// </summary>
+    [Fact]
+    public void Validate_ShouldRejectNegativeFrequency_WhenRequestIsInvalid()
+    {
+        var validator = new UpdatePlatformConfigurationValidator();
+        var request = CreateRequest("Demo", new TimeOnly(8, 0), new TimeOnly(17, 0)) with
+        {
+            InstrumentUpdatesPerDay = -1
+        };
+
+        var exception = Assert.Throws<PlatformValidationException>(() => validator.Validate(request));
+
+        Assert.Contains(nameof(request.InstrumentUpdatesPerDay), exception.Errors.Keys);
+    }
+
     private static UpdatePlatformConfigurationRequest CreateRequest(string brokerEnvironment, TimeOnly startOfDay, TimeOnly endOfDay)
     {
         var tradingSchedule = new UpdateTradingScheduleRequest(

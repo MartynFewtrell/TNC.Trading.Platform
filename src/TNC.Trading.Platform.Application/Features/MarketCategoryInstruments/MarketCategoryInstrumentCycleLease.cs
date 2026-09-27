@@ -1,4 +1,5 @@
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 
 namespace TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 
@@ -12,4 +13,5 @@ internal sealed record MarketCategoryInstrumentCycleLease(
     Guid Owner,
     long Fence,
     DateTimeOffset WindowEndUtc,
-    string EndpointProfile);
+    string EndpointProfile,
+    MarketDataFullRunLease? FullRunLease = null);

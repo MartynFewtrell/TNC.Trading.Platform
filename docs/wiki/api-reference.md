@@ -122,14 +122,16 @@ wake-up, request budget, and per-category outcomes. It never includes IG
 credentials or raw provider diagnostics.
 
 The Operator configuration GET/PUT contract includes
-`instrumentUpdatesPerDay` (one to four) and
-`approvedNonTradingDailyRequestAllowance`. The response reports current and
-pending frequency, the next effective local trading day, the approved
-allowance, request usage, collection outcome, and safe status. A higher
-frequency requires a measured-capacity, environment-specific allowance; zero
-or unset allowance pauses collection. The shared budget counts category,
-session, and instrument calls. Saving settings does not invoke IG; frequency
-changes take effect on the next local trading day.
+`instrumentUpdatesPerDay` (zero or greater),
+`marketDataLeadInMinutes` (zero or greater), and
+`approvedNonTradingDailyRequestAllowance`. Frequency changes apply
+immediately; values above four return a nonblocking warning rather than a
+validation error. The response reports the current frequency and lead-in,
+approved allowance, request usage, collection outcome, and safe status.
+Zero or unset allowance pauses collection. The shared budget counts category,
+session, and instrument calls. Saving settings does not invoke IG. The
+lead-in value is persisted, but the current collector does not yet use it to
+cover a near-future slot.
 
 The Operator category refresh returns `409 Conflict` when the applied
 schedule is inactive or another cycle owns the prerequisite, and safe
@@ -260,6 +262,20 @@ Returns the current platform runtime state together with the current IG login pr
     "isActive": true,
     "reason": "Trading schedule is active."
   },
+  "tradingState": {
+    "tradingWindowOpen": true,
+    "canTrade": true,
+    "canStartMarketDataUpdate": true,
+    "appliedBrokerEnvironmentId": "11111111-1111-1111-1111-111111111111",
+    "scheduleRevision": 7,
+    "collectionConfigurationVersion": 3,
+    "tradingDay": "2026-04-01",
+    "nextWindowOpeningUtc": "2026-04-02T08:00:00+00:00",
+    "nextWindowClosingUtc": "2026-04-01T16:30:00+00:00",
+    "nextScheduledStartUtc": "2026-04-01T10:50:00+00:00",
+    "tradeBlockReasons": [],
+    "marketDataBlockReasons": []
+  },
   "authState": {
     "sessionStatus": "Degraded",
     "isDegraded": true,
@@ -325,6 +341,14 @@ Returns the current platform runtime state together with the current IG login pr
 | `liveOptionVisible` | Compatibility field indicating whether a live-kind option can be displayed. |
 | `liveOptionAvailable` | Compatibility field indicating whether the provider capability allows use. |
 | `tradingScheduleState.isActive` | Indicates whether runtime behavior is currently inside the configured schedule. |
+| `tradingState` | Freshly evaluated trading and market-data capabilities; `null` when persisted runtime status is missing. |
+| `tradingState.tradingWindowOpen` | Whether the applied broker's configured eligible-day window is open now. |
+| `tradingState.canTrade` | Whether the applied broker is executable, the trading window is open, the session is active, and the platform/broker combination permits trading. |
+| `tradingState.canStartMarketDataUpdate` | Whether current market-data prerequisites permit admission, including an executable IG market-data profile, an open window, reconciled schedule, and positive approved request allowance. |
+| `tradingState.tradeBlockReasons` | Stable reason codes explaining why trading is unavailable; market-data-only restrictions do not appear here. |
+| `tradingState.marketDataBlockReasons` | Stable reason codes explaining why market-data admission is unavailable; degraded trading readiness does not appear here. |
+| `tradingState.nextWindowOpeningUtc` / `nextWindowClosingUtc` | Next eligible schedule boundaries, in UTC. |
+| `tradingState.nextScheduledStartUtc` | Next timed collection slot in UTC, or `null` when timed updates are disabled or no future slot can be resolved. |
 | `authState.sessionStatus` | Current auth-related runtime state. |
 | `retryState.phase` | Current retry phase, such as `None`, `InitialAutomatic`, or `Periodic`. |
 | `retryState.manualRetryAvailable` | Indicates whether the manual retry command may currently be used. |

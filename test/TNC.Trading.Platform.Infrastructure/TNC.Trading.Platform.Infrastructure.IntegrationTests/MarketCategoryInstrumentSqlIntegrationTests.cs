@@ -54,15 +54,50 @@ public sealed class MarketCategoryInstrumentSqlIntegrationTests(SqlServerDatabas
         var migrator = context.GetService<IMigrator>();
         await migrator.MigrateAsync("20260925191100_CoordinateIgProviderRateReservations", fixture.CancellationToken);
         var environmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(context, fixture.CancellationToken);
-        var resolver = new FakeResolver(environmentId);
-        await new EfMarketCategorySnapshotStore(context, resolver).ReplaceAsync(CategorySnapshot("CAT"), fixture.CancellationToken);
         var day = DateOnly.FromDateTime(DateTime.UtcNow);
-        var lease = await PrepareCycleAsync(context, resolver, BrokerEnvironmentKind.Demo, day, 0);
-        var runId = Guid.NewGuid();
-        await new EfMarketCategoryInstrumentSnapshotStore(context, resolver).SaveCompleteAsync(
-            Collection("CAT", Instrument("EPIC-OLD")),
-            Provenance("CAT", day, 0, runId, 1, lease.Owner, lease.Fence),
+        var retrievedAtUtc = DateTimeOffset.UtcNow;
+        const string categoryCode = "CAT";
+        const bool nonTradeable = false;
+        await context.Database.ExecuteSqlInterpolatedAsync(
+            $"INSERT INTO [MarketCategories] ([BrokerEnvironmentId], [Code], [NonTradeable]) VALUES ({environmentId}, {categoryCode}, {nonTradeable})",
             fixture.CancellationToken);
+        context.MarketCategoryCatalogStates.Add(new()
+        {
+            BrokerEnvironmentId = environmentId,
+            Revision = 1,
+            LastRefreshedAtUtc = retrievedAtUtc
+        });
+        var runId = Guid.NewGuid();
+        context.MarketCategoryInstrumentCollectionRuns.Add(new()
+        {
+            CollectionId = runId,
+            BrokerEnvironmentId = environmentId,
+            EndpointProfile = "IgDemo",
+            CategoryCode = "CAT",
+            CategorySnapshotRevision = 1,
+            SnapshotVersion = 1,
+            TradingDay = day,
+            ScheduledSlot = 0,
+            EffectiveUpdatesPerDay = 1,
+            RetrievedAtUtc = retrievedAtUtc,
+            PageSize = 50,
+            PageCount = 1,
+            ProviderTotalPages = 1,
+            ProviderTotalResults = 1,
+            ResultCount = 1,
+            QualityStatus = MarketCategoryInstrumentDataQualityStatus.CompleteValidated.ToString(),
+            IsComplete = true
+        });
+        context.MarketCategoryInstrumentObservations.Add(new()
+        {
+            CollectionId = runId,
+            BrokerEnvironmentId = environmentId,
+            CategoryCode = "CAT",
+            Epic = "EPIC-OLD",
+            RetrievedAtUtc = retrievedAtUtc,
+            InstrumentName = "Old instrument"
+        });
+        await context.SaveChangesAsync(fixture.CancellationToken);
 
         await context.Database.MigrateAsync(fixture.CancellationToken);
 
@@ -86,7 +121,11 @@ public sealed class MarketCategoryInstrumentSqlIntegrationTests(SqlServerDatabas
             await context.InstrumentCollectionSettings.SingleAsync(item => item.BrokerEnvironmentId == environmentId, fixture.CancellationToken));
         await context.SaveChangesAsync(fixture.CancellationToken);
 
-        var store = new EfMarketCategoryInstrumentFrequencyStore(context, new FakeResolver(environmentId));
+        var resolver = new FakeResolver(environmentId);
+        var store = new EfMarketCategoryInstrumentFrequencyStore(
+            context,
+            new EfMarketDataFullRunStore(context, resolver),
+            resolver);
         await Assert.ThrowsAsync<InvalidOperationException>(() => store.ReadAsync(BrokerEnvironmentKind.Demo, fixture.CancellationToken));
         await Assert.ThrowsAsync<InvalidOperationException>(() => store.SaveAsync(
             BrokerEnvironmentKind.Demo,
@@ -324,9 +363,9 @@ public sealed class MarketCategoryInstrumentSqlIntegrationTests(SqlServerDatabas
         Assert.Equal(["EPIC-A", "EPIC-C"], replacementPage!.Instruments.Select(item => item.Epic));
     }
 
-    /// <summary>Trace: Market Category Instruments Work Item 2. Verifies a failed SQL commit leaves the previous projection intact and a later successful replacement retains immutable history after the category is removed.</summary>
+    /// <summary>Trace: Trading-Day Market Data Work Item 4. Verifies a failed SQL commit leaves the previous projection intact and provider removal marks a Category historical without deleting its last-good listing or observations.</summary>
     [Fact]
-    public async Task SaveCompleteAsync_ShouldRollbackProjectionAndRetainHistory_WhenPersistenceFailsAndCategoryIsRemoved()
+    public async Task SaveCompleteAsync_ShouldRetainHistoricalListing_WhenCategoryIsRemovedAfterPersistenceFailure()
     {
         await fixture.ResetDatabaseAsync();
         await using var context = fixture.CreateDbContext();
@@ -361,9 +400,17 @@ public sealed class MarketCategoryInstrumentSqlIntegrationTests(SqlServerDatabas
         await new EfMarketCategorySnapshotStore(categoryDiffContext, resolver)
             .ReplaceAsync(CategorySnapshot("OTHER"), fixture.CancellationToken);
         await using var afterRemoval = fixture.CreateDbContext();
-        Assert.Empty(await afterRemoval.MarketCategoryInstruments.ToListAsync());
+        Assert.Equal(["KEEP"], await afterRemoval.MarketCategoryInstruments.Select(item => item.Epic).ToArrayAsync());
         Assert.Equal(1, await afterRemoval.MarketCategoryInstrumentCollectionRuns.CountAsync());
         Assert.Equal(1, await afterRemoval.MarketCategoryInstrumentObservations.CountAsync());
+        Assert.False(await afterRemoval.MarketCategories
+            .Where(item => item.BrokerEnvironmentId == environmentId && item.Code == "CAT")
+            .Select(item => item.IsCurrent)
+            .SingleAsync());
+        Assert.Equal(
+            ["OTHER"],
+            (await new EfMarketCategorySnapshotStore(afterRemoval, resolver).GetAsync(fixture.CancellationToken))!
+                .Categories.Select(item => item.Code));
     }
 
     /// <summary>Trace: Market Category Instruments Work Item 2. Verifies serialized writers cannot publish a duplicate successful environment/category/day/slot run, preventing restart or replica races from duplicating observations.</summary>

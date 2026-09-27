@@ -1,4 +1,5 @@
 ﻿using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.AppliedBrokerSchedule;
 using TNC.Trading.Platform.Application.Features.AccountDetails;
 using TNC.Trading.Platform.Application.Features.PlatformAuthentication.Ports;
 using TNC.Trading.Platform.Application.Features.ReconcilePlatformAuthentication;
@@ -1065,7 +1066,8 @@ public class AuthRetryCycleTests
             configuration,
             protectedCredentialService,
             timeProvider,
-            new PlatformEnvironmentContext(PlatformEnvironmentKind.Test));
+            new PlatformEnvironmentContext(PlatformEnvironmentKind.Test),
+            InMemoryAppliedBrokerScheduleProfileStore.ForConfiguration(configuration));
     }
 
     private static PlatformAuthSimulationSettings CreateAuthSimulationSettings(IConfiguration configuration)

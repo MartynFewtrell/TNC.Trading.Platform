@@ -28,7 +28,7 @@ public sealed class MarketCategorySqlIntegrationTests(SqlServerDatabaseFixture f
         Assert.Equal(["BrokerEnvironmentId", "Code"], primaryKeyColumns);
     }
 
-    /// <summary>Trace: Market Categories Work Item 2. Verifies atomic replacement is environment-scoped and preserves another environment's saved catalogue.</summary>
+    /// <summary>Trace: Market Categories Work Item 2. Verifies atomic replacement is environment-scoped, preserves another environment's catalogue, and retains provider-removed categories as non-current history.</summary>
     [Fact]
     public async Task ReplaceAsync_ShouldReplaceAtomicallyAndRemainEnvironmentScoped_WhenSnapshotsAreSaved()
     {
@@ -64,7 +64,7 @@ public sealed class MarketCategorySqlIntegrationTests(SqlServerDatabaseFixture f
         await using var otherContext = fixture.CreateDbContext();
         var otherVerificationStore = new EfMarketCategorySnapshotStore(otherContext, new FakeResolver(otherId));
         Assert.Equal(["other"], (await otherVerificationStore.GetAsync(fixture.CancellationToken))!.Categories.Select(item => item.Code).ToArray());
-        Assert.Equal(3, await otherContext.MarketCategories.CountAsync(fixture.CancellationToken));
+        Assert.Equal(4, await otherContext.MarketCategories.CountAsync(fixture.CancellationToken));
     }
 
     private static MarketCategorySnapshot Snapshot(params string[] codes) =>

@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.AppliedBrokerSchedule;
 using TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration;
 using TNC.Trading.Platform.Application.Services;
 using TNC.Trading.Platform.Infrastructure.Credentials.DataProtection;
@@ -16,7 +17,8 @@ internal sealed class SqlPlatformConfigurationStore(
     IConfiguration configuration,
     IProtectedCredentialService protectedCredentialService,
     TimeProvider timeProvider,
-    IPlatformEnvironmentContext platformEnvironmentContext) : IPlatformConfigurationStore, IUpdatePlatformConfigurationCommitter
+    IPlatformEnvironmentContext platformEnvironmentContext,
+    IAppliedBrokerScheduleProfileStore? appliedBrokerScheduleProfileStore = null) : IPlatformConfigurationStore, IUpdatePlatformConfigurationCommitter
 {
     public async Task<PlatformConfigurationSnapshot> ApplyStartupConfigurationAsync(CancellationToken cancellationToken)
     {
@@ -43,12 +45,43 @@ internal sealed class SqlPlatformConfigurationStore(
     {
         var entity = await EnsureConfigurationAsync(cancellationToken).ConfigureAwait(false);
 
-        if (!entity.RestartRequired || platformEnvironment is null || brokerEnvironment is null)
+        var runtimeConfiguration = !entity.RestartRequired || platformEnvironment is null || brokerEnvironment is null
+            ? await MapAsync(entity, cancellationToken).ConfigureAwait(false)
+            : await MapAsync(entity, platformEnvironmentContext.Environment, brokerEnvironment.Value, cancellationToken).ConfigureAwait(false);
+
+        if (appliedBrokerScheduleProfileStore is null)
         {
-            return await MapAsync(entity, cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("The applied broker Trading Day schedule store is unavailable.");
         }
 
-        return await MapAsync(entity, platformEnvironmentContext.Environment, brokerEnvironment.Value, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var appliedSchedule = await appliedBrokerScheduleProfileStore.GetAppliedAsync(cancellationToken).ConfigureAwait(false);
+            new AppliedBrokerScheduleProfileValidator().Validate(appliedSchedule.TradingSchedule);
+            return runtimeConfiguration with
+            {
+                TradingSchedule = appliedSchedule.TradingSchedule,
+                MarketDataScheduleReconciliationRequired = appliedSchedule.LegacyReconciliationRequired
+            };
+        }
+        catch (ConfigurationValidationException exception)
+        {
+            throw new InvalidOperationException(
+                "The applied broker Trading Day schedule is invalid; runtime evaluation has been blocked.",
+                exception);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidOperationException(
+                "The applied broker Trading Day schedule is invalid; runtime evaluation has been blocked.",
+                exception);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidOperationException(
+                "The applied broker Trading Day schedule is invalid; runtime evaluation has been blocked.",
+                exception);
+        }
     }
 
     public async Task<UpdatePlatformConfigurationResult> CommitAsync(PlatformConfigurationUpdate update, CancellationToken cancellationToken)
@@ -60,12 +93,6 @@ internal sealed class SqlPlatformConfigurationStore(
         var restartRequired = PlatformConfigurationRestartPolicy.IsRestartRequired(currentStartupFixedConfiguration, update);
 
         entity.BrokerEnvironment = update.BrokerEnvironment.ToString();
-        entity.TradingHoursStart = update.TradingSchedule.StartOfDay;
-        entity.TradingHoursEnd = update.TradingSchedule.EndOfDay;
-        entity.TradingDaysCsv = string.Join(',', update.TradingSchedule.TradingDays);
-        entity.WeekendBehavior = update.TradingSchedule.WeekendBehavior.ToString();
-        entity.BankHolidayExclusionsJson = JsonSerializer.Serialize(update.TradingSchedule.BankHolidayExclusions);
-        entity.TimeZone = update.TradingSchedule.TimeZone;
         entity.RetryInitialDelaySeconds = update.RetryPolicy.InitialDelaySeconds;
         entity.RetryMaxAutomaticRetries = update.RetryPolicy.MaxAutomaticRetries;
         entity.RetryMultiplier = update.RetryPolicy.Multiplier;
@@ -95,11 +122,6 @@ internal sealed class SqlPlatformConfigurationStore(
             DetailsJson = OperationalDataRedactor.Serialize(new
             {
                 update.BrokerEnvironment,
-                update.TradingSchedule.StartOfDay,
-                update.TradingSchedule.EndOfDay,
-                update.TradingSchedule.TradingDays,
-                update.TradingSchedule.WeekendBehavior,
-                update.TradingSchedule.BankHolidayExclusions,
                 update.RetryPolicy.InitialDelaySeconds,
                 update.RetryPolicy.MaxAutomaticRetries,
                 update.RetryPolicy.PeriodicDelayMinutes,

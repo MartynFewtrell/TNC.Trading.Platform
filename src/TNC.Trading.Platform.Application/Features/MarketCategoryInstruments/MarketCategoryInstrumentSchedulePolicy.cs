@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 using TNC.Trading.Platform.Application.Services;
 
 namespace TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
@@ -11,8 +12,6 @@ internal sealed class MarketCategoryInstrumentSchedulePolicy(
     TradingScheduleGate tradingScheduleGate,
     IMarketCategoryInstrumentClock clock)
 {
-    private const int MaximumUpdatesPerDay = 4;
-
     public MarketCategoryInstrumentScheduleDecision Evaluate(MarketCategoryInstrumentScheduleRequest request)
     {
         if (!request.IsScheduleEnabled)
@@ -23,6 +22,11 @@ internal sealed class MarketCategoryInstrumentSchedulePolicy(
         if (!request.IsAppliedEnvironmentSupported || request.AppliedBrokerEnvironment is null)
         {
             return Blocked(MarketCategoryInstrumentScheduleBlockReason.UnsupportedAppliedEnvironment);
+        }
+
+        if (request.IsLegacyScheduleReconciliationRequired)
+        {
+            return Blocked(MarketCategoryInstrumentScheduleBlockReason.LegacyScheduleReconciliationRequired);
         }
 
         var schedule = request.Schedule;
@@ -40,7 +44,7 @@ internal sealed class MarketCategoryInstrumentSchedulePolicy(
         var nowUtc = clock.GetUtcNow().ToUniversalTime();
         var localNow = TimeZoneInfo.ConvertTime(nowUtc, timeZone);
         var tradingDay = tradingScheduleGate.GetTradingDay(schedule, nowUtc);
-        var scheduleIdentity = GetScheduleIdentity(schedule);
+        var scheduleIdentity = GetScheduleIdentity(schedule, request.Frequency);
         var effectiveFrequency = request.Frequency.ForTradingDay(tradingDay);
 
         var scheduleStatus = tradingScheduleGate.Evaluate(schedule, nowUtc);
@@ -52,11 +56,7 @@ internal sealed class MarketCategoryInstrumentSchedulePolicy(
                 var closedWindowProgressMatches = request.PreviousProgress is { } priorProgress
                     && priorProgress.TradingDay == tradingDay
                     && priorProgress.UpdatesPerDay == effectiveFrequency
-                    && (string.Equals(priorProgress.ScheduleIdentity, scheduleIdentity, StringComparison.Ordinal)
-                        || string.Equals(
-                            priorProgress.ScheduleIdentity,
-                            GetScheduleRevision(scheduleIdentity).ToString(CultureInfo.InvariantCulture),
-                            StringComparison.Ordinal));
+                    && MatchesScheduleIdentity(priorProgress.ScheduleIdentity, scheduleIdentity, schedule);
                 var firstMissedSlot = closedWindowProgressMatches ? request.PreviousProgress!.SlotIndex + 1 : 0;
                 var missingSlotIndexes = Enumerable.Range(
                     firstMissedSlot,
@@ -74,14 +74,25 @@ internal sealed class MarketCategoryInstrumentSchedulePolicy(
             return new(false, MarketCategoryInstrumentScheduleBlockReason.ScheduleInactive, tradingDay, null, null, scheduleIdentity, []);
         }
 
+        if (effectiveFrequency == 0)
+        {
+            return new(
+                false,
+                MarketCategoryInstrumentScheduleBlockReason.TimedUpdatesDisabled,
+                tradingDay,
+                null,
+                0,
+                scheduleIdentity,
+                []);
+        }
+
         var windowTicks = schedule.EndOfDay.Ticks - schedule.StartOfDay.Ticks;
         var elapsedTicks = TimeOnly.FromDateTime(localNow.DateTime).Ticks - schedule.StartOfDay.Ticks;
-        var slotIndex = (int)Math.Min((long)effectiveFrequency - 1, elapsedTicks * effectiveFrequency / windowTicks);
+        var slotIndex = GetCurrentSlotIndex(elapsedTicks, windowTicks, effectiveFrequency);
         var previousProgressMatches = request.PreviousProgress is { } previous
             && previous.TradingDay == tradingDay
             && previous.UpdatesPerDay == effectiveFrequency
-            && (string.Equals(previous.ScheduleIdentity, scheduleIdentity, StringComparison.Ordinal)
-                || string.Equals(previous.ScheduleIdentity, GetScheduleRevision(scheduleIdentity).ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal));
+            && MatchesScheduleIdentity(previous.ScheduleIdentity, scheduleIdentity, schedule);
 
         if (!request.IsStartupCheck && previousProgressMatches && request.PreviousProgress!.SlotIndex >= slotIndex)
         {
@@ -114,14 +125,14 @@ internal sealed class MarketCategoryInstrumentSchedulePolicy(
         return null;
     }
 
-    public DateTimeOffset GetNextWakeUpUtc(TradingScheduleConfiguration schedule, int updatesPerDay)
+    public DateTimeOffset? GetNextScheduledStartUtc(TradingScheduleConfiguration schedule, int updatesPerDay)
     {
         var nowUtc = clock.GetUtcNow().ToUniversalTime();
         if (schedule.StartOfDay >= schedule.EndOfDay
-            || updatesPerDay is < 1 or > MaximumUpdatesPerDay
+            || updatesPerDay <= 0
             || !TradingScheduleGate.TryResolveTimeZone(schedule.TimeZone, out var timeZone))
         {
-            return nowUtc.AddSeconds(30);
+            return null;
         }
 
         var localNow = TimeZoneInfo.ConvertTime(nowUtc, timeZone);
@@ -129,22 +140,24 @@ internal sealed class MarketCategoryInstrumentSchedulePolicy(
         var localTime = TimeOnly.FromDateTime(localNow.DateTime);
         if (tradingScheduleGate.IsTradingDay(schedule, localDate))
         {
-            if (localTime < schedule.StartOfDay)
-            {
-                return ResolveLocalInstant(localDate, schedule.StartOfDay, timeZone);
-            }
-
-            if (localTime < schedule.EndOfDay)
+            var windowTicks = schedule.EndOfDay.Ticks - schedule.StartOfDay.Ticks;
+            var firstCandidateSlot = 0;
+            if (localTime >= schedule.StartOfDay && localTime < schedule.EndOfDay)
             {
                 var elapsedTicks = localTime.Ticks - schedule.StartOfDay.Ticks;
-                var windowTicks = schedule.EndOfDay.Ticks - schedule.StartOfDay.Ticks;
-                var currentSlot = Math.Min(updatesPerDay - 1, (int)((long)elapsedTicks * updatesPerDay / windowTicks));
-                var nextBoundarySlot = currentSlot + 1;
-                if (nextBoundarySlot < updatesPerDay)
-                {
-                    var nextBoundaryTicks = schedule.StartOfDay.Ticks + windowTicks * nextBoundarySlot / updatesPerDay;
-                    return ResolveLocalInstant(localDate, TimeOnly.FromTimeSpan(TimeSpan.FromTicks(nextBoundaryTicks)), timeZone);
-                }
+                firstCandidateSlot = GetCurrentSlotIndex(elapsedTicks, windowTicks, updatesPerDay) + 1;
+            }
+
+            var nextSlotIndex = FindFirstSlotStartingAfter(
+                localDate,
+                schedule,
+                timeZone,
+                firstCandidateSlot,
+                updatesPerDay,
+                nowUtc);
+            if (nextSlotIndex >= 0)
+            {
+                return GetSlotStartUtc(localDate, schedule, timeZone, nextSlotIndex, updatesPerDay);
             }
         }
 
@@ -153,11 +166,112 @@ internal sealed class MarketCategoryInstrumentSchedulePolicy(
             var candidate = localDate.AddDays(daysAhead);
             if (tradingScheduleGate.IsTradingDay(schedule, candidate))
             {
-                return ResolveLocalInstant(candidate, schedule.StartOfDay, timeZone);
+                var nextStart = GetSlotStartUtc(candidate, schedule, timeZone, 0, updatesPerDay);
+                if (nextStart > nowUtc)
+                {
+                    return nextStart;
+                }
             }
         }
 
-        return nowUtc.AddSeconds(30);
+        return null;
+    }
+
+    public IReadOnlyList<MarketDataFullRunSlotIdentity> GetSlotsCoveredByLeadIn(
+        TradingScheduleConfiguration schedule,
+        MarketCategoryInstrumentFrequency frequency,
+        DateOnly tradingDay,
+        DateTimeOffset admittedAtUtc)
+    {
+        if (schedule.StartOfDay >= schedule.EndOfDay
+            || frequency.CurrentUpdatesPerDay <= 0
+            || frequency.LeadInMinutes < 0
+            || !tradingScheduleGate.IsTradingDay(schedule, tradingDay)
+            || !TradingScheduleGate.TryResolveTimeZone(schedule.TimeZone, out var timeZone))
+        {
+            return [];
+        }
+
+        var admittedAt = admittedAtUtc.ToUniversalTime();
+        var leadIn = TimeSpan.FromMinutes(frequency.LeadInMinutes);
+        var covered = new List<MarketDataFullRunSlotIdentity>();
+        for (var slotIndex = 0; slotIndex < frequency.CurrentUpdatesPerDay; slotIndex++)
+        {
+            var slotStartUtc = GetSlotStartUtc(
+                tradingDay,
+                schedule,
+                timeZone,
+                slotIndex,
+                frequency.CurrentUpdatesPerDay);
+            if (slotStartUtc >= admittedAt && slotStartUtc - admittedAt <= leadIn)
+            {
+                covered.Add(new(tradingDay, GetScheduleRevision(schedule, frequency), slotIndex));
+            }
+        }
+
+        return covered;
+    }
+
+    public DateTimeOffset? GetNextWindowOpeningUtc(TradingScheduleConfiguration schedule)
+    {
+        var nowUtc = clock.GetUtcNow().ToUniversalTime();
+        if (schedule.StartOfDay >= schedule.EndOfDay
+            || !TradingScheduleGate.TryResolveTimeZone(schedule.TimeZone, out var timeZone))
+        {
+            return null;
+        }
+
+        var today = tradingScheduleGate.GetTradingDay(schedule, nowUtc);
+        for (var daysAhead = 0; daysAhead <= 366; daysAhead++)
+        {
+            var candidate = today.AddDays(daysAhead);
+            if (!tradingScheduleGate.IsTradingDay(schedule, candidate))
+            {
+                continue;
+            }
+
+            var opening = ResolveLocalInstant(candidate, schedule.StartOfDay, timeZone);
+            if (opening > nowUtc)
+            {
+                return opening;
+            }
+        }
+
+        return null;
+    }
+
+    public DateTimeOffset? GetNextWindowClosingUtc(TradingScheduleConfiguration schedule)
+    {
+        var nowUtc = clock.GetUtcNow().ToUniversalTime();
+        if (schedule.StartOfDay >= schedule.EndOfDay
+            || !TradingScheduleGate.TryResolveTimeZone(schedule.TimeZone, out _))
+        {
+            return null;
+        }
+
+        var today = tradingScheduleGate.GetTradingDay(schedule, nowUtc);
+        for (var daysAhead = 0; daysAhead <= 366; daysAhead++)
+        {
+            var candidate = today.AddDays(daysAhead);
+            if (!tradingScheduleGate.IsTradingDay(schedule, candidate))
+            {
+                continue;
+            }
+
+            var closing = GetWindowEndUtc(schedule, candidate);
+            if (closing > nowUtc)
+            {
+                return closing;
+            }
+        }
+
+        return null;
+    }
+
+    public DateTimeOffset GetNextWakeUpUtc(TradingScheduleConfiguration schedule, int updatesPerDay)
+    {
+        var nowUtc = clock.GetUtcNow().ToUniversalTime();
+        return GetNextScheduledStartUtc(schedule, updatesPerDay) ?? nowUtc.AddSeconds(30);
     }
 
     public DateTimeOffset? GetWindowEndUtc(TradingScheduleConfiguration schedule, DateOnly tradingDay)
@@ -187,7 +301,7 @@ internal sealed class MarketCategoryInstrumentSchedulePolicy(
         var localDateTime = date.ToDateTime(time, DateTimeKind.Unspecified);
         while (timeZone.IsInvalidTime(localDateTime))
         {
-            localDateTime = localDateTime.AddMinutes(1);
+            localDateTime = GetNextValidLocalTime(localDateTime, timeZone);
         }
 
         if (timeZone.IsAmbiguousTime(localDateTime))
@@ -199,9 +313,110 @@ internal sealed class MarketCategoryInstrumentSchedulePolicy(
         return TimeZoneInfo.ConvertTimeToUtc(localDateTime, timeZone);
     }
 
+    private static int GetCurrentSlotIndex(long elapsedTicks, long windowTicks, int updatesPerDay) =>
+        FindLastSlotStartingAtOrBefore(elapsedTicks, windowTicks, updatesPerDay);
+
+    private static int FindLastSlotStartingAtOrBefore(long elapsedTicks, long windowTicks, int updatesPerDay)
+    {
+        var low = 0;
+        var high = updatesPerDay - 1;
+        var currentSlotIndex = 0;
+        while (low <= high)
+        {
+            var candidateSlot = low + ((high - low) / 2);
+            if (GetSlotStartTicks(windowTicks, candidateSlot, updatesPerDay) <= elapsedTicks)
+            {
+                currentSlotIndex = candidateSlot;
+                low = candidateSlot + 1;
+            }
+            else
+            {
+                high = candidateSlot - 1;
+            }
+        }
+
+        return currentSlotIndex;
+    }
+
+    private static int FindFirstSlotStartingAfter(
+        DateOnly tradingDay,
+        TradingScheduleConfiguration schedule,
+        TimeZoneInfo timeZone,
+        int firstCandidateSlot,
+        int updatesPerDay,
+        DateTimeOffset nowUtc)
+    {
+        var low = firstCandidateSlot;
+        var high = updatesPerDay - 1;
+        var nextSlotIndex = -1;
+        while (low <= high)
+        {
+            var candidateSlot = low + ((high - low) / 2);
+            var candidateStart = GetSlotStartUtc(tradingDay, schedule, timeZone, candidateSlot, updatesPerDay);
+            if (candidateStart > nowUtc)
+            {
+                nextSlotIndex = candidateSlot;
+                high = candidateSlot - 1;
+            }
+            else
+            {
+                low = candidateSlot + 1;
+            }
+        }
+
+        return nextSlotIndex;
+    }
+
+    private static DateTimeOffset GetSlotStartUtc(
+        DateOnly tradingDay,
+        TradingScheduleConfiguration schedule,
+        TimeZoneInfo timeZone,
+        int slotIndex,
+        int updatesPerDay)
+    {
+        var windowTicks = schedule.EndOfDay.Ticks - schedule.StartOfDay.Ticks;
+        var slotStartTicks = schedule.StartOfDay.Ticks + GetSlotStartTicks(windowTicks, slotIndex, updatesPerDay);
+        var localTime = TimeOnly.FromTimeSpan(TimeSpan.FromTicks(slotStartTicks));
+        return ResolveLocalInstant(tradingDay, localTime, timeZone);
+    }
+
+    private static long GetSlotStartTicks(long windowTicks, int slotIndex, int updatesPerDay)
+    {
+        var quotient = windowTicks / updatesPerDay;
+        var remainder = windowTicks % updatesPerDay;
+        return quotient * slotIndex + (long)((decimal)remainder * slotIndex / updatesPerDay);
+    }
+
+    private static DateTime GetNextValidLocalTime(DateTime invalidLocalTime, TimeZoneInfo timeZone)
+    {
+        var invalidTicks = invalidLocalTime.Ticks;
+        var validTicks = invalidTicks;
+        do
+        {
+            validTicks = checked(validTicks + TimeSpan.TicksPerMinute);
+        }
+        while (timeZone.IsInvalidTime(new DateTime(validTicks, DateTimeKind.Unspecified)));
+
+        var lowerBound = invalidTicks;
+        while (validTicks - lowerBound > 1)
+        {
+            var candidateTicks = lowerBound + ((validTicks - lowerBound) / 2);
+            if (timeZone.IsInvalidTime(new DateTime(candidateTicks, DateTimeKind.Unspecified)))
+            {
+                lowerBound = candidateTicks;
+            }
+            else
+            {
+                validTicks = candidateTicks;
+            }
+        }
+
+        return new DateTime(validTicks, DateTimeKind.Unspecified);
+    }
+
     private static bool IsValidFrequency(MarketCategoryInstrumentFrequency frequency) =>
-        frequency.CurrentUpdatesPerDay is >= 1 and <= MaximumUpdatesPerDay
-        && (frequency.PendingUpdatesPerDay is null || frequency.PendingUpdatesPerDay is >= 1 and <= MaximumUpdatesPerDay)
+        frequency.CurrentUpdatesPerDay >= 0
+        && (frequency.PendingUpdatesPerDay is null || frequency.PendingUpdatesPerDay >= 0)
         && ((frequency.PendingUpdatesPerDay is null) == (frequency.PendingEffectiveTradingDay is null));
 
     private static string GetScheduleIdentity(TradingScheduleConfiguration schedule)
@@ -223,8 +438,43 @@ internal sealed class MarketCategoryInstrumentSchedulePolicy(
             holidays);
     }
 
+    private static string GetScheduleIdentity(
+        TradingScheduleConfiguration schedule,
+        MarketCategoryInstrumentFrequency frequency) =>
+        string.Join(
+            "|",
+            GetScheduleIdentity(schedule),
+            schedule.AppliedBrokerEnvironmentId?.ToString("N") ?? string.Empty,
+            schedule.ScheduleVersion.ToString(CultureInfo.InvariantCulture),
+            frequency.CurrentUpdatesPerDay.ToString(CultureInfo.InvariantCulture),
+            frequency.LeadInMinutes.ToString(CultureInfo.InvariantCulture),
+            frequency.ConfigurationVersion.ToString(CultureInfo.InvariantCulture));
+
+    private static bool MatchesScheduleIdentity(
+        string? previousIdentity,
+        string currentIdentity,
+        TradingScheduleConfiguration schedule) =>
+        string.Equals(previousIdentity, currentIdentity, StringComparison.Ordinal)
+        || string.Equals(
+            previousIdentity,
+            GetScheduleRevision(currentIdentity).ToString(CultureInfo.InvariantCulture),
+            StringComparison.Ordinal)
+        || string.Equals(
+            previousIdentity,
+            GetScheduleIdentity(schedule),
+            StringComparison.Ordinal)
+        || string.Equals(
+            previousIdentity,
+            GetScheduleRevision(schedule).ToString(CultureInfo.InvariantCulture),
+            StringComparison.Ordinal);
+
     internal static long GetScheduleRevision(TradingScheduleConfiguration schedule) =>
         GetScheduleRevision(GetScheduleIdentity(schedule));
+
+    internal static long GetScheduleRevision(
+        TradingScheduleConfiguration schedule,
+        MarketCategoryInstrumentFrequency frequency) =>
+        GetScheduleRevision(GetScheduleIdentity(schedule, frequency));
 
     private static long GetScheduleRevision(string scheduleIdentity)
     {

@@ -19,4 +19,6 @@ internal sealed class UpdatePlatformConfigurationViewModel
     public int? InstrumentUpdatesPerDay { get; set; }
 
     public int? ApprovedNonTradingDailyRequestAllowance { get; set; }
+
+    public int? MarketDataLeadInMinutes { get; set; }
 }

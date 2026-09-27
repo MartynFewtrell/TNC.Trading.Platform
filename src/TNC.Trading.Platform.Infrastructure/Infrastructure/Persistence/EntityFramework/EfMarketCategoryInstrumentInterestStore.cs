@@ -2,12 +2,14 @@ using System.Data;
 using Microsoft.EntityFrameworkCore;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 using TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities;
 
 namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 
 internal sealed class EfMarketCategoryInstrumentInterestStore(
     PlatformDbContext dbContext,
+    IMarketDataFullRunIntentWriter fullRunIntentWriter,
     IAppliedBrokerEnvironmentContextResolver? contextResolver = null,
     TimeProvider? timeProvider = null) :
     IMarketCategoryInstrumentInterestReader,
@@ -26,7 +28,7 @@ internal sealed class EfMarketCategoryInstrumentInterestStore(
             .Select(item => item.CategoryCode)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
         var categories = await dbContext.MarketCategories.AsNoTracking()
-            .Where(item => item.BrokerEnvironmentId == environmentId)
+            .Where(item => item.BrokerEnvironmentId == environmentId && item.IsCurrent)
             .Select(item => item.Code)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
 
@@ -65,7 +67,7 @@ internal sealed class EfMarketCategoryInstrumentInterestStore(
         }
 
         var categories = await dbContext.MarketCategories.AsNoTracking()
-            .Where(item => item.BrokerEnvironmentId == environmentId)
+            .Where(item => item.BrokerEnvironmentId == environmentId && item.IsCurrent)
             .Select(item => item.Code)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
         var currentCategorySet = categories.ToHashSet(StringComparer.Ordinal);
@@ -135,6 +137,28 @@ internal sealed class EfMarketCategoryInstrumentInterestStore(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        if (!desiredSelected.SetEquals(previouslySelected))
+        {
+            var configurationVersion = await dbContext.InstrumentCollectionSettings.AsNoTracking()
+                .Where(item => item.BrokerEnvironmentId == environmentId)
+                .Select(item => item.ConfigurationVersion)
+                .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+            if (configurationVersion < 1)
+            {
+                throw new InvalidOperationException(
+                    "Market-data collection settings must be initialized before interest can schedule a full update.");
+            }
+
+            await fullRunIntentWriter.RecordIntentAsync(
+                appliedBrokerEnvironment,
+                environmentId,
+                MarketDataFullRunTrigger.Interest,
+                configurationVersion,
+                newRevision,
+                selectedAtUtc.ToUniversalTime(),
+                cancellationToken).ConfigureAwait(false);
+        }
+
         await EfMarketCategoryInstrumentEnvironmentResolver.VerifyAppliedAtCommitAsync(
             dbContext, contextResolver, environmentId, appliedBrokerEnvironment, null, cancellationToken, requireExecutable: false).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);

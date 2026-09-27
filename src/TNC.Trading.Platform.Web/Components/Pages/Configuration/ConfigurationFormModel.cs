@@ -14,14 +14,6 @@ internal sealed class ConfigurationFormModel
         TimeZone = "UTC"
     };
 
-    public string StartOfDayText { get; set; } = "08:00";
-
-    public string EndOfDayText { get; set; } = "16:30";
-
-    public string TradingDaysCsv { get; set; } = "Monday,Tuesday,Wednesday,Thursday,Friday";
-
-    public string BankHolidayCsv { get; set; } = string.Empty;
-
     public UpdateRetryPolicyViewModel RetryPolicy { get; set; } = new()
     {
         InitialDelaySeconds = 1,
@@ -48,6 +40,8 @@ internal sealed class ConfigurationFormModel
 
     public int? ApprovedNonTradingDailyRequestAllowance { get; set; }
 
+    public int? MarketDataLeadInMinutes { get; set; }
+
     public InstrumentCollectionConfigurationViewModel InstrumentCollection { get; set; } =
-        new(false, "SettingsUnavailable", null, null, null, null, null, null, null, null);
+        new(false, "SettingsUnavailable", null, null, null, null, null, null, null, null, null, null);
 }

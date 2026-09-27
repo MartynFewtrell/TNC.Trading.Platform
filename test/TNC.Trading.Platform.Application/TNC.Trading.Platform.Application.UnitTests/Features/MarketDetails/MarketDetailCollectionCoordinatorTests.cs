@@ -1,6 +1,7 @@
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 using TNC.Trading.Platform.Application.Features.MarketDetails;
 using TNC.Trading.Platform.Application.Services;
 
@@ -80,6 +81,51 @@ public sealed class MarketDetailCollectionCoordinatorTests
     }
 
     /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 3, step 3.
+    /// Verifies: an already-admitted parent lease authorizes a detail attempt to finish after the schedule window closes.
+    /// Expected: the detail gateway response is still recorded and the child run finalizes as incomplete rather than being stopped by wall-clock close.
+    /// Why: closing blocks new runs, not a run whose parent lease and safety context remain valid.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteDueCollectionAsync_ShouldContinueAfterClose_WhenParentFullRunLeaseIsActive()
+    {
+        var harness = new CoordinatorHarness(
+            remainingAllowance: 100,
+            closeWindowDuringGateway: true);
+        var parentLease = harness.CreateFullRunLease();
+
+        var response = await harness.ExecuteAsync(parentLease);
+
+        Assert.Equal(MarketDetailRunStatus.Incomplete, response.Status);
+        Assert.Equal(3, harness.Gateway.Calls);
+        Assert.Equal(3, harness.RunStore.FailureWrites);
+        Assert.Equal([TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)], harness.Clock.Delays);
+        Assert.True(harness.RunStore.LastCapacityAvailable);
+        Assert.Equal(parentLease.RunId, harness.Gateway.FullRunId);
+        Assert.Equal(["CRYPTO"], harness.SourceReader.LastFrozenCategoryCodes);
+    }
+
+    /// <summary>
+    /// Trace: Trading-Day Market Data Work Item 4, step 1.
+    /// Verifies: all staged EPICs beyond the first provider batch are processed through no more than three attempts.
+    /// Expected: 51 targets are submitted as batches of 50 and 1 on each bounded attempt round.
+    /// Why: a fixed first-page read would leave larger validated universes permanently incomplete.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteDueCollectionAsync_ShouldProcessAllTargetsInBoundedBatches_WhenUniverseExceedsOneBatch()
+    {
+        var harness = new CoordinatorHarness(remainingAllowance: 1_000, targetCount: 51);
+
+        var response = await harness.ExecuteAsync();
+
+        Assert.Equal(MarketDetailRunStatus.Incomplete, response.Status);
+        Assert.Equal(6, harness.Gateway.Calls);
+        Assert.Equal([50, 1, 50, 1, 50, 1], harness.Gateway.BatchSizes);
+        Assert.Equal(15_000, harness.RunStore.LastMaximumTargetCount);
+        Assert.Equal(153, harness.RunStore.FailureWrites);
+    }
+
+    /// <summary>
     /// Trace: Market Details Work Item 4, steps 1 and 4.
     /// Verifies: a schedule-closed coordinator tick exits before acquiring a run or calling the provider.
     /// Expected: the outcome is not due and both lease acquisition and gateway call counts remain zero.
@@ -103,18 +149,50 @@ public sealed class MarketDetailCollectionCoordinatorTests
         int? remainingAllowance,
         bool changeSourceAfterFirstRead = false,
         bool closeWindowDuringGateway = false,
-        DateTimeOffset? now = null)
+        DateTimeOffset? now = null,
+        int targetCount = 1)
     {
         private readonly Guid environmentId = Guid.NewGuid();
         private readonly Guid collectionId = Guid.NewGuid();
         private readonly ManualClock clock = new(now ?? Now);
         private readonly FakeSourceReader sourceReader = new(changeSourceAfterFirstRead);
 
-        public FakeRunStore RunStore { get; } = new();
+        public FakeRunStore RunStore { get; } = new(targetCount);
         public FakeGateway Gateway { get; } = new();
         public FakeObservationWriter ObservationWriter { get; } = new();
+        public FakeSourceReader SourceReader => sourceReader;
+        public ManualClock Clock => clock;
 
-        public async Task<CollectMarketDetailsResponse> ExecuteAsync()
+        public MarketDataFullRunLease CreateFullRunLease()
+        {
+            var scheduleGate = new TradingScheduleGate();
+            var schedulePolicy = new MarketCategoryInstrumentSchedulePolicy(scheduleGate, clock);
+            var frequency = new MarketCategoryInstrumentFrequency(1, null, null, 20);
+            var scheduleRevision = MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(Schedule, frequency);
+            return new(
+                Guid.NewGuid(),
+                BrokerEnvironmentKind.Demo,
+                environmentId,
+                "IgDemo",
+                DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime),
+                clock.GetUtcNow(),
+                schedulePolicy.GetWindowEndUtc(Schedule, DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime))!.Value,
+                scheduleRevision,
+                1,
+                1,
+                1,
+                MarketDataFullRunTrigger.Scheduled,
+                ["CRYPTO"],
+                Guid.NewGuid(),
+                1,
+                clock.GetUtcNow().AddMinutes(5),
+                [new(
+                    DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime),
+                    scheduleRevision,
+                    0)]);
+        }
+
+        public async Task<CollectMarketDetailsResponse> ExecuteAsync(MarketDataFullRunLease? fullRunLease = null)
         {
             var source = new MarketDetailListingSource(
                 "CRYPTO",
@@ -136,23 +214,101 @@ public sealed class MarketDetailCollectionCoordinatorTests
                 ? request => clock.AdvanceTo(request.BudgetContext.WindowEndUtc)
                 : null;
             var config = new PlatformConfigurationService(new FakeConfigurationStore(Schedule));
+            var scheduleGate = new TradingScheduleGate();
+            var schedulePolicy = new MarketCategoryInstrumentSchedulePolicy(scheduleGate, clock);
             var coordinator = new MarketDetailCollectionCoordinator(
                 config,
                 new FakeEnvironmentResolver(context),
                 new FakeFrequencyReader(),
                 sourceReader,
                 RunStore,
+                new FakeFullRunStore(),
                 Gateway,
                 ObservationWriter,
                 new FakeRequestBudget(remainingAllowance, clock),
-                new(new TradingScheduleGate(), clock),
+                schedulePolicy,
+                new(scheduleGate, schedulePolicy),
                 clock,
                 new(),
                 new(),
                 new NullApplicationLogger());
 
-            return await coordinator.ExecuteDueCollectionAsync(CancellationToken.None);
+            return await coordinator.ExecuteDueCollectionAsync(CancellationToken.None, fullRunLease);
         }
+    }
+
+    private sealed class FakeFullRunStore : IMarketDataFullRunStore
+    {
+        public Task<MarketDataFullRunAdmissionResult> TryAdmitAsync(
+            MarketDataFullRunAdmissionRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new MarketDataFullRunAdmissionResult(
+                MarketDataFullRunAdmissionStatus.OutsideWindow,
+                null));
+
+        public Task<bool> TryRenewLeaseAsync(
+            MarketDataFullRunLease lease,
+            DateTimeOffset nowUtc,
+            TimeSpan leaseDuration,
+            CancellationToken cancellationToken) => Task.FromResult(true);
+
+        public Task<bool> RecordSlotCoverageAsync(
+            MarketDataFullRunLease lease,
+            MarketDataFullRunSlotIdentity slot,
+            DateTimeOffset coveredAtUtc,
+            CancellationToken cancellationToken) => Task.FromResult(true);
+
+        public Task<bool> RecordStageAttemptAsync(
+            MarketDataFullRunLease lease,
+            MarketDataFullRunStage stage,
+            string status,
+            DateTimeOffset nowUtc,
+            bool succeeded,
+            string? safeReasonCode,
+            CancellationToken cancellationToken) => Task.FromResult(true);
+
+        public Task<bool> RecordItemAttemptAsync(
+            MarketDataFullRunLease lease,
+            MarketDataFullRunStage stage,
+            string itemCode,
+            string status,
+            DateTimeOffset nowUtc,
+            bool succeeded,
+            string? safeReasonCode,
+            CancellationToken cancellationToken) => Task.FromResult(true);
+
+        public Task<string?> GetStageStatusAsync(
+            MarketDataFullRunLease lease,
+            MarketDataFullRunStage stage,
+            DateTimeOffset nowUtc,
+            CancellationToken cancellationToken) => Task.FromResult<string?>(null);
+
+        public Task<IReadOnlySet<string>> GetSucceededItemsAsync(
+            MarketDataFullRunLease lease,
+            MarketDataFullRunStage stage,
+            DateTimeOffset nowUtc,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlySet<string>>(new HashSet<string>(StringComparer.Ordinal));
+
+        public Task<bool> CompleteAsync(
+            MarketDataFullRunLease lease,
+            string outcome,
+            string? safeReasonCode,
+            DateTimeOffset completedAtUtc,
+            CancellationToken cancellationToken) => Task.FromResult(true);
+
+        public Task<MarketDataFullRunIntent?> GetPendingIntentAsync(
+            BrokerEnvironmentKind environment,
+            CancellationToken cancellationToken) => Task.FromResult<MarketDataFullRunIntent?>(null);
+
+        public Task RecordIntentAsync(
+            BrokerEnvironmentKind environment,
+            Guid appliedBrokerEnvironmentId,
+            MarketDataFullRunTrigger trigger,
+            long collectionConfigurationVersion,
+            long interestRevision,
+            DateTimeOffset updatedAtUtc,
+            CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class FakeSourceReader(bool changeAfterFirstRead) : IMarketDetailListingSourceReader
@@ -160,6 +316,7 @@ public sealed class MarketDetailCollectionCoordinatorTests
         private int reads;
 
         internal MarketDetailListingSource Source { get; set; } = null!;
+        internal IReadOnlyList<string>? LastFrozenCategoryCodes { get; private set; }
 
         public Task<MarketDetailListingSourceSnapshot> ReadAsync(
             MarketDetailRunKey key,
@@ -178,14 +335,26 @@ public sealed class MarketDetailCollectionCoordinatorTests
                 true,
                 sources));
         }
+
+        public Task<MarketDetailListingSourceSnapshot> ReadAsync(
+            MarketDetailRunKey key,
+            long scheduleRevision,
+            string appliedEndpointProfile,
+            IReadOnlyList<string>? frozenCategoryCodes,
+            CancellationToken cancellationToken)
+        {
+            LastFrozenCategoryCodes = frozenCategoryCodes;
+            return ReadAsync(key, scheduleRevision, appliedEndpointProfile, cancellationToken);
+        }
     }
 
-    private sealed class FakeRunStore : IMarketDetailRunStore
+    private sealed class FakeRunStore(int targetCount) : IMarketDetailRunStore
     {
         private MarketDetailRunLease? lease;
 
         internal int FailureWrites { get; private set; }
         internal int Acquisitions { get; private set; }
+        internal int LastMaximumTargetCount { get; private set; }
         internal bool? LastCapacityAvailable { get; private set; }
         internal bool? LastRevisionsCurrent { get; private set; }
 
@@ -205,6 +374,29 @@ public sealed class MarketDetailCollectionCoordinatorTests
             return Task.FromResult<MarketDetailRunLease?>(lease);
         }
 
+        public async Task<MarketDetailRunLease?> TryAcquireForFullRunAsync(
+            MarketDetailRunKey key,
+            MarketDetailRevisions revisions,
+            string appliedEndpointProfile,
+            Guid owner,
+            DateTimeOffset nowUtc,
+            TimeSpan leaseDuration,
+            DateTimeOffset windowEndUtc,
+            MarketDataFullRunLease fullRunLease,
+            CancellationToken cancellationToken)
+        {
+            var acquired = await TryAcquireAsync(
+                key,
+                revisions,
+                appliedEndpointProfile,
+                owner,
+                nowUtc,
+                leaseDuration,
+                windowEndUtc,
+                cancellationToken).ConfigureAwait(false);
+            return acquired is null ? null : acquired with { FullRunLease = fullRunLease };
+        }
+
         public Task<MarketDetailRunStatus> StageUniverseAsync(
             MarketDetailRunLease acquiredLease,
             MarketDetailUniverse universe,
@@ -214,15 +406,26 @@ public sealed class MarketDetailCollectionCoordinatorTests
         public Task<IReadOnlyList<MarketDetailTarget>> ReadOutstandingTargetsAsync(
             MarketDetailRunLease acquiredLease,
             int maximumCount,
-            CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<MarketDetailTarget>>(
-                [new("CS.D.ADAUSD.CFD.IP", [new("CRYPTO", Guid.NewGuid(), 1)], 0, null)]);
+            CancellationToken cancellationToken)
+        {
+            LastMaximumTargetCount = maximumCount;
+            return Task.FromResult<IReadOnlyList<MarketDetailTarget>>(
+                Enumerable.Range(0, targetCount)
+                    .Select(index => new MarketDetailTarget(
+                        $"EPIC{index:D3}",
+                        [new("CRYPTO", Guid.NewGuid(), 1)],
+                        0,
+                        null))
+                    .ToArray());
+        }
 
         public Task<IReadOnlyList<MarketDetailCapacityTarget>> ReadRetryableCapacityTargetsAsync(
             MarketDetailRunLease acquiredLease,
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<MarketDetailCapacityTarget>>(
-                [new("CS.D.ADAUSD.CFD.IP", 0)]);
+                Enumerable.Range(0, targetCount)
+                    .Select(index => new MarketDetailCapacityTarget($"EPIC{index:D3}", 0))
+                    .ToArray());
 
         public Task<bool> RecordFailureAsync(
             MarketDetailRunLease acquiredLease,
@@ -261,6 +464,8 @@ public sealed class MarketDetailCollectionCoordinatorTests
     private sealed class FakeGateway : IMarketDetailsGateway
     {
         internal int Calls { get; private set; }
+        internal Guid? FullRunId { get; private set; }
+        internal List<int> BatchSizes { get; } = [];
         internal Action<MarketDetailGatewayRequest>? AfterCall { get; set; }
 
         public Task<IReadOnlyList<MarketDetailGatewayResult>> GetMarketsAsync(
@@ -268,11 +473,13 @@ public sealed class MarketDetailCollectionCoordinatorTests
             CancellationToken cancellationToken)
         {
             Calls++;
+            BatchSizes.Add(request.Epics.Count);
+            FullRunId = request.BudgetContext.FullRunLease?.RunId;
             AfterCall?.Invoke(request);
             return Task.FromResult<IReadOnlyList<MarketDetailGatewayResult>>(
-                [MarketDetailGatewayResult.Failed(
-                    "CS.D.ADAUSD.CFD.IP",
-                    new(MarketDetailTargetFailureKind.TransientProviderFailure, true, false))]);
+                request.Epics.Select(epic => MarketDetailGatewayResult.Failed(
+                    epic,
+                    new(MarketDetailTargetFailureKind.TransientProviderFailure, true, false))).ToArray());
         }
     }
 
@@ -295,7 +502,7 @@ public sealed class MarketDetailCollectionCoordinatorTests
         public Task<bool> IsExecutionContextStillActiveAsync(
             MarketDetailRequestBudgetContext context,
             CancellationToken cancellationToken) =>
-            Task.FromResult(clock.GetUtcNow() < context.WindowEndUtc);
+            Task.FromResult(context.FullRunLease is not null || clock.GetUtcNow() < context.WindowEndUtc);
 
         public Task<int?> GetRemainingAllowanceAsync(
             MarketDetailRequestBudgetContext context,
@@ -361,12 +568,18 @@ public sealed class MarketDetailCollectionCoordinatorTests
     {
         private DateTimeOffset current = now;
 
+        internal List<TimeSpan> Delays { get; } = [];
+
         public DateTimeOffset GetUtcNow() => current;
 
         internal void AdvanceTo(DateTimeOffset value) => current = value;
 
-        public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken) =>
-            Task.Delay(delay, cancellationToken);
+        public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Delays.Add(delay);
+            return Task.CompletedTask;
+        }
 
         public CancellationTokenSource CreateDeadlineCancellationSource(TimeSpan delay) =>
             new(delay);

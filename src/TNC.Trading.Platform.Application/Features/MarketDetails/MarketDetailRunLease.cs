@@ -1,4 +1,5 @@
 using TNC.Trading.Platform.Application.Configuration;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 
 namespace TNC.Trading.Platform.Application.Features.MarketDetails;
 
@@ -10,4 +11,5 @@ internal sealed record MarketDetailRunLease(
     DateTimeOffset ExpiresAtUtc,
     DateTimeOffset WindowEndUtc,
     string AppliedEndpointProfile,
-    MarketDetailRevisions Revisions);
+    MarketDetailRevisions Revisions,
+    MarketDataFullRunLease? FullRunLease = null);

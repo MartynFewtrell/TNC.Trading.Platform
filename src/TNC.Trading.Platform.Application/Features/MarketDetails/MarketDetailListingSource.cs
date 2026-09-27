@@ -5,4 +5,7 @@ internal sealed record MarketDetailListingSource(
     Guid CollectionId,
     long Version,
     bool IsValidatedComplete,
-    IReadOnlyList<string> Epics);
+    IReadOnlyList<string> Epics)
+{
+    public bool IsFresh { get; init; } = true;
+}

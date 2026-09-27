@@ -7,6 +7,7 @@ internal sealed class MarketDetailRunTargetEntity
     public string Epic { get; set; } = string.Empty;
     public string Status { get; set; } = "NotCollected";
     public int Attempts { get; set; }
+    public bool CanRetry { get; set; } = true;
     public string? SafeFailureCode { get; set; }
     public string? ExclusionEvidenceCode { get; set; }
     public DateTimeOffset? ExcludedAtUtc { get; set; }

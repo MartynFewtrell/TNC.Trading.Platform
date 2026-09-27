@@ -10,4 +10,6 @@ internal sealed record InstrumentCollectionConfigurationViewModel(
     int? ApprovedNonTradingDailyRequestAllowance,
     int? UsedRequestBudget,
     string? CollectionOutcome,
-    string? SafeFailure);
+    string? SafeFailure,
+    int? LeadInMinutes,
+    string? CapacityWarning);

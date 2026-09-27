@@ -1,3 +1,5 @@
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
+
 namespace TNC.Trading.Platform.Application.Features.MarketDetails;
 
 internal interface IMarketDetailRunStore
@@ -11,6 +13,26 @@ internal interface IMarketDetailRunStore
         TimeSpan leaseDuration,
         DateTimeOffset windowEndUtc,
         CancellationToken cancellationToken);
+
+    Task<MarketDetailRunLease?> TryAcquireForFullRunAsync(
+        MarketDetailRunKey key,
+        MarketDetailRevisions revisions,
+        string appliedEndpointProfile,
+        Guid owner,
+        DateTimeOffset nowUtc,
+        TimeSpan leaseDuration,
+        DateTimeOffset windowEndUtc,
+        MarketDataFullRunLease fullRunLease,
+        CancellationToken cancellationToken) =>
+        TryAcquireAsync(
+            key,
+            revisions,
+            appliedEndpointProfile,
+            owner,
+            nowUtc,
+            leaseDuration,
+            windowEndUtc,
+            cancellationToken);
 
     Task<MarketDetailRunStatus> StageUniverseAsync(
         MarketDetailRunLease lease,

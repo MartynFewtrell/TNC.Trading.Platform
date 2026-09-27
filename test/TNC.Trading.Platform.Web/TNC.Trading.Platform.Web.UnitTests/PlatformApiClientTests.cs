@@ -1,10 +1,63 @@
 ﻿using System.Net;
 using Microsoft.Extensions.DependencyInjection;
+using TNC.Trading.Platform.Web;
 
 namespace TNC.Trading.Platform.Web.UnitTests;
 
 public sealed class PlatformApiClientTests
 {
+    /// <summary>
+    /// Trace: Trading-Day Market Data Delivery Plan, Work Item 1 applied schedule API contract.
+    /// Verifies the client uses Operator-scoped GET and PUT calls for the applied broker profile and sends no broker selector.
+    /// Expected: both requests use the dedicated applied-schedule route with bearer authorization, and the update body contains only schedule settings.
+    /// Why: schedule edits must remain bound to the server's applied broker rather than a user-selected broker identifier.
+    /// </summary>
+    [Fact]
+    public async Task AppliedBrokerScheduleAsync_ShouldUseOperatorRouteWithoutBrokerIdentity_WhenReadingAndSaving()
+    {
+        var schedule = new AppliedBrokerScheduleViewModel(
+            Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            1,
+            1,
+            new TimeOnly(8, 0),
+            new TimeOnly(17, 0),
+            [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday],
+            "ExcludeWeekends",
+            [],
+            "Europe/London",
+            false);
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            userName: "local-operator",
+            apiResponses:
+            [
+                _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, schedule),
+                _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, schedule)
+            ]);
+        var client = context.Services.GetRequiredService<PlatformApiClient>();
+
+        _ = await client.GetAppliedBrokerScheduleAsync(CancellationToken.None);
+        _ = await client.UpdateAppliedBrokerScheduleAsync(
+            new UpdateAppliedBrokerScheduleViewModel(
+                new TimeOnly(8, 30),
+                new TimeOnly(17, 0),
+                schedule.TradingDays,
+                schedule.WeekendBehavior,
+                schedule.BankHolidayExclusions,
+                schedule.TimeZone),
+            CancellationToken.None);
+
+        Assert.Equal(2, context.ApiHandler.Requests.Count);
+        Assert.All(context.ApiHandler.Requests, request =>
+        {
+            Assert.EndsWith("/api/platform/configuration/applied-broker-schedule", request.RequestUri, StringComparison.Ordinal);
+            Assert.StartsWith("Bearer ", request.AuthorizationHeader, StringComparison.Ordinal);
+        });
+        Assert.Equal(HttpMethod.Get, context.ApiHandler.Requests[0].Method);
+        Assert.Equal(HttpMethod.Put, context.ApiHandler.Requests[1].Method);
+        Assert.Contains("\"startOfDay\":\"08:30:00\"", context.ApiHandler.Requests[1].Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("brokerEnvironmentId", context.ApiHandler.Requests[1].Content, StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Trace: Work Item 4, market-category API contract.
     /// Verifies: the client uses the Viewer-authorized GET route and parses the typed category response.
