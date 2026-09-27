@@ -464,6 +464,18 @@ reconciliation. The UI reports safe status for unsupported context, schedule
 closure, quota exhaustion, provider unavailability, or invalid/incomplete
 data without showing payloads or credentials.
 
+When market details show `AllowanceUnavailable`, inspect the API service's
+`IgMarketDetailsGateway` warning for the trading day and slot. A warning saying
+the local request budget reservation failed means no request was sent to IG.
+An `IG market-detail Session` or `Markets` warning with HTTP `403` indicates
+that IG returned a failed response; known IG allowance codes are logged
+verbatim to distinguish account, application, API-key, and account-trading
+limits. Other HTTP failures retain their status and request kind. Provider
+bodies, unknown error codes, credentials, response headers, and EPIC-bearing
+request URLs are not logged. The per-instrument UI remains limited to the safe
+failure category; an operator-approved local daily allowance is not a measure
+of IG's remaining provider allowance.
+
 ### Retry policy
 
 The retry policy section exposes the operator-managed values used by runtime supervision:

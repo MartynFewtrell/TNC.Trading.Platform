@@ -158,7 +158,9 @@ Category/listing reads expose only compact, batched availability; they do not
 embed nested provider terms or quote snapshots. A saved detail response is an
 observation, not a live quote or trading instruction. It contains the
 validated instrument, dealing rules and snapshot, with explicit nullable vs.
-zero values and original provider units/text. No Viewer read refreshes IG.
+zero values and original provider units/text. Margin deposit bands expose
+`min` and `max`; `max` is a quantity whose `ExplicitNull` presence is displayed
+as "No upper bound" in the saved details view. No Viewer read refreshes IG.
 
 ## GET /
 

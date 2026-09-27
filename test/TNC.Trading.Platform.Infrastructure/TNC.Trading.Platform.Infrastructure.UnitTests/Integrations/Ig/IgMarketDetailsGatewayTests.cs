@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketDetails;
 using TNC.Trading.Platform.Infrastructure.Integrations.Ig;
@@ -429,6 +430,73 @@ public sealed class IgMarketDetailsGatewayTests
         Assert.Equal(2, handler.Requests.Count);
         Assert.Equal(handler.Requests.Count, budget.Reservations);
         Assert.DoesNotContain(errorCode, result.ToString(), StringComparison.Ordinal);
+        var warning = Assert.Single(harness.Logger.Messages);
+        Assert.Contains(expectedKind == nameof(MarketDetailTargetFailureKind.AllowanceUnavailable)
+            ? errorCode
+            : "provider error code: Unavailable", warning);
+    }
+
+    /// <summary>
+    /// Trace: market-detail allowance diagnostics.
+    /// Verifies rejected session and market responses retain the exact safe IG error code and HTTP status in one warning per response.
+    /// Expected: the log distinguishes the request type without exposing provider body fields, credentials, headers, or EPICs.
+    /// Why: an allowance failure shared by every target must remain diagnosable without persisting sensitive provider payloads.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GetMarketsAsync_ShouldLogSafeProviderErrorCode_WhenSessionOrMarketRequestIsForbidden(bool rejectSession)
+    {
+        const string errorCode = "error.public-api.exceeded-application-allowance";
+        var handler = new ControlledHandler(request =>
+            request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal) == rejectSession
+                ? JsonResponse(HttpStatusCode.Forbidden, JsonSerializer.Serialize(new
+                {
+                    errorCode,
+                    sensitiveField = "password-secret"
+                }))
+                : SessionResponse("cst-1", "security-1"));
+        var budget = new FakeRequestBudget();
+        using var harness = CreateHarness(handler, budget);
+
+        var result = await harness.Gateway.GetMarketsAsync(
+            Request([AdaEpic, "CS.D.OTHERUSD.CFD.IP"]),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Count);
+        Assert.All(result, item => Assert.Equal(MarketDetailTargetFailureKind.AllowanceUnavailable, item.Failure?.Kind));
+        var warning = Assert.Single(harness.Logger.Messages);
+        Assert.Contains($"IG market-detail {(rejectSession ? "Session" : "Markets")} request failed with HTTP 403", warning);
+        Assert.Contains(errorCode, warning);
+        Assert.DoesNotContain("password-secret", warning);
+        Assert.DoesNotContain("api-key-secret", warning);
+        Assert.DoesNotContain("cst-1", warning);
+        Assert.DoesNotContain(AdaEpic, warning);
+        Assert.DoesNotContain("CS.D.OTHERUSD.CFD.IP", warning);
+        Assert.Equal(rejectSession ? 1 : 2, handler.Requests.Count);
+    }
+
+    /// <summary>
+    /// Trace: market-detail allowance diagnostics.
+    /// Verifies that untrusted provider error fields are not included verbatim in logs.
+    /// Expected: unsafe error-code text is replaced by an unavailable marker while the HTTP status remains visible.
+    /// Why: diagnostic output must not become a route for IG response bodies or secret values to enter telemetry.
+    /// </summary>
+    [Fact]
+    public async Task GetMarketsAsync_ShouldRedactUnsafeProviderCode_WhenForbiddenResponseContainsSecretText()
+    {
+        var handler = new ControlledHandler(request =>
+            request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal)
+                ? SessionResponse("cst-1", "security-1")
+                : JsonResponse(HttpStatusCode.Forbidden, "{\"errorCode\":\"error.public-api.password-secret\"}"));
+        using var harness = CreateHarness(handler, new FakeRequestBudget());
+
+        await harness.Gateway.GetMarketsAsync(Request([AdaEpic]), CancellationToken.None);
+
+        var warning = Assert.Single(harness.Logger.Messages);
+        Assert.Contains("HTTP 403", warning);
+        Assert.DoesNotContain("password-secret", warning);
+        Assert.Contains("provider error code: Unavailable", warning);
     }
 
     /// <summary>
@@ -458,6 +526,9 @@ public sealed class IgMarketDetailsGatewayTests
         Assert.True(failure.IsRetryable);
         Assert.Equal(2, handler.Requests.Count);
         Assert.Equal(handler.Requests.Count, budget.Reservations);
+        var warning = Assert.Single(harness.Logger.Messages);
+        Assert.Contains($"HTTP {(int)statusCode}", warning);
+        Assert.Contains("provider error code: Unavailable", warning);
     }
 
     /// <summary>
@@ -603,6 +674,7 @@ public sealed class IgMarketDetailsGatewayTests
         Assert.Equal(MarketDetailTargetFailureKind.AllowanceUnavailable, failure.Kind);
         Assert.Empty(handler.Requests);
         Assert.Equal(1, budget.Reservations);
+        Assert.Contains("local request budget reservation failed", Assert.Single(harness.Logger.Messages));
     }
 
     /// <summary>
@@ -673,6 +745,7 @@ public sealed class IgMarketDetailsGatewayTests
         FakeContextResolver? contextResolver = null)
     {
         var client = new HttpClient(handler);
+        var logger = new RecordingLogger();
         return new GatewayHarness(
             client,
             new IgMarketDetailsGateway(
@@ -680,7 +753,9 @@ public sealed class IgMarketDetailsGatewayTests
                 new FakeCredentialService(),
                 contextResolver ?? new FakeContextResolver(Context()),
                 budget,
-                new IgProviderRequestThrottle(TimeSpan.Zero)));
+                new IgProviderRequestThrottle(TimeSpan.Zero),
+                logger),
+            logger);
     }
 
     private static MarketDetailGatewayRequest Request(
@@ -773,11 +848,35 @@ public sealed class IgMarketDetailsGatewayTests
             .Select(parts => Uri.UnescapeDataString(parts[1]))
             .Single();
 
-    private sealed class GatewayHarness(HttpClient client, IgMarketDetailsGateway gateway) : IDisposable
+    private sealed class GatewayHarness(HttpClient client, IgMarketDetailsGateway gateway, RecordingLogger logger) : IDisposable
     {
         internal IgMarketDetailsGateway Gateway { get; } = gateway;
 
+        internal RecordingLogger Logger { get; } = logger;
+
         public void Dispose() => client.Dispose();
+    }
+
+    private sealed class RecordingLogger : ILogger<IgMarketDetailsGateway>
+    {
+        internal List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Warning)
+            {
+                Messages.Add(formatter(state, exception));
+            }
+        }
     }
 
     private sealed class FakeCredentialService : IProtectedCredentialService

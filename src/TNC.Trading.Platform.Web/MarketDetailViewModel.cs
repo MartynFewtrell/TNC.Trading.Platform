@@ -69,8 +69,8 @@ internal sealed record MarketDetailViewModel(
         bool IsDefault);
 
     internal sealed record MarginDepositBandViewModel(
-        decimal Minimum,
-        QuantityViewModel Maximum,
+        decimal Min,
+        QuantityViewModel Max,
         decimal Margin,
         string Currency);
 

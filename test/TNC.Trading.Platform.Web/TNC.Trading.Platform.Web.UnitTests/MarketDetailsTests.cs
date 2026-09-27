@@ -47,7 +47,12 @@ public sealed class MarketDetailsTests
             Assert.Contains("ADA market notice", cut.Markup, StringComparison.Ordinal);
             Assert.Contains(cut.FindAll("time"), time => time.GetAttribute("datetime") == DetailTime.ToString("O"));
             Assert.Equal(2, cut.FindAll("[data-testid='market-detail-currencies'] tbody tr").Count);
-            Assert.Equal(2, cut.FindAll("[data-testid='market-detail-margin-bands'] tbody tr").Count);
+            var bands = cut.FindAll("[data-testid='market-detail-margin-bands'] tbody tr");
+            Assert.Equal(2, bands.Count);
+            Assert.Equal("0", bands[0].QuerySelectorAll("td")[0].TextContent);
+            Assert.Equal("No upper bound", bands[0].QuerySelectorAll("td")[1].TextContent);
+            Assert.Equal("1", bands[1].QuerySelectorAll("td")[0].TextContent);
+            Assert.Equal("10 USD", bands[1].QuerySelectorAll("td")[1].TextContent);
             Assert.NotEmpty(cut.FindAll("th[scope='col']"));
             Assert.NotEmpty(cut.FindAll("section[data-testid='market-detail-technical-source']"));
             Assert.NotEmpty(cut.FindAll("details.platform-accordion-section:not([open])"));
@@ -311,8 +316,8 @@ public sealed class MarketDetailsTests
             },
             MarginDepositBands = new[]
             {
-                new { Minimum = 0m, Maximum = new { Presence = "ExplicitNull", Value = (decimal?)null, Unit = "USD" }, Margin = 100m, Currency = "USD" },
-                new { Minimum = 1m, Maximum = new { Presence = "Value", Value = (decimal?)10m, Unit = "USD" }, Margin = 100m, Currency = "USD" }
+                new { Min = 0m, Max = new { Presence = "ExplicitNull", Value = (decimal?)null, Unit = "USD" }, Margin = 100m, Currency = "USD" },
+                new { Min = 1m, Max = new { Presence = "Value", Value = (decimal?)10m, Unit = "USD" }, Margin = 100m, Currency = "USD" }
             },
             MarginFactor = 100m,
             MarginFactorUnit = "PERCENTAGE",

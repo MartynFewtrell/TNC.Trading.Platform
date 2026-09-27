@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketDetails;
 
@@ -12,6 +13,7 @@ internal sealed class IgMarketDetailsGateway(
     IAppliedBrokerEnvironmentContextResolver contextResolver,
     IMarketDetailRequestBudget requestBudget,
     IgProviderRequestThrottle throttle,
+    ILogger<IgMarketDetailsGateway> logger,
     TimeProvider? timeProvider = null) : IMarketDetailsGateway
 {
     private const int MaximumUriLength = 1800;
@@ -445,6 +447,12 @@ internal sealed class IgMarketDetailsGateway(
 
         if (!await requestBudget.TryReserveAsync(budgetContext, cancellationToken).ConfigureAwait(false))
         {
+            logger.LogWarning(
+                "IG market-detail {RequestKind} request was not sent because local request budget reservation failed for {Environment} on {TradingDay} slot {SlotIndex}.",
+                request.Method == HttpMethod.Post ? "Session" : "Markets",
+                budgetContext.Environment,
+                budgetContext.TradingDay,
+                budgetContext.SlotIndex);
             return SendAttempt.Failed(
                 Failure(MarketDetailTargetFailureKind.AllowanceUnavailable, retryable: false),
                 abortOperation: true);
@@ -565,23 +573,32 @@ internal sealed class IgMarketDetailsGateway(
             }
             catch (TaskCanceledException)
             {
+                LogFailedResponse(response.StatusCode, isSession, budgetContext, null);
                 return Failure(MarketDetailTargetFailureKind.TransientProviderFailure, retryable: true);
             }
             catch (HttpRequestException)
             {
+                LogFailedResponse(response.StatusCode, isSession, budgetContext, null);
                 return Failure(MarketDetailTargetFailureKind.TransientProviderFailure, retryable: true);
             }
             catch (IOException)
             {
+                LogFailedResponse(response.StatusCode, isSession, budgetContext, null);
                 return Failure(MarketDetailTargetFailureKind.TransientProviderFailure, retryable: true);
             }
 
             var code = body.IsOversized ? null : GetErrorCode(body.Bytes);
+            LogFailedResponse(response.StatusCode, isSession, budgetContext, code);
             return Failure(
                 code is not null && AllowanceErrorCodes.Contains(code)
                     ? MarketDetailTargetFailureKind.AllowanceUnavailable
                     : MarketDetailTargetFailureKind.Unauthorized,
                 retryable: false);
+        }
+
+        if (response.StatusCode != HttpStatusCode.NotFound || isSession)
+        {
+            LogFailedResponse(response.StatusCode, isSession, budgetContext, null);
         }
 
         if (response.StatusCode == HttpStatusCode.TooManyRequests)
@@ -623,20 +640,24 @@ internal sealed class IgMarketDetailsGateway(
             }
             catch (TaskCanceledException)
             {
+                LogFailedResponse(response.StatusCode, isSession, budgetContext, null);
                 return Failure(MarketDetailTargetFailureKind.TransientProviderFailure, retryable: true);
             }
             catch (HttpRequestException)
             {
+                LogFailedResponse(response.StatusCode, isSession, budgetContext, null);
                 return Failure(MarketDetailTargetFailureKind.TransientProviderFailure, retryable: true);
             }
             catch (IOException)
             {
+                LogFailedResponse(response.StatusCode, isSession, budgetContext, null);
                 return Failure(MarketDetailTargetFailureKind.TransientProviderFailure, retryable: true);
             }
 
+            var code = body.IsOversized ? null : GetErrorCode(body.Bytes);
+            LogFailedResponse(response.StatusCode, isSession, budgetContext, code);
             if (requestedEpics.Count == 1
-                && !body.IsOversized
-                && string.Equals(GetErrorCode(body.Bytes), "error.public-api.epic-not-found", StringComparison.Ordinal))
+                && string.Equals(code, "error.public-api.epic-not-found", StringComparison.Ordinal))
             {
                 return Failure(
                     MarketDetailTargetFailureKind.ProviderConfirmedUnavailable,
@@ -648,6 +669,27 @@ internal sealed class IgMarketDetailsGateway(
         }
 
         return Failure(MarketDetailTargetFailureKind.InvalidResponse, retryable: false);
+    }
+
+    private void LogFailedResponse(
+        HttpStatusCode statusCode,
+        bool isSession,
+        MarketDetailRequestBudgetContext budgetContext,
+        string? providerErrorCode)
+    {
+        var safeCode = providerErrorCode is not null
+            && (AllowanceErrorCodes.Contains(providerErrorCode)
+                || string.Equals(providerErrorCode, "error.public-api.epic-not-found", StringComparison.Ordinal))
+                    ? providerErrorCode
+                    : null;
+        logger.LogWarning(
+            "IG market-detail {RequestKind} request failed with HTTP {StatusCode}; provider error code: {ProviderErrorCode} for {Environment} on {TradingDay} slot {SlotIndex}.",
+            isSession ? "Session" : "Markets",
+            (int)statusCode,
+            safeCode ?? "Unavailable",
+            budgetContext.Environment,
+            budgetContext.TradingDay,
+            budgetContext.SlotIndex);
     }
 
     private void ParseMarkets(

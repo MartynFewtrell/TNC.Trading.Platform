@@ -193,8 +193,8 @@ else
                                 @foreach (var band in observation.Instrument.MarginDepositBands)
                                 {
                                     <tr>
-                                        <td>@band.Minimum</td>
-                                        <td>@FormatMaximum(band.Maximum)</td>
+                                        <td>@band.Min</td>
+                                        <td>@FormatMaximum(band.Max)</td>
                                         <td>@band.Margin</td>
                                         <td>@band.Currency</td>
                                     </tr>
