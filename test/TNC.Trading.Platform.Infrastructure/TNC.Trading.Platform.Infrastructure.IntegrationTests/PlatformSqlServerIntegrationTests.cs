@@ -438,7 +438,7 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
             var writingStore = new EfPlatformIgProofDataStore(writingContext);
             await writingStore.SaveAsync(
                 BrokerEnvironmentKind.Demo,
-                new IgProofDataSnapshot("Demo Account", "ACC1", 5000m, 2, DateTimeOffset.UtcNow),
+                new IgProofDataSnapshot("Demo Account", "ACC1", 5000.12345m, 2, DateTimeOffset.UtcNow),
                 CancellationToken.None);
         }
 
@@ -449,16 +449,67 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
         Assert.NotNull(snapshot);
         Assert.Equal("Demo Account", snapshot.PreferredAccountName);
         Assert.Equal("ACC1", snapshot.PreferredAccountId);
-        Assert.Equal(5000m, snapshot.Balance);
+        Assert.Equal(5000.12345m, snapshot.Balance);
         Assert.Equal(2, snapshot.OpenPositionCount);
 
         await restartedStore.SaveAsync(
             BrokerEnvironmentKind.Demo,
-            snapshot with { Balance = 5100m },
+            snapshot with { Balance = 5100.54321m },
             CancellationToken.None);
 
-        Assert.Equal(5100m, (await restartedStore.GetLatestAsync(BrokerEnvironmentKind.Demo, CancellationToken.None))!.Balance);
+        Assert.Equal(5100.54321m, (await restartedStore.GetLatestAsync(BrokerEnvironmentKind.Demo, CancellationToken.None))!.Balance);
         Assert.Equal(1, await restartedContext.IgProofData.CountAsync());
+    }
+
+    /// <summary>
+    /// Trace: proof-data balance precision warning. Verifies the additive migration preserves the
+    /// previous column's full integer range while accepting five fractional digits on new writes.
+    /// Expected: an existing maximum-range balance survives the upgrade, a five-decimal value
+    /// round-trips, and downgrade refuses to round that new value.
+    /// Why: merely silencing the EF model warning could leave old data at risk or keep SQL rounding balances.
+    /// </summary>
+    [Fact]
+    public async Task MigrateAsync_ShouldPreserveProofBalanceAndIncreaseScale_WhenOldSchemaContainsData()
+    {
+        await fixture.ResetDatabaseAsync();
+        var now = DateTimeOffset.UtcNow;
+        await using (var oldContext = fixture.CreateDbContext())
+        {
+            await oldContext.GetService<IMigrator>().MigrateAsync(
+                "20260926223139_ScheduleFailedMarketDetailFollowUp", fixture.CancellationToken);
+            var environmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(
+                oldContext, fixture.CancellationToken);
+            oldContext.IgProofData.Add(new IgProofDataEntity
+            {
+                BrokerEnvironmentId = environmentId,
+                BrokerEnvironment = "Demo",
+                Balance = 9999999999999999.99m,
+                RetrievedAtUtc = now
+            });
+            await oldContext.SaveChangesAsync(fixture.CancellationToken);
+        }
+
+        await using var upgradedContext = fixture.CreateDbContext();
+        await upgradedContext.Database.MigrateAsync(fixture.CancellationToken);
+        var store = new EfPlatformIgProofDataStore(upgradedContext);
+        Assert.Equal(9999999999999999.99m,
+            (await store.GetLatestAsync(BrokerEnvironmentKind.Demo, fixture.CancellationToken))!.Balance);
+
+        var scale = await upgradedContext.Database.SqlQueryRaw<int>(
+            "SELECT CAST(NUMERIC_SCALE AS int) AS [Value] FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'IgProofData' AND COLUMN_NAME = 'Balance'")
+            .SingleAsync(fixture.CancellationToken);
+        Assert.Equal(5, scale);
+
+        await store.SaveAsync(BrokerEnvironmentKind.Demo,
+            new IgProofDataSnapshot("Demo Account", "ACC1", 1234.56789m, 2, now),
+            fixture.CancellationToken);
+        Assert.Equal(1234.56789m,
+            (await store.GetLatestAsync(BrokerEnvironmentKind.Demo, fixture.CancellationToken))!.Balance);
+
+        await Assert.ThrowsAsync<SqlException>(() => upgradedContext.GetService<IMigrator>().MigrateAsync(
+            "20260926223139_ScheduleFailedMarketDetailFollowUp", fixture.CancellationToken));
+        Assert.Equal(1234.56789m,
+            (await store.GetLatestAsync(BrokerEnvironmentKind.Demo, fixture.CancellationToken))!.Balance);
     }
 
     /// <summary>

@@ -7,6 +7,9 @@ This directory contains project-level analysis, work-package documents, and the 
 - [Wiki home](wiki/README.md)
 - [Business requirements](business-requirements.md)
 - [Systems analysis](systems-analysis.md)
+- [Market-category collection failure research](market-category-collection-failures-research-2026-10-03.md)
+- [Market-category collection logging research](market-category-collection-logging-research-2026-10-03.md)
+- [Market-category collection observability plan](market-category-collection-observability-plan-2026-10-03.md)
 
 ## Documentation structure
 

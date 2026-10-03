@@ -86,6 +86,31 @@ public sealed class MarketCategoryInstrumentEndpointTests
     }
 
     /// <summary>
+    /// Trace: Market-category collection observability, persisted attempt chronology.
+    /// Verifies: the status response exposes the saved attempt time separately from the last successful snapshot.
+    /// Expected: the safe result and exact UTC attempt instant reach the Viewer contract.
+    /// Why: a saved failure from before an AppHost restart cannot be correlated with the new dashboard's logs.
+    /// </summary>
+    [Fact]
+    public void ToResponse_ShouldIncludeSavedAttemptTime_WhenCategoryFailed()
+    {
+        var attemptedAt = new DateTimeOffset(2026, 10, 3, 9, 19, 2, TimeSpan.Zero);
+        var status = new MarketCategoryInstrumentCollectionStatus(
+            BrokerEnvironmentKind.Demo, new DateOnly(2026, 10, 3), null, 0, "Completed",
+            "Succeeded", null, 7, 100,
+            [new MarketCategoryInstrumentCategoryStatus(
+                "COMMODITIES", null, 1, "Failed", "InvalidResponse", null, attemptedAt)]);
+        var response = new GetMarketCategoryInstrumentStatusResponse(
+            true, BrokerEnvironmentKind.Demo, status.TradingDay, status, false, null, null, null)
+            .ToResponse();
+
+        var category = Assert.Single(response.Categories);
+        Assert.Equal(attemptedAt, category.LastAttemptAtUtc);
+        Assert.Null(category.LastSuccessfulCollectionAtUtc);
+        Assert.Equal("InvalidResponse", category.SafeFailure);
+    }
+
+    /// <summary>
     /// Trace: Market Category Instruments Work Item 5, steps 3 and 4.
     /// Verifies: the manual category refresh schedule-closed outcome maps to a safe HTTP conflict response.
     /// Expected: the API reports 409 without exposing internal schedule or provider details.

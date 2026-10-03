@@ -78,7 +78,8 @@ internal static class MarketCategoryInstrumentEndpointMapping
                 category.Attempts,
                 category.Outcome,
                 category.SafeFailure,
-                category.DetailCoverage?.ToResponse())).ToArray() ?? []);
+                category.DetailCoverage?.ToResponse(),
+                category.LastAttemptAtUtc)).ToArray() ?? []);
     }
 
     public static MarketDetailResponse ToResponse(

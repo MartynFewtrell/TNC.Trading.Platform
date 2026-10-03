@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.MarketDataRuns;
@@ -650,10 +651,10 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
             if (collectionResult is MarketCategoryInstrumentCollectionResult.Complete complete
                 && await CanContinueAsync(lease, schedule, scheduleToken, cancellationToken).ConfigureAwait(false))
             {
+                var collectionId = Guid.NewGuid();
                 try
                 {
                     var retrievedAtUtc = clock.GetUtcNow().ToUniversalTime();
-                    var collectionId = Guid.NewGuid();
                     var missingOptionalValueCount = CountMissingOptionalValues(complete.Collection.Instruments);
                     await instrumentSnapshotWriter.SaveCompleteAsync(
                         complete.Collection,
@@ -692,7 +693,12 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                 }
                 catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
                 {
-                    logger.LogError(exception, "Instrument category snapshot publication failed.");
+                    logger.LogError(exception,
+                        "Instrument category snapshot publication failed. {Stage} {BrokerEnvironment} {TradingDay} {ScheduledSlot} {CategoryCode} {LeaseOwner} {LeaseFence} {FullRunId} {CollectionId} {CatalogueRevision} {PublicationPhase} {Reason} {ExceptionType} {TraceId}",
+                        "Publication", lease.BrokerEnvironment, lease.TradingDay, lease.ScheduledSlot,
+                        categoryCode, lease.Owner, lease.Fence, lease.FullRunLease?.RunId,
+                        collectionId, categorySnapshotRevision, "SaveComplete", "SnapshotWriteFailed",
+                        exception.GetType().Name, Activity.Current?.TraceId.ToString());
                     await cycleStore.CompleteCategoryAttemptAsync(
                         lease,
                         categoryCode,
@@ -714,16 +720,30 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                 false,
                 ToSafeError(failure),
                 cancellationToken).ConfigureAwait(false);
-            if (!completed
-                || !retryPolicy.CanRetry(
+            var canRetry = completed && retryPolicy.CanRetry(
                     failure,
                     retry,
                     await IsScheduleOpenAsync(lease, scheduleToken).ConfigureAwait(false),
                     await cycleStore.HasRequestBudgetAsync(lease, cancellationToken).ConfigureAwait(false),
                     await cycleStore.TryRenewLeaseAsync(
                         lease, clock.GetUtcNow().ToUniversalTime(), LeaseDuration, cancellationToken).ConfigureAwait(false),
-                    await IsAppliedEnvironmentUnchangedAsync(lease, cancellationToken).ConfigureAwait(false)))
+                    await IsAppliedEnvironmentUnchangedAsync(lease, cancellationToken).ConfigureAwait(false));
+            if (!canRetry)
             {
+                if (completed && !scheduleToken.IsCancellationRequested && failure.Category is not (
+                    MarketCategoryInstrumentFailureCategory.ScheduleClosed
+                    or MarketCategoryInstrumentFailureCategory.LeaseLost
+                    or MarketCategoryInstrumentFailureCategory.Cancelled))
+                {
+                    logger.LogWarning(
+                        "Instrument category collection failed. {Stage} {BrokerEnvironment} {TradingDay} {ScheduledSlot} {CategoryCode} {LeaseOwner} {LeaseFence} {FullRunId} {SafeCode} {FailureCategory} {Reason} {ProviderOperation} {PageNumber} {RowIndex} {FieldName} {HttpStatusCode} {Expected} {Actual} {AttemptNumber} {TraceId}",
+                        "Gateway", lease.BrokerEnvironment, lease.TradingDay, lease.ScheduledSlot,
+                        categoryCode, lease.Owner, lease.Fence, lease.FullRunLease?.RunId,
+                        ToSafeError(failure), failure.Category.ToString(), failure.Reason ?? failure.Category.ToString(),
+                        failure.Operation, failure.PageNumber, failure.RowIndex, failure.FieldName,
+                        failure.HttpStatusCode, failure.Expected, failure.Actual, retry + 1,
+                        Activity.Current?.TraceId.ToString());
+                }
                 return new(false, 0, null);
             }
 
@@ -845,6 +865,12 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
             "ProviderUnavailable",
         MarketCategoryInstrumentFailureCategory.InvalidCollection or MarketCategoryInstrumentFailureCategory.IncompleteCollection =>
             "InvalidResponse",
+        MarketCategoryInstrumentFailureCategory.Rejected when failure.HttpStatusCode == 403 =>
+            "ProviderAccessDenied",
+        MarketCategoryInstrumentFailureCategory.Unauthorized =>
+            "ProviderUnauthorized",
+        MarketCategoryInstrumentFailureCategory.Rejected =>
+            "ProviderRejected",
         MarketCategoryInstrumentFailureCategory.AllowanceUnavailable or MarketCategoryInstrumentFailureCategory.AllowanceExceeded or MarketCategoryInstrumentFailureCategory.RateLimited =>
             "BudgetExhausted",
         MarketCategoryInstrumentFailureCategory.ScheduleClosed =>

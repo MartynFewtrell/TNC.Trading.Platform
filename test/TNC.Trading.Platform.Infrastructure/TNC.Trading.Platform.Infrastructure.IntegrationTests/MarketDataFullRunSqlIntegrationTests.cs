@@ -133,6 +133,62 @@ public sealed class MarketDataFullRunSqlIntegrationTests(SqlServerDatabaseFixtur
     }
 
     /// <summary>
+    /// Trace: operator retry after failed instrument categories on a completed partial full run.
+    /// Verifies: resetting category attempts alone cannot reopen a covered slot, while releasing only its partial-run coverage allows a new run.
+    /// Expected: the old run and its outcome remain in SQL, and the new admission owns a fresh coverage marker.
+    /// Why: a reset must reach the gateway rather than silently returning AlreadyCovered.
+    /// </summary>
+    [Fact]
+    public async Task TryAdmitAsync_ShouldAdmitNewRun_WhenPartialCoverageIsReleasedForRetry()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using (var setup = fixture.CreateDbContext())
+        {
+            await setup.Database.MigrateAsync(fixture.CancellationToken);
+        }
+
+        var environmentId = await GetDemoEnvironmentIdAsync();
+        var admittedAt = DateTimeOffset.UtcNow;
+        var request = CreateRequest(environmentId, admittedAt, Guid.NewGuid());
+        MarketDataFullRunLease oldLease;
+        await using (var firstContext = fixture.CreateDbContext())
+        {
+            var admission = await CreateStore(firstContext, environmentId).TryAdmitAsync(request, fixture.CancellationToken);
+            oldLease = Assert.IsType<MarketDataFullRunLease>(admission.Lease);
+            Assert.True(await CreateStore(firstContext, environmentId).CompleteAsync(
+                oldLease, "Partial", "StageIncomplete", admittedAt.AddSeconds(1), fixture.CancellationToken));
+        }
+
+        var retryRequest = request with { AdmittedAtUtc = admittedAt.AddSeconds(2), LeaseOwner = Guid.NewGuid() };
+        await using (var coveredContext = fixture.CreateDbContext())
+        {
+            var covered = await CreateStore(coveredContext, environmentId).TryAdmitAsync(retryRequest, fixture.CancellationToken);
+            Assert.Equal(MarketDataFullRunAdmissionStatus.AlreadyCovered, covered.Status);
+        }
+
+        await using (var resetContext = fixture.CreateDbContext())
+        {
+            var coverage = await resetContext.MarketDataFullRunSlotCoverages.SingleAsync(
+                item => item.RunId == oldLease.RunId, fixture.CancellationToken);
+            resetContext.MarketDataFullRunSlotCoverages.Remove(coverage);
+            await resetContext.SaveChangesAsync(fixture.CancellationToken);
+        }
+
+        await using (var retryContext = fixture.CreateDbContext())
+        {
+            var retried = await CreateStore(retryContext, environmentId).TryAdmitAsync(retryRequest, fixture.CancellationToken);
+            Assert.Equal(MarketDataFullRunAdmissionStatus.Admitted, retried.Status);
+            Assert.NotEqual(oldLease.RunId, retried.Lease?.RunId);
+        }
+
+        await using var verify = fixture.CreateDbContext();
+        Assert.Equal("Partial", (await verify.MarketDataFullRuns.SingleAsync(
+            item => item.RunId == oldLease.RunId, fixture.CancellationToken)).Outcome);
+        Assert.Equal(2, await verify.MarketDataFullRuns.CountAsync(fixture.CancellationToken));
+        Assert.Single(await verify.MarketDataFullRunSlotCoverages.ToListAsync(fixture.CancellationToken));
+    }
+
+    /// <summary>
     /// Trace: Trading-Day Market Data delivery plan, Work Item 4, step 2.
     /// Verifies: the third retryable detail failure persists one due time, survives a new store/context, and can admit only one failed-item follow-up before close.
     /// Expected: the follow-up is due 15 minutes after the third failure, reuses only the source categories and detail slot, and a completed follow-up cannot be admitted again; an unconsumed retry is cancelled at close.

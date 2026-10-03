@@ -86,6 +86,76 @@ public sealed class IgMarketCategoryInstrumentsGatewayTests
     }
 
     /// <summary>
+    /// Trace: 3 October commodity listing, page zero expected 150 but returned 65.
+    /// Verifies: a short non-empty first page triggers one smaller-page restart, then every result is verified.
+    /// Expected: a 65-row provider cap yields 65, 65 and 20 rows, with 150 validated results and four reserved page calls.
+    /// Why: a recoverable provider-side cap must not prevent a complete snapshot or silently publish a partial one.
+    /// </summary>
+    [Fact]
+    public async Task CollectCompleteAsync_ShouldRestartWithSmallerPages_WhenFirstPageIsShort()
+    {
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse("cst", "security");
+            }
+
+            var requestedSize = int.Parse(QueryValue(request.Uri, "pageSize"), System.Globalization.CultureInfo.InvariantCulture);
+            var pageNumber = int.Parse(QueryValue(request.Uri, "pageNumber"), System.Globalization.CultureInfo.InvariantCulture);
+            var start = pageNumber * requestedSize;
+            var count = Math.Min(Math.Min(requestedSize, 65), 150 - start);
+            var rows = Enumerable.Range(start, count)
+                .Select(index => Instrument($"EPIC-{index}", $"Instrument {index}")).ToArray();
+            return PageResponse(pageNumber, requestedSize, (150 + requestedSize - 1) / requestedSize, 150, rows);
+        });
+        var budget = new FakeRequestBudget();
+
+        var result = await CreateGateway(handler, budget)
+            .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "COMMODITIES", BudgetContext(), CancellationToken.None);
+
+        var complete = Assert.IsType<MarketCategoryInstrumentCollectionResult.Complete>(result);
+        Assert.Equal(150, complete.Collection.Instruments.Count);
+        Assert.Equal(65, complete.Collection.Metadata.PageSize);
+        Assert.Equal([0, 1, 2], complete.Collection.Metadata.PageNumbersFetched);
+        Assert.Equal(["150", "65", "65", "65"], handler.Requests.Skip(1)
+            .Select(request => QueryValue(request.Uri, "pageSize")));
+        Assert.Equal(5, budget.Reservations);
+    }
+
+    /// <summary>
+    /// Trace: 3 October commodity listing, page zero expected 150 but returned 65.
+    /// Verifies: a provider that cannot supply coherent smaller pages is rejected after one bounded restart.
+    /// Expected: no complete result or further pagination when the replay still returns only 65 of 150 rows.
+    /// Why: a short page is not proof that all provider instruments were retrieved.
+    /// </summary>
+    [Fact]
+    public async Task CollectCompleteAsync_ShouldFailClosed_WhenSmallerPageReplayIsStillShort()
+    {
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse("cst", "security");
+            }
+
+            var requestedSize = int.Parse(QueryValue(request.Uri, "pageSize"), System.Globalization.CultureInfo.InvariantCulture);
+            var count = requestedSize == 150 ? 65 : 64;
+            return PageResponse(0, requestedSize, (150 + requestedSize - 1) / requestedSize, 150,
+                Enumerable.Range(0, count).Select(index => Instrument($"EPIC-{index}", $"Instrument {index}")).ToArray());
+        });
+
+        var result = await CreateGateway(handler)
+            .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "COMMODITIES", BudgetContext(), CancellationToken.None);
+
+        var failure = Assert.IsType<MarketCategoryInstrumentCollectionResult.Failed>(result).Failure;
+        Assert.Equal("PageRowCountMismatch", failure.Reason);
+        Assert.Equal(65, failure.Expected);
+        Assert.Equal(64, failure.Actual);
+        Assert.Equal(3, handler.Requests.Count);
+    }
+
+    /// <summary>
     /// Trace: Market Category Instruments Work Item 3. Verifies a page 401 obtains one new v2 session and replays only the failed middle page once.
     /// Expected: page 1 is attempted twice with distinct CST/security tokens, while pages 0 and 2 are each requested once and every HTTP call consumes allowance.
     /// Why: expired sessions must recover without an unbounded login loop or repeated downloading of already validated pages.
@@ -193,6 +263,10 @@ public sealed class IgMarketCategoryInstrumentsGatewayTests
             .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
 
         AssertFailure(result, MarketCategoryInstrumentFailureCategory.InvalidCollection);
+        var failure = Assert.IsType<MarketCategoryInstrumentCollectionResult.Failed>(result).Failure;
+        Assert.Equal("InvalidField", failure.Reason);
+        Assert.Equal(0, failure.RowIndex);
+        Assert.Equal("Instrument", failure.FieldName);
         Assert.Equal(2, handler.Requests.Count);
     }
 
@@ -342,6 +416,73 @@ public sealed class IgMarketCategoryInstrumentsGatewayTests
     }
 
     /// <summary>
+    /// Trace: collection observability plan, step 1. Verifies deterministic, bounded first-page rejection reasons.
+    /// Expected: each invalid metadata fixture identifies the rejected check without including provider content.
+    /// Why: a saved InvalidResponse alone cannot diagnose a rejected category listing.
+    /// </summary>
+    [Theory]
+    [InlineData("{\"instruments\":[]}", "MissingMetadata")]
+    [InlineData("{\"metadata\":{\"pageNumber\":1,\"pageSize\":10,\"totalPages\":1,\"totalResults\":0},\"instruments\":[]}", "InvalidPageNumber")]
+    [InlineData("{\"metadata\":{\"pageNumber\":0,\"pageSize\":150,\"totalPages\":1,\"totalResults\":0},\"instruments\":[]}", "PageSizeMismatch")]
+    [InlineData("{\"metadata\":{\"pageNumber\":0,\"pageSize\":10,\"totalPages\":2,\"totalResults\":1},\"instruments\":[]}", "TotalPagesMismatch")]
+    [InlineData("{\"metadata\":{\"pageNumber\":0,\"pageSize\":10,\"totalPages\":101,\"totalResults\":1010},\"instruments\":[]}", "ResultLimitExceeded")]
+    public async Task CollectCompleteAsync_ShouldReturnBoundedReason_WhenFirstPageMetadataIsInvalid(string payload, string reason)
+    {
+        var handler = new ControlledHandler(request => request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal)
+            ? SessionResponse("cst-secret", "security-secret")
+            : Response(HttpStatusCode.OK, payload));
+
+        var result = await CreateGateway(handler, pageSize: 10)
+            .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "COMMODITIES", BudgetContext(), CancellationToken.None);
+
+        var failure = Assert.IsType<MarketCategoryInstrumentCollectionResult.Failed>(result).Failure;
+        Assert.Equal(reason, failure.Reason);
+        Assert.Equal("instruments", failure.Operation);
+        Assert.Equal(0, failure.PageNumber);
+        Assert.DoesNotContain("secret", failure.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(payload, failure.ToString(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: collection observability plan, step 1. Verifies later-page metadata and row-count errors are distinguishable.
+    /// Expected: the failing page, stable reason and numeric expectation are returned without a partial listing.
+    /// Why: a first-page-only reason would not explain failures in multi-page categories.
+    /// </summary>
+    [Theory]
+    [InlineData(2, 1, 2, 2, true, "InvalidPageNumber", 1, 2)]
+    [InlineData(1, 5, 2, 2, true, "PageSizeMismatch", 1, 5)]
+    [InlineData(1, 1, 3, 2, true, "TotalPagesMismatch", 2, 3)]
+    [InlineData(1, 1, 2, 3, true, "TotalResultsMismatch", 2, 3)]
+    [InlineData(1, 1, 2, 2, false, "PageRowCountMismatch", 1, 0)]
+    public async Task CollectCompleteAsync_ShouldIdentifyFailedPage_WhenLaterPageIsInconsistent(
+        int returnedPage, int returnedSize, int returnedPages, int returnedResults,
+        bool includeRow, string reason, int expected, int actual)
+    {
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse("cst", "security");
+            }
+
+            return QueryValue(request.Uri, "pageNumber") == "0"
+                ? PageResponse(0, 1, 2, 2, Instrument("EPIC-0", "Instrument 0"))
+                : Response(HttpStatusCode.OK, PageJson(returnedPage, returnedSize, returnedPages,
+                    returnedResults, includeRow ? [Instrument("EPIC-1", "Instrument 1")] : []));
+        });
+
+        var result = await CreateGateway(handler, pageSize: 1)
+            .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "COMMODITIES", BudgetContext(), CancellationToken.None);
+
+        var failure = Assert.IsType<MarketCategoryInstrumentCollectionResult.Failed>(result).Failure;
+        Assert.Equal(MarketCategoryInstrumentFailureCategory.IncompleteCollection, failure.Category);
+        Assert.Equal(reason, failure.Reason);
+        Assert.Equal(1, failure.PageNumber);
+        Assert.Equal(expected, failure.Expected);
+        Assert.Equal(actual, failure.Actual);
+    }
+
+    /// <summary>
     /// Trace: Market Category Instruments Work Item 3. Verifies EPIC/name requirements, ordinal uniqueness, storage string lengths, expiry syntax, decimal bounds, and numeric ranges are enforced.
     /// Expected: each altered provider field yields InvalidCollection and no collection containing partially validated instruments.
     /// Why: malformed values can violate persistence constraints or corrupt downstream analysis while appearing to be successful provider data.
@@ -380,6 +521,10 @@ public sealed class IgMarketCategoryInstrumentsGatewayTests
             .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
 
         AssertFailure(result, MarketCategoryInstrumentFailureCategory.InvalidCollection);
+        var failure = Assert.IsType<MarketCategoryInstrumentCollectionResult.Failed>(result).Failure;
+        Assert.Equal(field == "expiry" && rawValue == "\"not-an-expiry\"" ? "InvalidExpiry" : "InvalidField", failure.Reason);
+        Assert.Equal(0, failure.RowIndex);
+        Assert.Equal(field, failure.FieldName, ignoreCase: true);
     }
 
     /// <summary>
@@ -452,6 +597,11 @@ public sealed class IgMarketCategoryInstrumentsGatewayTests
             .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
 
         AssertFailure(result, MarketCategoryInstrumentFailureCategory.InvalidCollection);
+        var failure = Assert.IsType<MarketCategoryInstrumentCollectionResult.Failed>(result).Failure;
+        Assert.Equal(repeatedField == "epic" ? "DuplicateEpic" : "DuplicateName", failure.Reason);
+        Assert.Equal(1, failure.PageNumber);
+        Assert.Equal(0, failure.RowIndex);
+        Assert.DoesNotContain("Name One", failure.ToString(), StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -587,6 +737,7 @@ public sealed class IgMarketCategoryInstrumentsGatewayTests
     [InlineData("timeout", nameof(MarketCategoryInstrumentFailureCategory.Timeout))]
     [InlineData("rate-limit", nameof(MarketCategoryInstrumentFailureCategory.RateLimited))]
     [InlineData("rejected", nameof(MarketCategoryInstrumentFailureCategory.Rejected))]
+    [InlineData("forbidden", nameof(MarketCategoryInstrumentFailureCategory.Rejected))]
     public async Task CollectCompleteAsync_ShouldReturnSafeFailure_WhenProviderRequestFails(string failureKind, string expectedCategory)
     {
         var handler = new ControlledHandler(request =>
@@ -601,7 +752,12 @@ public sealed class IgMarketCategoryInstrumentsGatewayTests
                 throw new TaskCanceledException("secret timeout details");
             }
 
-            return Response(failureKind == "rate-limit" ? HttpStatusCode.TooManyRequests : HttpStatusCode.BadRequest, "secret-provider-diagnostic");
+            return Response(failureKind switch
+            {
+                "rate-limit" => HttpStatusCode.TooManyRequests,
+                "forbidden" => HttpStatusCode.Forbidden,
+                _ => HttpStatusCode.BadRequest
+            }, "secret-provider-diagnostic");
         });
 
         var result = await CreateGateway(handler)
@@ -609,7 +765,34 @@ public sealed class IgMarketCategoryInstrumentsGatewayTests
 
         var failure = Assert.IsType<MarketCategoryInstrumentCollectionResult.Failed>(result);
         Assert.Equal(Enum.Parse<MarketCategoryInstrumentFailureCategory>(expectedCategory), failure.Failure.Category);
+        Assert.Equal(failureKind == "timeout" ? "Timeout" : "HttpStatus", failure.Failure.Reason);
+        Assert.Equal("instruments", failure.Failure.Operation);
+        Assert.Equal(failureKind switch { "rate-limit" => 429, "rejected" => 400, "forbidden" => 403, _ => (int?)null },
+            failure.Failure.HttpStatusCode);
         Assert.DoesNotContain("secret", result.ToString(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: collection observability plan, step 1. Verifies exhausted page reauthentication identifies a session failure.
+    /// Expected: a second HTTP 401 yields SessionUnauthorized with only a safe status and provider operation.
+    /// Why: a saved UnexpectedFailure must distinguish denied provider access from publication errors.
+    /// </summary>
+    [Fact]
+    public async Task CollectCompleteAsync_ShouldIdentifySessionUnauthorized_WhenPageReplayIsDenied()
+    {
+        var handler = new ControlledHandler(request => request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal)
+            ? SessionResponse("cst-secret", "security-secret")
+            : Response(HttpStatusCode.Unauthorized, "secret-provider-diagnostic"));
+
+        var result = await CreateGateway(handler)
+            .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "CRYPTOCURRENCY", BudgetContext(), CancellationToken.None);
+
+        var failure = Assert.IsType<MarketCategoryInstrumentCollectionResult.Failed>(result).Failure;
+        Assert.Equal("SessionUnauthorized", failure.Reason);
+        Assert.Equal("instruments", failure.Operation);
+        Assert.Equal(401, failure.HttpStatusCode);
+        Assert.Equal(4, handler.Requests.Count);
+        Assert.DoesNotContain("secret", failure.ToString(), StringComparison.Ordinal);
     }
 
     /// <summary>

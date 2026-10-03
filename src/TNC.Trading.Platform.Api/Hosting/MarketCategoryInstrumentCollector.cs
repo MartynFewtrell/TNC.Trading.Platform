@@ -20,7 +20,6 @@ internal sealed class MarketCategoryInstrumentCollector(
         var isStartupCheck = true;
         while (!stoppingToken.IsCancellationRequested)
         {
-            var startedAt = timeProvider.GetTimestamp();
             var result = new MarketCategoryInstrumentCycleResult(
                 "PausedAfterUnexpectedFailure",
                 timeProvider.GetUtcNow().Add(ConfigurationRecheckInterval),
@@ -113,24 +112,6 @@ internal sealed class MarketCategoryInstrumentCollector(
             {
                 logger.LogError(exception, "Scheduled market-category instrument collection tick failed.");
             }
-
-            logger.LogInformation(
-                "Instrument collector tick {Status}: {CompletedCategoryCount} categories completed, {FailedCategoryCount} failed, {ProviderPageCount} provider pages, collection IDs {CollectionIds}, elapsed {ElapsedMilliseconds} ms; next schedule check at {NextWakeUpUtc}.",
-                result.Status,
-                result.CompletedCategories,
-                result.FailedCategories,
-                result.ProviderPages,
-                result.CollectionIds is null ? string.Empty : string.Join(",", result.CollectionIds),
-                timeProvider.GetElapsedTime(startedAt).TotalMilliseconds,
-                result.NextWakeUpUtc);
-            logger.LogInformation(
-                "Market-detail collector tick {Status}: {CompletedCount}/{ExpectedCount} EPICs completed, {ExcludedCount} excluded; reason {SafeReasonCode}, next check at {NextScheduledCheckUtc}.",
-                detailResult.Status,
-                detailResult.Counts.CompletedCount,
-                detailResult.Counts.ExpectedCount,
-                detailResult.Counts.ExcludedCount,
-                detailResult.SafeReasonCode ?? string.Empty,
-                detailResult.NextScheduledCheckUtc);
 
             var requestedDelay = result.NextWakeUpUtc - timeProvider.GetUtcNow();
             var delay = requestedDelay <= TimeSpan.Zero

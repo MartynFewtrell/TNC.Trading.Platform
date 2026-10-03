@@ -217,6 +217,7 @@ internal sealed class PlatformDbContext(DbContextOptions<PlatformDbContext> opti
             entity.Property(item => item.BrokerEnvironment).HasMaxLength(32);
             entity.Property(item => item.PreferredAccountName).HasMaxLength(256);
             entity.Property(item => item.PreferredAccountId).HasMaxLength(64);
+            entity.Property(item => item.Balance).HasPrecision(21, 5);
         });
 
         modelBuilder.Entity<OperationalEventEntity>(entity =>

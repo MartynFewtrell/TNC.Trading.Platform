@@ -79,7 +79,8 @@ internal sealed class EfMarketCategoryInstrumentStatusReader(
                     latestAttempt?.Attempts ?? 0,
                     latestAttempt?.State,
                     latestAttempt?.SafeError,
-                    coverage);
+                    coverage,
+                    latestAttempt?.UpdatedAtUtc);
             })
             .ToArray();
         return new(

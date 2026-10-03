@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using TNC.Trading.Platform.Api.Hosting;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
@@ -20,8 +21,10 @@ public sealed class MarketCategoryInstrumentCollectorTests
     public async Task StartAsync_ShouldUseFreshScopePerTickAndStop_WhenHostShutsDown()
     {
         var probe = new CollectorProbe();
+        var logger = new TickLogger();
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<ILogger<MarketCategoryInstrumentCollector>>(logger);
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(probe);
         services.AddScoped<IMarketCategoryInstrumentCycleCoordinator, ProbeCoordinator>();
@@ -47,6 +50,25 @@ public sealed class MarketCategoryInstrumentCollectorTests
         Assert.Equal(probe.TickCount, probe.FullRunIds.Count);
         Assert.Equal(["listing", "detail", "listing", "detail"], probe.TickOrder);
         Assert.Equal([true, false], probe.StartupChecks);
+        Assert.Equal(0, logger.InformationCount);
+    }
+
+    private sealed class TickLogger : ILogger<MarketCategoryInstrumentCollector>
+    {
+        public int InformationCount { get; private set; }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+            Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Information)
+            {
+                InformationCount++;
+            }
+        }
     }
 
     private sealed class CollectorProbe

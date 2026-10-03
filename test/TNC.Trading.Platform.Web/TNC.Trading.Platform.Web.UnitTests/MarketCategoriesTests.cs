@@ -44,6 +44,40 @@ public sealed class MarketCategoriesTests
     }
 
     /// <summary>
+    /// Trace: Market-category collection observability, saved failure chronology.
+    /// Verifies: refreshed collection status dates a failed attempt independently of the last successful snapshot.
+    /// Expected: the page shows the precise saved attempt time and status result, not the stale catalogue result.
+    /// Why: a previously recorded failure must not be mistaken for a new failure in the running AppHost.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldShowSavedAttemptTime_WhenCollectionStatusContainsFailure()
+    {
+        var attemptedAt = new DateTimeOffset(2026, 10, 3, 9, 19, 2, TimeSpan.Zero);
+        using var context = new PlatformComponentTestContext("local-viewer", null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCategories("COMMODITIES", false, true)),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCollectionStatus(
+                categories: [new
+                {
+                    CategoryCode = "COMMODITIES",
+                    LastAttemptAtUtc = attemptedAt,
+                    Attempts = 1,
+                    Outcome = "Failed",
+                    SafeFailure = "InvalidResponse"
+                }])));
+
+        var cut = context.Render<MarketCategories>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var row = cut.Find("tbody tr");
+            Assert.Equal(attemptedAt.ToString("O"), row.QuerySelector("time")?.GetAttribute("datetime"));
+            Assert.Contains("Failed", row.TextContent, StringComparison.Ordinal);
+            Assert.Contains("InvalidResponse", row.TextContent, StringComparison.Ordinal);
+            Assert.Contains("Never collected", row.TextContent, StringComparison.Ordinal);
+        });
+    }
+
+    /// <summary>
     /// Trace: Market categories page, instrument collection summary.
     /// Verifies: the next scheduled check and configured quota share one responsive row without internal collector state.
     /// Expected: both summary values are present in the same container, with no collector status or scheduling reason shown.
@@ -401,7 +435,8 @@ public sealed class MarketCategoriesTests
     private static object CreateCollectionStatus(
         DateTimeOffset? nextWakeUpUtc = null,
         int? approvedDailyRequestAllowance = null,
-        DateTimeOffset? lastCategoryRefreshAtUtc = null) => new
+        DateTimeOffset? lastCategoryRefreshAtUtc = null,
+        object[]? categories = null) => new
     {
         State = "Available",
         BrokerEnvironment = "Demo",
@@ -417,6 +452,6 @@ public sealed class MarketCategoriesTests
         SafeCategoryFailure = (string?)null,
         UsedRequestBudget = 0,
         ApprovedDailyRequestAllowance = approvedDailyRequestAllowance,
-        Categories = Array.Empty<object>()
+        Categories = categories ?? Array.Empty<object>()
     };
 }

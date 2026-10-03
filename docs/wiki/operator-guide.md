@@ -103,6 +103,25 @@ shown as IG-supplied text. Collector status reports schedule, next wake-up,
 request budget, collection outcome, and safe failure state; it does not expose
 credentials or raw provider diagnostics. Failure to load status is shown
 separately and does not blank successfully loaded category or instrument data.
+The categories table shows the last successful collection separately from the
+last saved attempt for the current trading day. Its attempt result is refreshed
+with the schedule status; the catalogue's "Last refreshed" time is not the
+attempt time. A saved failure remains visible after an API restart even though
+that restart's Aspire dashboard cannot contain logs from the earlier attempt.
+If status cannot be read, the attempt time is unavailable and the saved page
+result remains visible.
+For a failed category, use the API's structured `Stage=Gateway` Warning or
+`Stage=Publication` Error alongside the saved environment/day/slot/category
+attempt. `InvalidResponse` alone does not identify the failed check or prove a
+database problem. A `ProviderAccessDenied` result means IG returned HTTP 403
+for the category; check Demo account permissions or regional product access,
+or deselect the category if it should not be collected. A
+`PageRowCountMismatch` triggers one bounded smaller-page replay when the
+first page is short and non-empty, but cannot be treated as success unless all
+reported instruments can be verified. The
+[runtime diagnostic guidance](runtime-behavior.md#diagnosing-collection-failures)
+explains the safe reason fields and how to correlate them without exposing
+provider data.
 
 Each instrument tab links to
 `/market-categories/{CategoryCode}/instruments/{Epic}/market-details`, which

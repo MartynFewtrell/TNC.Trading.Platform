@@ -1,4 +1,6 @@
 ﻿using Microsoft.AspNetCore.DataProtection;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.AppliedBrokerSchedule;
@@ -18,6 +20,29 @@ namespace TNC.Trading.Platform.Infrastructure.UnitTests;
 
 public class IgProofDataTests
 {
+    /// <summary>
+    /// Trace: IG proof-data balance precision warning. Verifies the SQL Server model explicitly
+    /// maps proof balance to five fractional digits while preserving the old 16-digit integer range.
+    /// Expected: model validation succeeds with the warning treated as an error and uses decimal(21,5).
+    /// Why: default precision can silently round or truncate provider balances before persistence.
+    /// </summary>
+    [Fact]
+    public void ProofBalance_ShouldUseExplicitPrecision_WhenSqlServerModelIsValidated()
+    {
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=TncTradingPlatform.ModelValidation;Trusted_Connection=True")
+            .ConfigureWarnings(warnings => warnings.Throw(SqlServerEventId.DecimalTypeDefaultWarning))
+            .Options;
+        using var dbContext = new PlatformDbContext(options);
+
+        var property = dbContext.Model.FindEntityType(typeof(IgProofDataEntity))!
+            .FindProperty(nameof(IgProofDataEntity.Balance))!;
+
+        Assert.Equal("decimal(21,5)", property.GetColumnType());
+        Assert.Equal(21, property.GetPrecision());
+        Assert.Equal(5, property.GetScale());
+    }
+
     /// <summary>
     /// Traces to FR3, FR5, FR9, NF1, NF3, SR2, SR3, TR4, TR7.
     /// Verifies: when authentication succeeds and both accounts and positions queries return data,

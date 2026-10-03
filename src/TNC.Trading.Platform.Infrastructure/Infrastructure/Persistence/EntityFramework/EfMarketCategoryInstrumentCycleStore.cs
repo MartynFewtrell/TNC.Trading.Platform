@@ -17,7 +17,8 @@ internal sealed class EfMarketCategoryInstrumentCycleStore(
     private const int MaximumAttempts = 3;
     private static readonly HashSet<string> SafeErrors = new(StringComparer.Ordinal)
     {
-        "ProviderUnavailable", "InvalidResponse", "BudgetExhausted", "WindowClosed", "Conflict", "UnexpectedFailure"
+        "ProviderUnavailable", "InvalidResponse", "BudgetExhausted", "WindowClosed", "Conflict", "UnexpectedFailure",
+        "ProviderAccessDenied", "ProviderUnauthorized", "ProviderRejected"
     };
     private TimeProvider Clock => timeProvider ?? TimeProvider.System;
 

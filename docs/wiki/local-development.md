@@ -110,6 +110,20 @@ From the repository root:
 dotnet build
 ```
 
+If Aspire is running the API or Web, the default build can fail with
+`MSB3027`/`MSB3021` because those processes hold assemblies in their
+`bin/Debug` directories. To validate without interrupting the running
+application, use separate output directories for all solution projects:
+
+```powershell
+dotnet build TNC.Trading.Platform.slnx --no-restore -p:BaseOutputPath=bin\BuildValidation\
+```
+
+Alternatively, stop the running AppHost with `aspire stop --non-interactive`
+before a default build when it is safe to interrupt the application. See the
+[Aspire documentation](https://aspire.dev/) for lifecycle guidance. Do not
+delete `bin/` or `obj/` to work around an active file lock.
+
 To build a deployment migration artifact from the repository root:
 
 ```powershell

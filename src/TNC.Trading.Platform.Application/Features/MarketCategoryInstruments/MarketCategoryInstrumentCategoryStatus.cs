@@ -9,4 +9,5 @@ internal sealed record MarketCategoryInstrumentCategoryStatus(
     int Attempts,
     string? Outcome,
     string? SafeFailure,
-    MarketDetailCategoryCoverage? DetailCoverage = null);
+    MarketDetailCategoryCoverage? DetailCoverage = null,
+    DateTimeOffset? LastAttemptAtUtc = null);

@@ -587,9 +587,9 @@ public sealed class MarketDetailCollectionCoordinatorTests
 
     private sealed class NullApplicationLogger : IPlatformApplicationLogger
     {
-        public void LogWarning(string message) { }
+        public void LogWarning(string message, params object?[] arguments) { }
         public void LogWarning(Exception exception, string message) { }
-        public void LogError(Exception exception, string message) { }
+        public void LogError(Exception exception, string message, params object?[] arguments) { }
         public void LogInformation(string message, params object?[] arguments) { }
     }
 }

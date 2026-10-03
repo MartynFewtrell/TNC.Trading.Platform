@@ -3,12 +3,15 @@
 -- Edit the trading day and zero-based slot below; do not reset UsedRequestBudget.
 -- Apply pending migrations and restart the API with the snapshot publication fix first.
 -- Run only while the configured trading window is still open.
+-- This also releases the failed full-run slot-coverage marker; the historical run remains.
 
 DECLARE @TradingDay date = '2026-09-25';
 DECLARE @ScheduledSlot int = 0;
 DECLARE @BrokerEnvironmentId uniqueidentifier;
 DECLARE @LockResource nvarchar(255);
+DECLARE @FullRunLockResource nvarchar(255);
 DECLARE @LockResult int;
+DECLARE @FullRunLockResult int;
 DECLARE @NowUtc datetimeoffset = TODATETIMEOFFSET(SYSUTCDATETIME(), '+00:00');
 
 SET XACT_ABORT ON;
@@ -48,6 +51,18 @@ BEGIN TRY
         CONVERT(char(8), @TradingDay, 112),
         N'/',
         @ScheduledSlot);
+    SET @FullRunLockResource = CONCAT(
+        N'MarketDataFullRuns/',
+        LOWER(REPLACE(CONVERT(varchar(36), @BrokerEnvironmentId), '-', '')));
+
+    EXEC @FullRunLockResult = sys.sp_getapplock
+        @Resource = @FullRunLockResource,
+        @LockMode = N'Exclusive',
+        @LockOwner = N'Transaction',
+        @LockTimeout = 30000;
+
+    IF @FullRunLockResult < 0
+        THROW 51010, 'Could not acquire the full-run admission lock.', 1;
 
     EXEC @LockResult = sys.sp_getapplock
         @Resource = @LockResource,
@@ -64,9 +79,9 @@ BEGIN TRY
         WHERE BrokerEnvironmentId = @BrokerEnvironmentId
           AND TradingDay = @TradingDay
           AND ScheduledSlot = @ScheduledSlot
-          AND Outcome IN (N'Failed', N'Completed')
+          AND Outcome IN (N'Failed', N'Completed', N'Pending')
           AND (LeaseExpiresAtUtc IS NULL OR LeaseExpiresAtUtc <= @NowUtc))
-        THROW 51004, 'The slot must be Failed or Completed with failed categories, exist, and have no active lease.', 1;
+        THROW 51004, 'The slot must exist with no active lease and be Failed, Completed, or previously reset Pending.', 1;
 
     IF EXISTS (
         SELECT 1
@@ -114,6 +129,48 @@ BEGIN TRY
               AND State <> N'Failed'))
         THROW 51009, 'A completed slot can only be reset when all its category attempts failed.', 1;
 
+    IF EXISTS (
+        SELECT 1
+        FROM dbo.InstrumentCollectionCycleStates
+        WHERE BrokerEnvironmentId = @BrokerEnvironmentId
+          AND TradingDay = @TradingDay
+          AND ScheduledSlot = @ScheduledSlot
+          AND Outcome = N'Pending')
+       AND (NOT EXISTS (
+            SELECT 1
+            FROM dbo.InstrumentCollectionCategoryAttempts
+            WHERE BrokerEnvironmentId = @BrokerEnvironmentId
+              AND TradingDay = @TradingDay
+              AND ScheduledSlot = @ScheduledSlot
+              AND State = N'Pending'
+              AND Attempts = 0)
+            OR EXISTS (
+            SELECT 1
+            FROM dbo.InstrumentCollectionCategoryAttempts
+            WHERE BrokerEnvironmentId = @BrokerEnvironmentId
+              AND TradingDay = @TradingDay
+              AND ScheduledSlot = @ScheduledSlot
+              AND (State <> N'Pending' OR Attempts <> 0))
+            OR EXISTS (
+            SELECT 1
+            FROM dbo.InstrumentCollectionCycleStates
+            WHERE BrokerEnvironmentId = @BrokerEnvironmentId
+              AND TradingDay = @TradingDay
+              AND ScheduledSlot = @ScheduledSlot
+              AND (CategoryPrerequisite <> N'Pending' OR LeaseOwner IS NOT NULL))
+            OR NOT EXISTS (
+            SELECT 1
+            FROM dbo.MarketDataFullRunSlotCoverages AS coverage
+            JOIN dbo.InstrumentCollectionCycleStates AS cycle
+                ON cycle.BrokerEnvironmentId = coverage.BrokerEnvironmentId
+               AND cycle.TradingDay = coverage.TradingDay
+               AND cycle.ScheduledSlot = coverage.ScheduledSlot
+               AND cycle.ScheduleRevision = coverage.ScheduleRevision
+            WHERE coverage.BrokerEnvironmentId = @BrokerEnvironmentId
+              AND coverage.TradingDay = @TradingDay
+              AND coverage.ScheduledSlot = @ScheduledSlot))
+        THROW 51012, 'A pending slot can only be reopened when previously reset attempts and full-run coverage remain.', 1;
+
     IF NOT EXISTS (
         SELECT 1
         FROM dbo.InstrumentCollectionSettings
@@ -124,6 +181,21 @@ BEGIN TRY
                WHERE BrokerEnvironmentId = @BrokerEnvironmentId
                  AND TradingDay = @TradingDay))
         THROW 51007, 'No approved daily request budget remains for this trading day.', 1;
+
+    IF EXISTS (
+        SELECT 1
+        FROM dbo.MarketDataFullRunSlotCoverages AS coverage
+        JOIN dbo.MarketDataFullRuns AS run ON run.RunId = coverage.RunId
+        JOIN dbo.InstrumentCollectionCycleStates AS cycle
+            ON cycle.BrokerEnvironmentId = coverage.BrokerEnvironmentId
+           AND cycle.TradingDay = coverage.TradingDay
+           AND cycle.ScheduledSlot = coverage.ScheduledSlot
+           AND cycle.ScheduleRevision = coverage.ScheduleRevision
+        WHERE coverage.BrokerEnvironmentId = @BrokerEnvironmentId
+          AND coverage.TradingDay = @TradingDay
+          AND coverage.ScheduledSlot = @ScheduledSlot
+          AND (run.Status <> N'Completed' OR run.Outcome <> N'Partial'))
+        THROW 51011, 'Only completed partial full-run coverage may be released.', 1;
 
     SELECT TradingDay, ScheduledSlot, Outcome, CategoryPrerequisite,
            CategoryPrerequisiteAttempts, UsedRequestBudget, LeaseFence
@@ -142,6 +214,17 @@ BEGIN TRY
       AND TradingDay = @TradingDay
       AND ScheduledSlot = @ScheduledSlot;
 
+    DELETE coverage
+    FROM dbo.MarketDataFullRunSlotCoverages AS coverage
+    JOIN dbo.InstrumentCollectionCycleStates AS cycle
+        ON cycle.BrokerEnvironmentId = coverage.BrokerEnvironmentId
+       AND cycle.TradingDay = coverage.TradingDay
+       AND cycle.ScheduledSlot = coverage.ScheduledSlot
+       AND cycle.ScheduleRevision = coverage.ScheduleRevision
+    WHERE coverage.BrokerEnvironmentId = @BrokerEnvironmentId
+      AND coverage.TradingDay = @TradingDay
+      AND coverage.ScheduledSlot = @ScheduledSlot;
+
     UPDATE dbo.InstrumentCollectionCycleStates
     SET Outcome = N'Pending',
         CategoryPrerequisite = N'Pending',
@@ -153,7 +236,7 @@ BEGIN TRY
     WHERE BrokerEnvironmentId = @BrokerEnvironmentId
       AND TradingDay = @TradingDay
       AND ScheduledSlot = @ScheduledSlot
-      AND Outcome IN (N'Failed', N'Completed');
+      AND Outcome IN (N'Failed', N'Completed', N'Pending');
 
     IF @@ROWCOUNT <> 1
         THROW 51008, 'The slot changed before it could be reset.', 1;

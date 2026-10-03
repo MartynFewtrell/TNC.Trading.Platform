@@ -33,6 +33,80 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
     }
 
     /// <summary>
+    /// Trace: collection observability plan, step 2. Verifies exhausted retries emit one structured gateway warning.
+    /// Expected: the final event carries a saved-attempt join key, reason and safe code, not one warning per retry.
+    /// Why: operators must identify the failing stage without inflating failure counts.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteDueCycleAsync_ShouldLogOneCorrelatedGatewayWarning_WhenRetriesExhaust()
+    {
+        var harness = new CycleHarness();
+        harness.ConfigureFailureForFirstSelectedCategory();
+
+        await harness.ExecuteAsync(CancellationToken.None);
+
+        var entry = Assert.Single(harness.Warnings);
+        Assert.Contains("{Stage}", entry.Message, StringComparison.Ordinal);
+        Assert.Equal("Gateway", entry.Arguments[0]);
+        Assert.Equal("A", entry.Arguments[4]);
+        Assert.Equal(harness.FullRunId, entry.Arguments[7]);
+        Assert.Equal("ProviderUnavailable", entry.Arguments[8]);
+        Assert.Equal("Unavailable", entry.Arguments[9]);
+        Assert.Equal(3, entry.Arguments[18]);
+        Assert.Empty(harness.Errors);
+    }
+
+    /// <summary>
+    /// Trace: collection observability plan, step 2. Verifies provider denial and rejection remain gateway failures.
+    /// Expected: a single warning and persisted safe code identify access denial, session expiry, or other rejection without publication errors.
+    /// Why: a provider-side denial must not be mistaken for a snapshot publication exception.
+    /// </summary>
+    [Theory]
+    [InlineData("Unauthorized", "SessionUnauthorized", 401, "ProviderUnauthorized")]
+    [InlineData("Rejected", "HttpStatus", 403, "ProviderAccessDenied")]
+    [InlineData("Rejected", "HttpStatus", 400, "ProviderRejected")]
+    public async Task ExecuteDueCycleAsync_ShouldLogGatewayStage_WhenProviderDeniesOrRejects(
+        string category, string reason, int httpStatus, string safeCode)
+    {
+        var harness = new CycleHarness();
+        harness.ConfigureProviderFailure(Enum.Parse<MarketCategoryInstrumentFailureCategory>(category), reason, httpStatus);
+
+        await harness.ExecuteAsync(CancellationToken.None);
+
+        var entry = Assert.Single(harness.Warnings);
+        Assert.Equal("Gateway", entry.Arguments[0]);
+        Assert.Equal(safeCode, entry.Arguments[8]);
+        Assert.Equal(category, entry.Arguments[9]);
+        Assert.Equal(reason, entry.Arguments[10]);
+        Assert.Equal(httpStatus, entry.Arguments[15]);
+        Assert.Equal(safeCode, harness.LastCategoryError);
+        Assert.Equal(1, entry.Arguments[18]);
+        Assert.Empty(harness.Errors);
+    }
+
+    /// <summary>
+    /// Trace: collection observability plan, step 2. Verifies publication exceptions retain their stack and correlation.
+    /// Expected: one Error identifies publication, category, full run and collection ID without gateway warnings.
+    /// Why: UnexpectedFailure also represents gateway outcomes and must not be misdiagnosed as a SQL failure.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteDueCycleAsync_ShouldLogCorrelatedPublicationError_WhenSnapshotWriterThrows()
+    {
+        var harness = new CycleHarness();
+        harness.ConfigurePublicationFailure();
+
+        await harness.ExecuteAsync(CancellationToken.None);
+
+        var entry = Assert.Single(harness.Errors);
+        Assert.IsType<InvalidOperationException>(entry.Exception);
+        Assert.Equal("Publication", entry.Arguments[0]);
+        Assert.Equal("A", entry.Arguments[4]);
+        Assert.Equal(harness.FullRunId, entry.Arguments[7]);
+        Assert.IsType<Guid>(entry.Arguments[8]);
+        Assert.Empty(harness.Warnings);
+    }
+
+    /// <summary>
     /// Trace: Trading-Day Market Data Work Item 4, step 1.
     /// Verifies: a failed category refresh can use the persisted last-good catalogue without treating the refresh as successful.
     /// Expected: selected categories continue collecting from the retained catalogue while the cycle reports a partial outcome.
@@ -296,6 +370,7 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         private FakeCategorySnapshotStore CategorySnapshotStore { get; } = new();
         private FakeInstrumentsGateway Gateway { get; } = new();
         private FakeInstrumentWriter Writer { get; } = new();
+        private RecordingApplicationLogger Logger { get; } = new();
         public string? Status { get; private set; }
         public int CompletedCategories { get; private set; }
         public int FailedCategories { get; private set; }
@@ -309,6 +384,8 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         public Guid? InstrumentGatewayRunId => Gateway.FullRunId;
         public int ListingProviderCalls => Gateway.Calls;
         public IReadOnlyList<(MarketDataFullRunStage Stage, string Status)> FullRunStageAttempts => FullRunStore.StageAttempts;
+        public IReadOnlyList<(string Message, object?[] Arguments)> Warnings => Logger.Warnings;
+        public IReadOnlyList<(Exception Exception, object?[] Arguments)> Errors => Logger.Errors;
 
         public CycleHarness(
             TradingScheduleConfiguration? schedule = null,
@@ -331,6 +408,10 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         public int CategoryAttemptCount(string categoryCode) => CycleStore.CategoryAttempts.GetValueOrDefault(categoryCode);
 
         public void ConfigureFailureForFirstSelectedCategory() => Gateway.ConfigureFailureForA();
+        public string? LastCategoryError => CycleStore.LastCategoryError;
+        public void ConfigureProviderFailure(MarketCategoryInstrumentFailureCategory category, string reason, int httpStatus) =>
+            Gateway.ConfigureFailureForA(category, false, reason, httpStatus);
+        public void ConfigurePublicationFailure() => Writer.FailForA = true;
 
         public void ConfigureCategoryRefreshUnavailable() => categoryGateway.ConfigureUnavailable();
 
@@ -389,7 +470,7 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 new(),
                 Clock,
                 FullRunStore,
-                new NullApplicationLogger());
+                Logger);
         }
 
         public async Task ExecuteAsync(CancellationToken cancellationToken, bool isStartupCheck = false)
@@ -685,6 +766,7 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         private sealed class FakeCycleStore : IMarketCategoryInstrumentCycleStore
         {
             public Dictionary<string, int> CategoryAttempts { get; } = new(StringComparer.Ordinal);
+            public string? LastCategoryError { get; private set; }
             public string? LastCycleOutcome { get; private set; }
             public bool StartupLeaseRequested { get; private set; }
             private MarketCategoryInstrumentSlotProgress? latestProgress;
@@ -742,7 +824,11 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 DateTimeOffset nowUtc,
                 bool succeeded,
                 string? safeError,
-                CancellationToken cancellationToken) => Task.FromResult(true);
+                CancellationToken cancellationToken)
+            {
+                LastCategoryError = safeError;
+                return Task.FromResult(true);
+            }
 
             Task<bool> IMarketCategoryInstrumentCycleStore.HasRequestBudgetAsync(
                 MarketCategoryInstrumentCycleLease lease,
@@ -779,13 +865,15 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 CancellationToken cancellationToken) => Task.CompletedTask;
         }
 
-        private sealed class NullApplicationLogger : IPlatformApplicationLogger
+        private sealed class RecordingApplicationLogger : IPlatformApplicationLogger
         {
-            public void LogWarning(string message) { }
+            public List<(string Message, object?[] Arguments)> Warnings { get; } = [];
+            public List<(Exception Exception, object?[] Arguments)> Errors { get; } = [];
+            public void LogWarning(string message, params object?[] arguments) => Warnings.Add((message, arguments));
 
             public void LogWarning(Exception exception, string message) { }
 
-            public void LogError(Exception exception, string message) { }
+            public void LogError(Exception exception, string message, params object?[] arguments) => Errors.Add((exception, arguments));
 
             public void LogInformation(string message, params object?[] arguments) { }
         }
@@ -810,11 +898,15 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                     (MarketCategoryInstrumentCollectionResult)new MarketCategoryInstrumentCollectionResult.Complete(
                         CreateCollection(categoryCode)));
 
-            public void ConfigureFailureForA() =>
+            public void ConfigureFailureForA(
+                MarketCategoryInstrumentFailureCategory category = MarketCategoryInstrumentFailureCategory.Unavailable,
+                bool retryable = true,
+                string? reason = null,
+                int? httpStatus = null) =>
                 OnCollect = (_, categoryCode, _, _) => Task.FromResult(
                     categoryCode == "A"
                         ? (MarketCategoryInstrumentCollectionResult)new MarketCategoryInstrumentCollectionResult.Failed(
-                            new(MarketCategoryInstrumentFailureCategory.Unavailable, true))
+                            new(category, retryable, reason, HttpStatusCode: httpStatus))
                         : new MarketCategoryInstrumentCollectionResult.Complete(CreateCollection(categoryCode)));
 
             public void ConfigureClose(Action<DateTimeOffset> advanceTo) =>
@@ -853,6 +945,7 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
 
         private sealed class FakeInstrumentWriter : IMarketCategoryInstrumentSnapshotWriter
         {
+            public bool FailForA { get; set; }
             private Dictionary<string, MarketCategoryInstrumentSnapshot> Snapshots { get; } = new(StringComparer.Ordinal);
             private List<string> Writes { get; } = [];
             public int WritesCount => Writes.Count;
@@ -869,6 +962,10 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 CancellationToken cancellationToken)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (FailForA && collection.CategoryCode == "A")
+                {
+                    throw new InvalidOperationException("simulated publication failure");
+                }
                 var snapshot = new MarketCategoryInstrumentSnapshot(
                     Snapshots.GetValueOrDefault(collection.CategoryCode)?.SnapshotVersion + 1 ?? 1,
                     provenance,

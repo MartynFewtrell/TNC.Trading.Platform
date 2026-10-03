@@ -582,7 +582,7 @@ public sealed class MarketCategoryInstrumentSqlIntegrationTests(SqlServerDatabas
         Assert.Equal(2, (await verificationContext.InstrumentCollectionCycleStates.SingleAsync(fixture.CancellationToken)).UsedRequestBudget);
     }
 
-    /// <summary>Trace: Market Category Instruments Work Item 2. Verifies expired leases advance the fence, slot reservations are idempotent, category retries are bounded, and multiple slots share one atomic trading-day budget.</summary>
+    /// <summary>Trace: Market Category Instruments Work Item 2 and 3 October provider denial. Verifies expired leases advance the fence, retries are bounded, budgets are shared, and an HTTP 403 safe outcome persists without losing the slot.</summary>
     [Fact]
     public async Task TryReserveCategoryAttemptAsync_ShouldFenceAndBoundRetries_WhenLeaseExpires()
     {
@@ -624,7 +624,13 @@ public sealed class MarketCategoryInstrumentSqlIntegrationTests(SqlServerDatabas
         Assert.True(await store.TryBeginCategoryPrerequisiteAsync(BrokerEnvironmentKind.Demo, day, 0, secondOwner, secondFence.Value, now.AddSeconds(13), fixture.CancellationToken));
         Assert.True(await store.CompleteCategoryPrerequisiteAsync(BrokerEnvironmentKind.Demo, day, 0, secondOwner, secondFence.Value, now.AddSeconds(13), true, null, fixture.CancellationToken));
         Assert.True(await store.TryReserveCategoryAttemptAsync(BrokerEnvironmentKind.Demo, day, 0, "CAT", secondOwner, secondFence.Value, now.AddSeconds(13), fixture.CancellationToken));
-        Assert.True(await store.CompleteCategoryAttemptAsync(BrokerEnvironmentKind.Demo, day, 0, "CAT", secondOwner, secondFence.Value, now.AddSeconds(13), false, "ProviderUnavailable", fixture.CancellationToken));
+        Assert.True(await store.CompleteCategoryAttemptAsync(BrokerEnvironmentKind.Demo, day, 0, "CAT", secondOwner, secondFence.Value, now.AddSeconds(13), false, "ProviderAccessDenied", fixture.CancellationToken));
+        await using (var verificationContext = fixture.CreateDbContext())
+        {
+            var deniedAttempt = await verificationContext.InstrumentCollectionCategoryAttempts.SingleAsync(
+                item => item.CategoryCode == "CAT", fixture.CancellationToken);
+            Assert.Equal("ProviderAccessDenied", deniedAttempt.SafeError);
+        }
         Assert.True(await store.TryReserveCategoryAttemptAsync(BrokerEnvironmentKind.Demo, day, 0, "CAT", secondOwner, secondFence.Value, now.AddSeconds(13), fixture.CancellationToken));
         Assert.True(await store.CompleteCategoryAttemptAsync(BrokerEnvironmentKind.Demo, day, 0, "CAT", secondOwner, secondFence.Value, now.AddSeconds(13), true, null, fixture.CancellationToken));
         Assert.False(await store.TryReserveCategoryAttemptAsync(BrokerEnvironmentKind.Demo, day, 0, "CAT", secondOwner, secondFence.Value, now.AddSeconds(13), fixture.CancellationToken));

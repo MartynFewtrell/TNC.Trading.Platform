@@ -188,13 +188,23 @@ successful collection in that slot, and remaining approved daily allowance.
 The cycle may have outcome `Completed` even when every category attempt
 failed (`CompletedWithCategoryFailures`); the script accepts that case but
 never replays a slot with a successful category.
-It resets failed attempt counters but preserves the actual number of provider
-requests already used. The collector rechecks the schedule approximately
-every 30 seconds; resetting outside the active window does not replay a
-missed slot.
+It resets failed attempt counters and releases only that slot's completed,
+partial full-run coverage so full-run admission does not return
+`AlreadyCovered`. The historical run and its diagnostics remain, and the
+actual number of provider requests already used is preserved. If one category
+has published successfully, this reset cannot replay the slot; wait for the
+next eligible collection instead. The collector rechecks the schedule
+approximately every 30 seconds; resetting outside the active window does
+not replay a missed slot.
 
 Instrument calls use the IG category instruments resource v1 with page numbers
-starting at zero and a bounded provider page size of 150. Publication checks
+starting at zero and a bounded initial provider page size of 150. If the first
+page returns fewer than the reported total and fewer than the requested rows,
+the gateway retries from page zero once using the returned non-zero row count
+as the page size. The smaller-page run must report consistent metadata and
+contain every expected row before it can publish. Empty, contradictory, or
+still-short responses fail closed rather than inferring missing instruments.
+Every replay counts against the request budget. Publication checks
 the same zero-based page sequence and accepts an explicitly reported empty
 category only when its single page, zero total results, and empty instrument
 list agree. The SQL collection-run constraint is updated by the
@@ -207,6 +217,72 @@ malformed, or over-cap results never replace the last-good SQL snapshot. The sav
 for keyset paging, and each complete run plus its observations is retained
 online in SQL indefinitely. There is no automatic deletion or archive job for
 this analysis history; storage growth requires operational monitoring.
+
+### Diagnosing collection failures
+
+The API worker no longer emits the two unconditional Information messages
+on every schedule check. The API and Web default logging minimum is Warning,
+including in Development: successful EF Core `Executed DbCommand` Information
+events and other routine Information events are not exported. Failed EF
+commands and exceptions still log at Error, and fenced-stage failures still
+log at Warning. AppHost resource/startup logging retains its own settings,
+and OpenTelemetry exporters remain enabled. Persisted operational/audit events
+are unaffected. On a completed, non-schedule gateway failure, the listing
+coordinator emits one Warning after any retries, with `Stage=Gateway`,
+`SafeCode`, `FailureCategory`, and a bounded `Reason`. Its context includes
+`BrokerEnvironment`, `TradingDay`, `ScheduledSlot`, `CategoryCode`,
+`LeaseOwner`, `LeaseFence`, `AttemptNumber`, optional `FullRunId` and `TraceId`,
+and, when relevant, `ProviderOperation`, `PageNumber`, zero-based `RowIndex`,
+`FieldName`, safe `HttpStatusCode`, `Expected`, and `Actual` numeric metadata.
+Validation reasons distinguish missing metadata, mismatched pagination,
+result bounds, duplicate names/EPICs, invalid fields or expiry, malformed
+JSON, HTTP/session failures, timeout and budget/schedule closure. Scheduled
+closure and lost leases are not reported as final gateway warnings.
+
+A publication exception instead emits one Error with its exception stack,
+`Stage=Publication`, the same run/slot/category/lease join keys, `CollectionId`,
+and `CatalogueRevision`, `PublicationPhase=SaveComplete`,
+`Reason=SnapshotWriteFailed`, and `ExceptionType`. A collection ID is created only once a complete
+gateway result reaches publication, so it cannot join failed gateway calls.
+The UI and saved category attempt continue to expose safe failure codes only:
+`InvalidResponse` can represent multiple gateway checks.
+`ProviderAccessDenied` denotes a provider HTTP 403; `ProviderUnauthorized`
+denotes a session HTTP 401 after reauthentication, and `ProviderRejected`
+denotes other rejected provider requests. `UnexpectedFailure` can still
+denote a publication exception. A listing failure must
+not be conflated with the separate market-detail coverage stage.
+For HTTP 403, verify the applied Demo account/API key has permission for the
+category (including any regional or product restrictions); the platform
+cannot grant IG access or infer the provider's exact denial reason from a
+status code. Leave interest selected only if future access is expected, or
+clear it in the operator UI to avoid repeated denied collection attempts.
+For a remaining `PageRowCountMismatch`, investigate the reported expected
+and actual counts and provider pagination before changing the completeness
+rules; do not accept missing rows as a complete category.
+For example, on 3 October 2026 the Demo COMMODITIES first page returned 65
+instead of 150, and the smaller-page retry returned 38 instead of 65. This
+is not a recoverable fixed page-size cap; the provider needs to return
+consistent complete pagination before this category can be published.
+
+When a naturally due attempt fails, find the final API structured event and
+join it to `InstrumentCollectionCategoryAttempts` by environment, trading
+day, slot and category; match the full run ID when present. Inspect `Stage`
+before changing provider validation or storage rules. Diagnostics intentionally
+omit IG payloads, row values, headers, credentials, session tokens and URLs.
+The saved attempt's `UpdatedAtUtc` is exposed as `LastAttemptAtUtc` on the
+collection-status response and shown in the categories table. Compare it
+against the AppHost start time: the current dashboard cannot show a failure
+logged before that process started. The category catalogue refresh and last
+successful instrument collection are different timestamps; neither dates the
+failed attempt. If no new collection is due, absence of new warnings is
+expected, not evidence that the saved failure has resolved. Keep the app
+running through the next naturally due collection to obtain the new event;
+do not trigger a live IG run simply to reproduce historical errors.
+For volume analysis, count exported API logs by category and severity over at
+least ten idle minutes before adding another source-specific filter. See the
+[observability plan](../market-category-collection-observability-plan-2026-10-03.md)
+and [Aspire observability documentation](https://aspire.dev/) for the local
+dashboard workflow; do not trigger a live IG run merely to produce logs.
 
 Saved bid/offer values are snapshots, not streaming prices or trading
 instructions. The platform retrieval time is UTC; provider `updateTime` is
@@ -319,6 +395,12 @@ last known proof data. A missing row remains an explicit empty state; proof
 query failure after authentication does not overwrite an existing snapshot.
 Production dependency injection uses the SQL adapter, so this guarantee also
 applies to the running API rather than only to direct adapter tests.
+The proof balance column uses explicit SQL `decimal(21,5)` precision, allowing
+five fractional digits while retaining the previous `decimal(18,2)` column's
+16-digit integer range. The `IncreaseIgProofDataBalancePrecision` migration
+widens existing databases without replacing their saved proof rows. A
+downgrade refuses to round balances that contain more than two fractional
+digits.
 
 For an operator-triggered retry, `TriggerManualAuthRetryHandler` performs this
 sequence directly. It loads runtime state and configuration, rejects inactive

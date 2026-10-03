@@ -75,13 +75,18 @@ else
                 {
                     <p data-testid="market-category-interest-revision">Interest revision: @interestRevision</p>
                 }
+                <p>Collection results are saved attempts, not live errors. New diagnostics are logged only when a collection runs.</p>
                 <table>
                     <caption>Saved market categories and instrument collection state</caption>
-                    <thead><tr><th scope="col">Category</th><th scope="col">Non-tradeable</th><th scope="col">Interest</th><th scope="col">Last collection</th><th scope="col">Collection result</th><th scope="col">Market details coverage</th></tr></thead>
+                    <thead><tr><th scope="col">Category</th><th scope="col">Non-tradeable</th><th scope="col">Interest</th><th scope="col">Last collection</th><th scope="col">Last attempt</th><th scope="col">Collection result</th><th scope="col">Market details coverage</th></tr></thead>
                     <tbody>
                         @foreach (var (category, index) in Presenter.State.Categories.Select((item, index) => (item, index)))
                         {
                             var checkboxId = $"category-interest-{index}";
+                            var attemptStatus = Presenter.CollectionStatus?.Categories.FirstOrDefault(
+                                item => string.Equals(item.CategoryCode, category.Code, StringComparison.Ordinal));
+                            var outcome = attemptStatus is null ? category.CollectionOutcome : attemptStatus.Outcome;
+                            var safeFailure = attemptStatus is null ? category.SafeFailure : attemptStatus.SafeFailure;
                             <tr @key="category.Code">
                                 <td><a class="market-category-link" href="@($"/market-categories/{Uri.EscapeDataString(category.Code)}/instruments")">@category.Code</a></td>
                                 <td>@(category.NonTradeable ? "Non-tradeable (provider fact)" : "Tradeable")</td>
@@ -108,10 +113,20 @@ else
                                     }
                                 </td>
                                 <td>
-                                    @(category.CollectionOutcome ?? "No collection")
-                                    @if (!string.IsNullOrWhiteSpace(category.SafeFailure))
+                                    @if (attemptStatus?.LastAttemptAtUtc is { } attemptedAt)
                                     {
-                                        <span class="warning"> — @category.SafeFailure</span>
+                                        <time datetime="@attemptedAt.ToString("O")">@attemptedAt.ToLocalTime().ToString("g")</time>
+                                    }
+                                    else
+                                    {
+                                        <span>@(Presenter.CollectionStatus is null ? "Attempt time unavailable" : "No attempt this trading day")</span>
+                                    }
+                                </td>
+                                <td>
+                                    @(outcome ?? "No collection")
+                                    @if (!string.IsNullOrWhiteSpace(safeFailure))
+                                    {
+                                        <span class="warning"> — @safeFailure</span>
                                     }
                                 </td>
                                 <td data-testid="market-detail-category-coverage">
