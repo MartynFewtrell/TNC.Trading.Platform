@@ -10,7 +10,6 @@
 *.userosscache
 *.sln.docstates
 *.env
-/.copilot-tracking/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
