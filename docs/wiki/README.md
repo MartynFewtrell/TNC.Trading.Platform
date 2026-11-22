@@ -69,6 +69,7 @@ These existing documents remain the source of truth for broader product intent a
 - [Work package 001: Project scaffolding and DevEx](../001-project-scaffolding-and-devex/technical-specification.md)
 - [Work package 002: Environment and auth foundation](../002-environment-and-auth-foundation/technical-specification.md)
 - [IG domain reference](ig-day-trading-with-ig-apis.md)
+- [Legacy IG demo reference](ig-demo-reference/index.md)
 
 ## Suggested reading by role
 
