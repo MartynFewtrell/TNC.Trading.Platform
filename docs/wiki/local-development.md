@@ -6,6 +6,10 @@ This document explains how to build, run, validate, and troubleshoot the current
 
 - .NET SDK installed from the version pinned by `global.json`
 - Docker Desktop because AppHost now requires Docker-managed infrastructure for the supported local runtime, including Keycloak for operator authentication
+- Aspire 17 CLI when using the Aspire CLI to run or manage the application; see the [Aspire upgrade guide](https://aspire.dev/whats-new/upgrade-aspire/)
+
+Keep the installed .NET runtime patched as well as the SDK: NuGet package
+updates do not update the shared runtime used by framework-dependent apps.
 
 ## Current local runtime mode
 
@@ -13,12 +17,26 @@ The supported local runtime uses Docker-managed infrastructure.
 
 The AppHost remains the single local composition root, but its responsibilities are now split into focused support files for infrastructure registration, project registration, and shared environment wiring. The top-level `AppHost.cs` stays limited to builder creation, composition calls, and `Build().Run()`.
 
+The API and Web use Aspire 17's path-based .NET project resources and
+coordinated builds. Aspire 17 does not yet support watch for these resources;
+restart the affected resources after code changes. See the [project resource
+migration guide](https://aspire.dev/integrations/dotnet/migrate-dotnet-project-resource/).
+
+Web waits for the API readiness endpoint before starting so the API can finish
+applying the shared Data Protection key-table migration. For a custom API
+readiness path, set `Health:Path:Readiness` in AppHost configuration; AppHost
+passes the same path to the API and its readiness probe.
+
 AppHost starts:
 
 - SQL Server
 - the `platformdb` database
 - Mailpit for local SMTP capture
 - Keycloak with the imported local development realm
+
+The Aspire 17 Keycloak integration defaults to the Keycloak 26.8 image. Review
+the Keycloak upgrade guidance before reusing persistent state from an older
+image; do not delete local state without confirming it can be discarded.
 
 This mode is required because Keycloak is part of the local authentication stack and the in-memory SQL option is no longer a supported application runtime.
 
