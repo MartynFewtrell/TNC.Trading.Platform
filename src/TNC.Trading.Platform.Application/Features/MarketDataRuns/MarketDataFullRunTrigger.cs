@@ -7,5 +7,6 @@ internal enum MarketDataFullRunTrigger
     Manual,
     Interest,
     Configuration,
-    FailedItemRetry
+    FailedItemRetry,
+    Diagnostic
 }

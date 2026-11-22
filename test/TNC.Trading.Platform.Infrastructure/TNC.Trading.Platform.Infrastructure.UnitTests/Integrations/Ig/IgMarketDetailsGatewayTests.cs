@@ -64,6 +64,48 @@ public sealed class IgMarketDetailsGatewayTests
     }
 
     /// <summary>
+    /// Trace: IG market-data recovery Phase 2, Steps 2.2-2.5.
+    /// Verifies: a detail session and real bulk HTTP attempt are spaced and individually reserved by the shared request budget.
+    /// Expected: the market attempt starts exactly five fake-time seconds after session creation and both sends are reserved once.
+    /// Why: detail calls must obey collection pacing rather than relying on session-only throttling or hidden transport retries.
+    /// </summary>
+    [Fact]
+    public async Task GetMarketsAsync_ShouldPaceSessionAndDetailAttempt_WhenUsingCollectionProfile()
+    {
+        var start = DateTimeOffset.UtcNow;
+        var timeProvider = new ManualTimeProvider(start);
+        var handler = new ControlledHandler(
+            request => request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal)
+                ? SessionResponse("cst-1", "security-1")
+                : JsonResponse(HttpStatusCode.OK, ReadFixture("market-details-v2-filter-all-adausd.json")),
+            timeProvider);
+        var budget = new FakeRequestBudget();
+        using var harness = CreateHarness(handler, budget, timeProvider: timeProvider);
+        var requestContext = BudgetContext() with { WindowEndUtc = start.AddMinutes(5) };
+        var collection = harness.Gateway.GetMarketsAsync(
+            new MarketDetailGatewayRequest([AdaEpic], requestContext),
+            CancellationToken.None);
+
+        Assert.False(
+            collection.IsCompleted && handler.StartTimes.Count == 0,
+            $"The gateway stopped before sending: active checks={budget.ActiveChecks}, reservations={budget.Reservations}.");
+        Assert.Equal([start], handler.StartTimes);
+        await timeProvider.WaitForScheduledDelayAsync();
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        for (var attempt = 0; handler.Requests.Count < 2 && attempt < 100; attempt++)
+        {
+            await Task.Delay(1);
+        }
+
+        var result = await collection;
+
+        Assert.NotNull(Assert.Single(result).Observation);
+        Assert.Equal([start, start.AddSeconds(5)], handler.StartTimes);
+        Assert.Equal(2, budget.Reservations);
+        Assert.Equal(3, budget.Renewals);
+    }
+
+    /// <summary>
     /// Trace: Market Details Work Item 3, task 1.
     /// Verifies an applied Live profile uses only the Live API host for both v2 login and market access.
     /// Expected: session and bulk requests use api.ig.com, and the shared budget receives the unchanged Live execution context.
@@ -411,6 +453,7 @@ public sealed class IgMarketDetailsGatewayTests
     [InlineData("error.public-api.exceeded-application-allowance", nameof(MarketDetailTargetFailureKind.AllowanceUnavailable))]
     [InlineData("error.public-api.exceeded-api-key-allowance", nameof(MarketDetailTargetFailureKind.AllowanceUnavailable))]
     [InlineData("unknown.403.code", nameof(MarketDetailTargetFailureKind.Unauthorized))]
+    [InlineData("error.security.account-not-enabled-to-trade", nameof(MarketDetailTargetFailureKind.Unauthorized))]
     public async Task GetMarketsAsync_ShouldClassifyForbiddenResponsesPrecisely_WhenAllowanceCodeIsOrIsNotKnown(
         string errorCode,
         string expectedKind)
@@ -427,6 +470,9 @@ public sealed class IgMarketDetailsGatewayTests
         var failure = Assert.IsType<MarketDetailGatewayFailure>(Assert.Single(result).Failure);
         Assert.Equal(expectedKind, failure.Kind.ToString());
         Assert.False(failure.IsRetryable);
+        Assert.Equal(403, failure.HttpStatus);
+        Assert.Equal("Markets", failure.Operation);
+        Assert.Equal(expectedKind == nameof(MarketDetailTargetFailureKind.AllowanceUnavailable) ? errorCode : null, failure.ProviderErrorCode);
         Assert.Equal(2, handler.Requests.Count);
         Assert.Equal(handler.Requests.Count, budget.Reservations);
         Assert.DoesNotContain(errorCode, result.ToString(), StringComparison.Ordinal);
@@ -465,10 +511,17 @@ public sealed class IgMarketDetailsGatewayTests
 
         Assert.Equal(2, result.Count);
         Assert.All(result, item => Assert.Equal(MarketDetailTargetFailureKind.AllowanceUnavailable, item.Failure?.Kind));
+        Assert.All(result, item =>
+        {
+            Assert.Equal(errorCode, item.Failure?.ProviderErrorCode);
+            Assert.Equal(403, item.Failure?.HttpStatus);
+            Assert.Equal(rejectSession ? "Session" : "Markets", item.Failure?.Operation);
+        });
         var warning = Assert.Single(harness.Logger.Messages);
-        Assert.Contains($"IG market-detail {(rejectSession ? "Session" : "Markets")} request failed with HTTP 403", warning);
+        Assert.Contains($"IG market-detail {(rejectSession ? "Session" : "Markets")} request was denied because a known provider allowance was exceeded (HTTP 403", warning);
         Assert.Contains(errorCode, warning);
         Assert.DoesNotContain("password-secret", warning);
+        Assert.DoesNotContain("sensitiveField", warning);
         Assert.DoesNotContain("api-key-secret", warning);
         Assert.DoesNotContain("cst-1", warning);
         Assert.DoesNotContain(AdaEpic, warning);
@@ -644,7 +697,7 @@ public sealed class IgMarketDetailsGatewayTests
     public async Task GetMarketsAsync_ShouldStopAfterSessionResponse_WhenExecutionContextBecomesInactive()
     {
         var handler = new ControlledHandler(_ => SessionResponse("cst-1", "security-1"));
-        var budget = new FakeRequestBudget(isActive: check => check < 4);
+        var budget = new FakeRequestBudget(isActive: check => check < 5);
         using var harness = CreateHarness(handler, budget);
 
         var result = await harness.Gateway.GetMarketsAsync(Request([AdaEpic]), CancellationToken.None);
@@ -742,7 +795,8 @@ public sealed class IgMarketDetailsGatewayTests
     private static GatewayHarness CreateHarness(
         ControlledHandler handler,
         FakeRequestBudget budget,
-        FakeContextResolver? contextResolver = null)
+        FakeContextResolver? contextResolver = null,
+        TimeProvider? timeProvider = null)
     {
         var client = new HttpClient(handler);
         var logger = new RecordingLogger();
@@ -753,7 +807,7 @@ public sealed class IgMarketDetailsGatewayTests
                 new FakeCredentialService(),
                 contextResolver ?? new FakeContextResolver(Context()),
                 budget,
-                new IgProviderRequestThrottle(TimeSpan.Zero),
+                new IgProviderRequestThrottle(TimeSpan.Zero, timeProvider ?? new ImmediateTimeProvider()),
                 logger),
             logger);
     }
@@ -767,6 +821,7 @@ public sealed class IgMarketDetailsGatewayTests
         BrokerEnvironmentKind environment = BrokerEnvironmentKind.Demo) =>
         new(
             Guid.NewGuid(),
+            1,
             environment,
             new DateOnly(2026, 9, 25),
             SlotIndex: 0,
@@ -921,6 +976,7 @@ public sealed class IgMarketDetailsGatewayTests
         private readonly Func<int, bool> active = isActive ?? (_ => true);
 
         internal int Reservations { get; private set; }
+        internal int Renewals { get; private set; }
 
         internal int ActiveChecks { get; private set; }
 
@@ -952,11 +1008,22 @@ public sealed class IgMarketDetailsGatewayTests
             ReservedContexts.Add(context);
             return Task.FromResult(reserve(Reservations));
         }
+
+        public Task<bool> RenewAsync(
+            MarketDetailRequestBudgetContext context,
+            CancellationToken cancellationToken)
+        {
+            Renewals++;
+            return IsExecutionContextStillActiveAsync(context, cancellationToken);
+        }
     }
 
-    private sealed class ControlledHandler(Func<CapturedRequest, HttpResponseMessage> respond) : HttpMessageHandler
+    private sealed class ControlledHandler(
+        Func<CapturedRequest, HttpResponseMessage> respond,
+        TimeProvider? timeProvider = null) : HttpMessageHandler
     {
         internal List<CapturedRequest> Requests { get; } = [];
+        internal List<DateTimeOffset> StartTimes { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -969,6 +1036,11 @@ public sealed class IgMarketDetailsGatewayTests
                 StringComparer.OrdinalIgnoreCase);
             var capture = new CapturedRequest(request.Method, request.RequestUri!, headers);
             Requests.Add(capture);
+            if (timeProvider is not null)
+            {
+                StartTimes.Add(timeProvider.GetUtcNow());
+            }
+
             return Task.FromResult(respond(capture));
         }
     }
@@ -979,5 +1051,96 @@ public sealed class IgMarketDetailsGatewayTests
         IReadOnlyDictionary<string, string> Headers)
     {
         internal string Header(string name) => Headers.TryGetValue(name, out var value) ? value : string.Empty;
+    }
+
+    private sealed class ManualTimeProvider(DateTimeOffset initialUtcNow) : TimeProvider
+    {
+        private readonly List<ManualTimer> timers = [];
+        private readonly SemaphoreSlim scheduledDelays = new(0);
+        private long timestamp;
+
+        public override DateTimeOffset GetUtcNow() => initialUtcNow.AddTicks(timestamp);
+
+        public override long GetTimestamp() => timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            var timer = new ManualTimer(this, callback, state);
+            timer.Change(dueTime, period);
+            if (dueTime > TimeSpan.Zero)
+            {
+                scheduledDelays.Release();
+            }
+
+            timers.Add(timer);
+            return timer;
+        }
+
+        public Task WaitForScheduledDelayAsync() => scheduledDelays.WaitAsync();
+
+        public void Advance(TimeSpan amount)
+        {
+            timestamp = checked(timestamp + amount.Ticks);
+            while (true)
+            {
+                var next = timers.FirstOrDefault(timer => timer.IsDue(timestamp));
+                if (next is null)
+                {
+                    return;
+                }
+
+                next.Fire(timestamp);
+            }
+        }
+
+        private sealed class ManualTimer(
+            ManualTimeProvider owner,
+            TimerCallback callback,
+            object? state) : ITimer
+        {
+            private long dueAt = long.MaxValue;
+            private long periodTicks = -1;
+            private bool disposed;
+
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                if (disposed)
+                {
+                    return false;
+                }
+
+                dueAt = dueTime == Timeout.InfiniteTimeSpan
+                    ? long.MaxValue
+                    : checked(owner.timestamp + Math.Max(0, dueTime.Ticks));
+                periodTicks = period == Timeout.InfiniteTimeSpan ? -1 : period.Ticks;
+                return true;
+            }
+
+            public bool IsDue(long now) => !disposed && dueAt <= now;
+
+            public void Fire(long now)
+            {
+                dueAt = periodTicks > 0 ? checked(now + periodTicks) : long.MaxValue;
+                callback(state);
+            }
+
+            public void Dispose()
+            {
+                disposed = true;
+                dueAt = long.MaxValue;
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 }

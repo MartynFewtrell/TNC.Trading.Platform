@@ -1,6 +1,7 @@
 using System.Net;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
+using TNC.Trading.Platform.Web.Authentication;
 using TNC.Trading.Platform.Web.Components.Pages;
 
 namespace TNC.Trading.Platform.Web.UnitTests;
@@ -18,7 +19,8 @@ public sealed class MarketCategoriesTests
     {
         using var context = new PlatformComponentTestContext("local-viewer", null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCategories("FX", false, true)),
-            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCollectionStatus()));
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCollectionStatus(
+                categories: [CreateCategoryCoverage("FX", new DateTimeOffset(2026, 9, 25, 9, 0, 0, TimeSpan.Zero))])));
 
         var cut = context.Render<MarketCategories>();
 
@@ -28,7 +30,8 @@ public sealed class MarketCategoriesTests
             Assert.Contains("Tradeable", cut.Markup, StringComparison.Ordinal);
             Assert.Contains("Non-tradeable", cut.Markup, StringComparison.Ordinal);
             Assert.Contains("Market details coverage", cut.Markup, StringComparison.Ordinal);
-            Assert.Contains("Partial", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Complete", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Last complete:", cut.Markup, StringComparison.Ordinal);
             Assert.Contains("Last complete:", cut.Markup, StringComparison.Ordinal);
             Assert.NotEmpty(cut.FindAll("table[aria-label], table"));
             Assert.NotEmpty(cut.FindAll("a[href='/market-categories/FX/instruments']"));
@@ -44,6 +47,138 @@ public sealed class MarketCategoriesTests
     }
 
     /// <summary>
+    /// Trace: IG category-collection completeness plan P4. Verifies refreshed status coverage wins over the older catalogue projection.
+    /// Expected: the saved 5 October detail completion is replaced by the 7 October current-listing coverage, with no stale date displayed.
+    /// Why: listing status and market-detail coverage must not present mismatched refresh generations as one current result.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldUseRefreshedDetailCoverage_WhenCatalogueAndStatusHaveDifferentDates()
+    {
+        var catalogueCoverageAt = new DateTimeOffset(2026, 10, 5, 9, 0, 0, TimeSpan.Zero);
+        var currentCoverageAt = new DateTimeOffset(2026, 10, 7, 11, 30, 0, TimeSpan.Zero);
+        using var context = new PlatformComponentTestContext("local-viewer", null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCategories("FX", false, true, catalogueCoverageAt)),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCollectionStatus(
+                categories: [CreateCategoryCoverage("FX", currentCoverageAt)])));
+
+        var cut = context.Render<MarketCategories>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var coverage = cut.Find("[data-testid='market-detail-category-coverage']");
+            Assert.Contains("2026-10-07 11:30:00 UTC", coverage.TextContent, StringComparison.Ordinal);
+            Assert.DoesNotContain("2026-10-05", coverage.TextContent, StringComparison.Ordinal);
+        });
+    }
+
+    /// <summary>
+    /// Trace: IG category-collection completeness plan P4. Verifies missing current-listing coverage is explicit.
+    /// Expected: a saved older catalogue date is not rendered as current when the refreshed status has no coverage projection.
+    /// Why: unavailable coverage must not be silently backfilled from an unrelated catalogue refresh.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldShowCoverageUnavailable_WhenRefreshedStatusHasNoCoverage()
+    {
+        var oldCoverageAt = new DateTimeOffset(2026, 10, 5, 9, 0, 0, TimeSpan.Zero);
+        using var context = new PlatformComponentTestContext("local-viewer", null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCategories("FX", false, true, oldCoverageAt)),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCollectionStatus(
+                categories: [CreateCategoryCoverage("FX", null)])));
+
+        var cut = context.Render<MarketCategories>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var coverage = cut.Find("[data-testid='market-detail-category-coverage']");
+            Assert.Contains("Coverage unavailable", coverage.TextContent, StringComparison.Ordinal);
+            Assert.DoesNotContain("2026-10-05", coverage.TextContent, StringComparison.Ordinal);
+        });
+    }
+
+    /// <summary>
+    /// Trace: IG category-collection completeness plan P4. Verifies failed status refreshes do not reuse stale catalogue coverage.
+    /// Expected: saved categories remain visible, the status-read error is shown, and coverage is explicitly unavailable.
+    /// Why: saved status reads must not turn an older projection into apparently current operational evidence.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldNotUseOlderCoverage_WhenStatusRefreshFails()
+    {
+        var oldCoverageAt = new DateTimeOffset(2026, 10, 5, 9, 0, 0, TimeSpan.Zero);
+        using var context = new PlatformComponentTestContext("local-viewer", null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCategories("FX", false, true, oldCoverageAt)),
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+
+        var cut = context.Render<MarketCategories>();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Contains("FX", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Unable to load collector status", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Coverage unavailable", cut.Find("[data-testid='market-detail-category-coverage']").TextContent, StringComparison.Ordinal);
+            Assert.DoesNotContain("2026-10-05", cut.Find("[data-testid='market-detail-category-coverage']").TextContent, StringComparison.Ordinal);
+        });
+    }
+
+    /// <summary>
+    /// Trace: IG category-collection completeness plan P4. Verifies concurrent refreshes cannot leave the older projection last.
+    /// Expected: the second refresh runs after the first finishes and its 7 October coverage is the final saved status.
+    /// Why: out-of-order refresh completion must not overwrite the newest coherent projection.
+    /// </summary>
+    [Fact]
+    public async Task RefreshCollectionStatusAsync_ShouldKeepNewestProjection_WhenRefreshesOverlap()
+    {
+        var firstRefreshStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstRefresh = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondRefreshStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var statusCalls = 0;
+        var olderCoverageAt = new DateTimeOffset(2026, 10, 6, 9, 0, 0, TimeSpan.Zero);
+        var newerCoverageAt = new DateTimeOffset(2026, 10, 7, 11, 30, 0, TimeSpan.Zero);
+        var handler = new ControlledAsyncHandler(async (request, cancellationToken) =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/market-categories", StringComparison.Ordinal))
+            {
+                return PlatformWebTestData.CreateJsonResponse(
+                    HttpStatusCode.OK,
+                    CreateCategories("FX", false, true));
+            }
+
+            if (!request.RequestUri.AbsolutePath.EndsWith("/instrument-collection/status", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Unexpected saved-status request.");
+            }
+
+            return Interlocked.Increment(ref statusCalls) switch
+            {
+                1 => PlatformWebTestData.CreateJsonResponse(
+                    HttpStatusCode.OK,
+                    CreateCollectionStatus(categories: [CreateCategoryCoverage("FX", olderCoverageAt)])),
+                2 => await WaitForFirstRefreshAsync(releaseFirstRefresh, firstRefreshStarted, cancellationToken),
+                3 => BeginSecondRefresh(newerCoverageAt, secondRefreshStarted),
+                _ => throw new InvalidOperationException("Unexpected duplicate status refresh.")
+            };
+        });
+        using var context = new PlatformComponentTestContext("local-viewer", null);
+        var client = new PlatformApiClient(
+            new HttpClient(handler) { BaseAddress = new Uri("https://localhost") },
+            context.Services.GetRequiredService<PlatformAccessTokenProvider>());
+        var presenter = new MarketCategoriesPagePresenter(client);
+        await presenter.LoadAsync(CancellationToken.None);
+
+        var firstRefresh = presenter.RefreshCollectionStatusAsync(CancellationToken.None);
+        await firstRefreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var secondRefresh = presenter.RefreshCollectionStatusAsync(CancellationToken.None);
+        releaseFirstRefresh.SetResult(PlatformWebTestData.CreateJsonResponse(
+            HttpStatusCode.OK,
+            CreateCollectionStatus(categories: [CreateCategoryCoverage("FX", olderCoverageAt)])));
+
+        await secondRefreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.WhenAll(firstRefresh, secondRefresh);
+
+        Assert.Equal(newerCoverageAt, presenter.CollectionStatus?.Categories.Single().DetailCoverage?.LastCompleteAtUtc);
+        Assert.Equal(3, statusCalls);
+    }
+
+    /// <summary>
     /// Trace: Market-category collection observability, saved failure chronology.
     /// Verifies: refreshed collection status dates a failed attempt independently of the last successful snapshot.
     /// Expected: the page shows the precise saved attempt time and status result, not the stale catalogue result.
@@ -52,6 +187,7 @@ public sealed class MarketCategoriesTests
     [Fact]
     public void Render_ShouldShowSavedAttemptTime_WhenCollectionStatusContainsFailure()
     {
+        var successfulAt = new DateTimeOffset(2026, 10, 3, 8, 0, 0, TimeSpan.Zero);
         var attemptedAt = new DateTimeOffset(2026, 10, 3, 9, 19, 2, TimeSpan.Zero);
         using var context = new PlatformComponentTestContext("local-viewer", null,
             _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCategories("COMMODITIES", false, true)),
@@ -59,10 +195,45 @@ public sealed class MarketCategoriesTests
                 categories: [new
                 {
                     CategoryCode = "COMMODITIES",
+                    LastSuccessfulCollectionAtUtc = successfulAt,
                     LastAttemptAtUtc = attemptedAt,
                     Attempts = 1,
                     Outcome = "Failed",
-                    SafeFailure = "InvalidResponse"
+                    SafeFailure = "InvalidResponse",
+                    FailureKind = "IncompleteCollection",
+                    HttpStatus = 200,
+                    Operation = "instruments",
+                    PageNumber = 3,
+                    Expected = 70,
+                    Actual = 42,
+                    ProviderErrorCode = "error.public-api.exceeded-account-allowance",
+                    ProviderErrorCodeParseOutcome = "Parsed",
+                    AuthenticationPhase = "Reauthentication",
+                    HttpRequestCount = 5,
+                    InitialPageEvidence = new
+                    {
+                        RequestOrdinal = 1,
+                        RequestedPageNumber = 0,
+                        RequestedPageSize = 150,
+                        ReturnedPageNumber = 0,
+                        ReturnedPageSize = 150,
+                        TotalPages = 2,
+                        TotalResults = 290,
+                        RawCount = 70,
+                        ExpectedCount = 150
+                    },
+                    RestartedPageEvidence = new
+                    {
+                        RequestOrdinal = 2,
+                        RequestedPageNumber = 0,
+                        RequestedPageSize = 70,
+                        ReturnedPageNumber = 0,
+                        ReturnedPageSize = 70,
+                        TotalPages = 5,
+                        TotalResults = 290,
+                        RawCount = 41,
+                        ExpectedCount = 70
+                    }
                 }])));
 
         var cut = context.Render<MarketCategories>();
@@ -70,10 +241,64 @@ public sealed class MarketCategoriesTests
         cut.WaitForAssertion(() =>
         {
             var row = cut.Find("tbody tr");
-            Assert.Equal(attemptedAt.ToString("O"), row.QuerySelector("time")?.GetAttribute("datetime"));
             Assert.Contains("Failed", row.TextContent, StringComparison.Ordinal);
             Assert.Contains("InvalidResponse", row.TextContent, StringComparison.Ordinal);
-            Assert.Contains("Never collected", row.TextContent, StringComparison.Ordinal);
+            Assert.Contains("IncompleteCollection", row.TextContent, StringComparison.Ordinal);
+            Assert.Contains("Provider page index 3: expected 70 rows, received 42.", row.TextContent, StringComparison.Ordinal);
+            Assert.Contains("Category attempts: 1", row.TextContent, StringComparison.Ordinal);
+            Assert.Contains("Gateway HTTP calls: 5", row.TextContent, StringComparison.Ordinal);
+            Assert.Contains("Authentication phase: Reauthentication", row.TextContent, StringComparison.Ordinal);
+            Assert.Contains("Safe provider code: error.public-api.exceeded-account-allowance", row.TextContent, StringComparison.Ordinal);
+            Assert.Contains("Provider-code parse: Parsed", row.TextContent, StringComparison.Ordinal);
+            Assert.Contains("Initial page request #1 requested page 0, size 150; returned page 0, size 150, 70 rows, total 290.", row.TextContent, StringComparison.Ordinal);
+            Assert.Contains("Restarted page request #2 requested page 0, size 70; returned page 0, size 70, 41 rows, total 290 (expected 70).", row.TextContent, StringComparison.Ordinal);
+            Assert.Equal(
+                successfulAt.ToString("O"),
+                row.QuerySelector("td:nth-child(4) time")?.GetAttribute("datetime"));
+            Assert.Equal(
+                attemptedAt.ToString("O"),
+                row.QuerySelector("td:nth-child(5) time")?.GetAttribute("datetime"));
+        });
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery plan Phase 4, Step 4.1.
+    /// Verifies: an allow-listed API-key denial reason and provider code are displayed without exposing arbitrary response content.
+    /// Expected: the operator sees the API-key action and safe code, but never the fixture's secret body field.
+    /// Why: configuration denials need an actionable diagnosis and must not be mistaken for retryable transport failures.
+    /// </summary>
+    [Fact]
+    public void Render_ShouldShowSafeConfigurationDenial_WhenCategoryLoginIsRejected()
+    {
+        using var context = new PlatformComponentTestContext("local-viewer", null,
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCategories("FX", false, true)),
+            _ => PlatformWebTestData.CreateJsonResponse(HttpStatusCode.OK, CreateCollectionStatus(
+                categories:
+                [
+                    new
+                    {
+                        CategoryCode = "FX",
+                        Outcome = "Failed",
+                        SafeFailure = "ApiKeyDisabled",
+                        FailureKind = "Rejected",
+                        HttpStatus = 403,
+                        Operation = "session",
+                        ProviderErrorCode = "error.security.api-key-disabled",
+                        ProviderErrorCodeParseOutcome = "Parsed",
+                        AuthenticationPhase = "Initial",
+                        HttpRequestCount = 1
+                    }
+                ])));
+
+        var cut = context.Render<MarketCategories>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var row = cut.Find("tbody tr");
+            Assert.Contains("ApiKeyDisabled", row.TextContent, StringComparison.Ordinal);
+            Assert.Contains("Safe provider code: error.security.api-key-disabled", row.TextContent, StringComparison.Ordinal);
+            Assert.Contains("Authentication phase: Initial", row.TextContent, StringComparison.Ordinal);
+            Assert.DoesNotContain("secret", row.TextContent, StringComparison.OrdinalIgnoreCase);
         });
     }
 
@@ -399,7 +624,11 @@ public sealed class MarketCategoriesTests
         });
     }
 
-    private static object CreateCategories(string code, bool nonTradeable, bool interested) => new
+    private static object CreateCategories(
+        string code,
+        bool nonTradeable,
+        bool interested,
+        DateTimeOffset? detailCoverageAtUtc = null) => new
     {
         Categories = new[]
         {
@@ -420,7 +649,7 @@ public sealed class MarketCategoriesTests
                     CompletedCount = 1,
                     ExcludedCount = 0,
                     OutstandingCount = 1,
-                    LastCompleteAtUtc = new DateTimeOffset(2026, 9, 25, 9, 0, 0, TimeSpan.Zero),
+                    LastCompleteAtUtc = detailCoverageAtUtc ?? new DateTimeOffset(2026, 9, 25, 9, 0, 0, TimeSpan.Zero),
                     NextScheduledCheckUtc = (DateTimeOffset?)null,
                     SafeFailureCode = (string?)null
                 }
@@ -454,4 +683,56 @@ public sealed class MarketCategoriesTests
         ApprovedDailyRequestAllowance = approvedDailyRequestAllowance,
         Categories = categories ?? Array.Empty<object>()
     };
+
+    private static object CreateCategoryCoverage(string categoryCode, DateTimeOffset? lastCompleteAtUtc) => new
+    {
+        CategoryCode = categoryCode,
+        LastSuccessfulCollectionAtUtc = (DateTimeOffset?)null,
+        Attempts = 0,
+        Outcome = (string?)null,
+        SafeFailure = (string?)null,
+        DetailCoverage = lastCompleteAtUtc is { } completedAt
+            ? new
+            {
+                IsFollowed = true,
+                State = "Complete",
+                ExpectedCount = 2,
+                CompletedCount = 2,
+                ExcludedCount = 0,
+                OutstandingCount = 0,
+                LastCompleteAtUtc = (DateTimeOffset?)completedAt,
+                NextScheduledCheckUtc = (DateTimeOffset?)null,
+                SafeFailureCode = (string?)null,
+                UpdateGeneration = (int?)3
+            }
+            : null
+    };
+
+    private static async Task<HttpResponseMessage> WaitForFirstRefreshAsync(
+        TaskCompletionSource<HttpResponseMessage> release,
+        TaskCompletionSource entered,
+        CancellationToken cancellationToken)
+    {
+        entered.SetResult();
+        return await release.Task.WaitAsync(cancellationToken);
+    }
+
+    private static HttpResponseMessage BeginSecondRefresh(
+        DateTimeOffset coverageAtUtc,
+        TaskCompletionSource entered)
+    {
+        entered.SetResult();
+        return PlatformWebTestData.CreateJsonResponse(
+            HttpStatusCode.OK,
+            CreateCollectionStatus(categories: [CreateCategoryCoverage("FX", coverageAtUtc)]));
+    }
+
+    private sealed class ControlledAsyncHandler(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            respond(request, cancellationToken);
+    }
 }

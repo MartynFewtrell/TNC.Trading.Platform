@@ -120,8 +120,16 @@ last-success timestamps, slot coverage, and a renewable fenced lease. Parent
 lease validation protects category and instrument publication, market-detail
 run operations, and allowance reservations; stale fences cannot commit. The
 legacy category-only publication path takes the same environment lock and
-refuses to mutate Categories while a full run is active. Manual admission,
-the protected status API, and UI updates remain later delivery work.
+refuses to mutate Categories while a full run is active. General manual
+admission, the protected status API, and UI updates remain later delivery work.
+
+In Development, an explicitly confirmed Aspire resource command can run the
+bounded IG Demo navigation investigation through a separate internal route.
+The handler uses the same environment-scoped full-run admission, owner/fence
+checks, approved allowance, pacing and applied-context validation. It completes
+the diagnostic lease as idle or cancelled and never publishes categories,
+listings, or detail coverage. This is an investigation-only command, not a
+general manual collection path.
 
 Provider-removed Categories are retained as non-current records rather than
 deleting their last-good listing and detail observations; new selection and
@@ -198,25 +206,51 @@ approximately every 30 seconds; resetting outside the active window does
 not replay a missed slot.
 
 Instrument calls use the IG category instruments resource v1 with page numbers
-starting at zero and a bounded initial provider page size of 150. If the first
+starting at zero and a conservative configured page size of 25. If the first
 page returns fewer than the reported total and fewer than the requested rows,
-the gateway retries from page zero once using the returned non-zero row count
-as the page size. The smaller-page run must report consistent metadata and
-contain every expected row before it can publish. Empty, contradictory, or
-still-short responses fail closed rather than inferring missing instruments.
-Every replay counts against the request budget. Publication checks
-the same zero-based page sequence and accepts an explicitly reported empty
-category only when its single page, zero total results, and empty instrument
-list agree. The SQL collection-run constraint is updated by the
+the production gateway may retry from page zero once using the returned
+non-zero row count as the page size. The smaller-page run must report
+consistent metadata and contain every expected row before it can publish.
+Empty, contradictory, or still-short responses fail closed rather than
+inferring missing instruments. Every replay counts against the request
+budget. Publication checks the same zero-based page sequence and accepts an
+explicitly reported empty category only when its single page, zero total
+results, and empty instrument list agree. The SQL collection-run constraint is updated by the
 `AllowEmptyMarketCategoryInstrumentCollections` migration; existing databases
 must apply it before an empty collection can publish. A collection is accepted
 only after every expected page and consistent total metadata have been
-validated; caps are 100 pages and 15,000
-instruments per category/run. Partial, empty-by-default, inconsistent,
-malformed, or over-cap results never replace the last-good SQL snapshot. The saved current projection is versioned
-for keyset paging, and each complete run plus its observations is retained
-online in SQL indefinitely. There is no automatic deletion or archive job for
-this analysis history; storage growth requires operational monitoring.
+validated; production caps remain 100 pages and 15,000 instruments per
+category/run. The separate diagnostic traversal uses fixed pages of 25 and
+the same 100-page ceiling, so its effective maximum is 2,500 rows. It reports
+counts only, cannot publish a snapshot, and rejects a 2,501-row result rather
+than silently expanding the bound. Partial, empty-by-default, inconsistent,
+malformed, or over-cap results never replace the last-good SQL snapshot. The
+saved current projection is versioned for keyset paging, and each complete
+run plus its observations is retained online in SQL indefinitely. There is no
+automatic deletion or archive job for this analysis history; storage growth
+requires operational monitoring.
+
+The Operator-only endpoint
+`POST /api/platform/market-categories/{categoryCode}/collection-diagnostic`
+provides an explicit investigation path. Its caller supplies a maximum HTTP
+request ceiling from 2 through 103; the use case checks the applied IG
+environment, active schedule, saved category, shared full-run admission, and
+the shared manual request allowance before gateway traversal. It uses the
+same per-request budget reservation and pacing path as collection. The
+diagnostic response carries sanitized count-only page evidence and
+allow-listed discrepancy codes; it has no publication dependency and does not
+make a completeness claim when the advertised sequence is exhausted. This
+path does not mark a scheduled slot covered or establish what IG considers a
+complete listing.
+
+Collection uses the persisted conservative IG execution profile: page size 25,
+at least five seconds between actual HTTP requests, and a 60-second pause
+between categories. Retries are owned by the IG gateway so each outbound
+attempt passes through request pacing and shared allowance reservation.
+Collection waits renew the relevant lease; a schedule boundary prevents new
+admission but does not interrupt an already admitted run while its lease and
+safety checks remain valid. These are traffic controls, not evidence that IG
+will return a complete listing or that a provider denial has been resolved.
 
 ### Diagnosing collection failures
 
@@ -251,11 +285,20 @@ denotes a session HTTP 401 after reauthentication, and `ProviderRejected`
 denotes other rejected provider requests. `UnexpectedFailure` can still
 denote a publication exception. A listing failure must
 not be conflated with the separate market-detail coverage stage.
-For HTTP 403, verify the applied Demo account/API key has permission for the
-category (including any regional or product restrictions); the platform
-cannot grant IG access or infer the provider's exact denial reason from a
-status code. Leave interest selected only if future access is expected, or
+For HTTP 403, the gateway records only an exact allow-listed provider error
+code and a bounded parse outcome. Known allowance codes can apply a scoped
+cooldown shared by the relevant callers; they are not all treated as a
+one-minute rate limit. Known API-key, account, or product-access denials
+remain nonretryable configuration actions. Unknown codes and unparseable
+bodies remain unclassified and nonretryable; the platform does not infer an
+allowance failure from status 403 alone. Verify the applied Demo account/API
+key has permission for the category, including regional or product
+restrictions. Leave interest selected only if future access is expected, or
 clear it in the operator UI to avoid repeated denied collection attempts.
+Authentication diagnostics distinguish the initial session request from a
+reauthentication replay. Page evidence records the initial and restarted
+page metadata separately so a restart cannot conceal a mismatch. Provider
+body text and unrecognized codes are never persisted or displayed.
 For a remaining `PageRowCountMismatch`, investigate the reported expected
 and actual counts and provider pagination before changing the completeness
 rules; do not accept missing rows as a complete category.

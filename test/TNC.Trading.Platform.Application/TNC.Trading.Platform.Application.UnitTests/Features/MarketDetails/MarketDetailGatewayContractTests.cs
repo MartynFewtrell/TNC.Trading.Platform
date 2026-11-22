@@ -60,6 +60,7 @@ public sealed class MarketDetailGatewayContractTests
     {
         var context = new MarketDetailRequestBudgetContext(
             Guid.NewGuid(),
+            1,
             BrokerEnvironmentKind.Demo,
             new DateOnly(2026, 9, 25),
             0,

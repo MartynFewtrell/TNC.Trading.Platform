@@ -79,8 +79,99 @@ internal static class MarketCategoryInstrumentEndpointMapping
                 category.Outcome,
                 category.SafeFailure,
                 category.DetailCoverage?.ToResponse(),
-                category.LastAttemptAtUtc)).ToArray() ?? []);
+                category.LastAttemptAtUtc,
+                category.FailureKind?.ToString(),
+                category.ProviderErrorCode,
+                category.HttpStatus,
+                category.Operation,
+                category.PageNumber,
+                category.Expected,
+                category.Actual,
+                category.ProviderErrorCodeParseOutcome?.ToString(),
+                category.AuthenticationPhase?.ToString(),
+                category.InitialPageEvidence?.ToResponse(),
+                category.RestartedPageEvidence?.ToResponse(),
+                category.HttpRequestCount)).ToArray() ?? []);
     }
+
+    public static DiagnoseMarketCategoryCollectionHttpResponse ToResponse(
+        this DiagnoseMarketCategoryCollectionResponse response) =>
+        new(
+            response.Status.ToString(),
+            response.BrokerEnvironment?.ToString(),
+            response.CategoryCode,
+            response.MaximumHttpRequests,
+            response.AvailableHttpRequests,
+            response.SafeReasonCode,
+            response.Diagnostic?.ToResponse());
+
+    private static MarketCategoryInstrumentDiagnosticResponse ToResponse(
+        this MarketCategoryInstrumentDiagnosticResult result) =>
+        new(
+            true,
+            result.Outcome.ToString(),
+            result.PageSize,
+            result.MaximumPages,
+            result.MaximumResults,
+            result.MaximumRows,
+            result.MaximumHttpRequests,
+            result.AdvertisedPageCount,
+            result.AdvertisedResultCount,
+            result.HttpRequestCount,
+            result.PageRequestCount,
+            result.PageResultCount,
+            result.PagesVisited,
+            result.TotalRawRowCount,
+            result.TotalDeserializedRowCount,
+            result.NullRowCount,
+            result.ValidRowCount,
+            result.InvalidRowCount,
+            result.UniqueValidRowCount,
+            result.DuplicateEpicCount,
+            result.DuplicateNameCount,
+            result.CrossPageEpicOverlapCount,
+            result.ReasonCode,
+            result.Pages.Select(item => item.ToResponse()).ToArray());
+
+    private static MarketCategoryInstrumentDiagnosticPageResponse ToResponse(
+        this MarketCategoryInstrumentDiagnosticPageEvidence evidence) =>
+        new(
+            evidence.RequestOrdinal,
+            evidence.RequestedPageNumber,
+            evidence.RequestedPageSize,
+            evidence.ReturnedPageNumber,
+            evidence.ReturnedPageSize,
+            evidence.TotalPages,
+            evidence.TotalResults,
+            evidence.MetadataValueKind.ToString(),
+            evidence.InstrumentsValueKind.ToString(),
+            evidence.PageNumberValueKind.ToString(),
+            evidence.PageSizeValueKind.ToString(),
+            evidence.TotalPagesValueKind.ToString(),
+            evidence.TotalResultsValueKind.ToString(),
+            evidence.RawArrayCount,
+            evidence.DeserializedRowCount,
+            evidence.NullRowCount,
+            evidence.ValidRowCount,
+            evidence.InvalidRowCount,
+            evidence.DuplicateEpicCount,
+            evidence.DuplicateNameCount,
+            evidence.CrossPageEpicOverlapCount,
+            evidence.FormulaExpectedRowCount,
+            evidence.DiscrepancyCodes);
+
+    private static MarketCategoryInstrumentPageEvidenceResponse ToResponse(
+        this MarketCategoryInstrumentPageEvidence evidence) =>
+        new(
+            evidence.RequestOrdinal,
+            evidence.RequestedPageNumber,
+            evidence.RequestedPageSize,
+            evidence.ReturnedPageNumber,
+            evidence.ReturnedPageSize,
+            evidence.TotalPages,
+            evidence.TotalResults,
+            evidence.RawCount,
+            evidence.ExpectedCount);
 
     public static MarketDetailResponse ToResponse(
         this GetMarketDetailResponse response)
@@ -118,7 +209,12 @@ internal static class MarketCategoryInstrumentEndpointMapping
                     observation.Instrument.ToResponse(),
                     observation.DealingRules.ToResponse(),
                     observation.Snapshot.ToResponse())
-                : null);
+                : null,
+            detail.LatestFailure?.Kind.ToString(),
+            detail.LatestFailure?.ProviderErrorCode,
+            detail.LatestFailure?.HttpStatus,
+            detail.LatestFailure?.Operation,
+            detail.TargetFailureCode);
     }
 
     public static MarketDetailAvailabilityResponse ToResponse(this MarketDetailAvailability availability) =>
@@ -126,7 +222,11 @@ internal static class MarketCategoryInstrumentEndpointMapping
             ? new(
             !availability.IsCategoryFollowed ? "NotFollowed" : availability.TargetStatus.ToString(),
             availability.DetailRetrievedAtUtc,
-            availability.SafeFailureCode)
+            availability.SafeFailureCode,
+            availability.FailureKind?.ToString(),
+            availability.ProviderErrorCode,
+            availability.HttpStatus,
+            availability.Operation)
             : throw new InvalidOperationException("A listed instrument is missing its current category membership.");
 
     public static MarketDetailCoverageResponse ToResponse(this MarketDetailCategoryCoverage coverage) =>
@@ -139,7 +239,8 @@ internal static class MarketCategoryInstrumentEndpointMapping
             coverage.Counts?.OutstandingCount,
             coverage.LastCompleteAtUtc,
             coverage.NextScheduledCheckUtc,
-            coverage.SafeFailureCode);
+            coverage.SafeFailureCode,
+            coverage.UpdateGeneration);
 
     private static MarketDetailInstrumentResponse ToResponse(this MarketDetailInstrument instrument) =>
         new(

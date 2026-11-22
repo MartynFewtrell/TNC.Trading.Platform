@@ -36,6 +36,21 @@ internal sealed class UpdatePlatformConfigurationValidator
             errors[nameof(request.MarketDataLeadInMinutes)] = ["Market-data lead-in cannot be negative."];
         }
 
+        if (request.MarketCategoryPageSize is < 1 or > 1000)
+        {
+            errors[nameof(request.MarketCategoryPageSize)] = ["Market-category page size must be between 1 and 1000."];
+        }
+
+        if (request.MarketDataRequestSpacingSeconds is < 1 or > 60)
+        {
+            errors[nameof(request.MarketDataRequestSpacingSeconds)] = ["Market-data request spacing must be between 1 and 60 seconds."];
+        }
+
+        if (request.MarketCategoryPauseSeconds is < 1 or > 300)
+        {
+            errors[nameof(request.MarketCategoryPauseSeconds)] = ["Market-category pause must be between 1 and 300 seconds."];
+        }
+
         if (errors.Count > 0)
         {
             throw new PlatformValidationException(errors);

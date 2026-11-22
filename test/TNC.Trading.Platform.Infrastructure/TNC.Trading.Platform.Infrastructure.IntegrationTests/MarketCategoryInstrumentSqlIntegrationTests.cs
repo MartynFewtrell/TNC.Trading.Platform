@@ -15,6 +15,60 @@ namespace TNC.Trading.Platform.Infrastructure.IntegrationTests;
 [Collection("SQL Server")]
 public sealed class MarketCategoryInstrumentSqlIntegrationTests(SqlServerDatabaseFixture fixture)
 {
+    /// <summary>
+    /// Trace: saved collection failure diagnostics, migration compatibility.
+    /// Verifies: upgrading a database with an existing safe category failure adds nullable diagnostic columns without fabricating historical facts.
+    /// Expected: the old safe failure remains intact, every new diagnostic is null, and market-detail target diagnostic columns are nullable.
+    /// Why: operators must be able to distinguish unknown legacy evidence from fields captured by the new writer.
+    /// </summary>
+    [Fact]
+    public async Task Migration_ShouldAddNullableDiagnosticsWithoutBackfill_WhenUpgradingExistingFailureRows()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        await context.Database.MigrateAsync(
+            "20261003104810_IncreaseIgProofDataBalancePrecision",
+            fixture.CancellationToken);
+        var environmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(context, fixture.CancellationToken);
+        var tradingDay = new DateOnly(2026, 10, 3);
+        await context.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO [InstrumentCollectionCategoryAttempts]
+                ([BrokerEnvironmentId], [TradingDay], [ScheduledSlot], [CategoryCode], [Attempts], [State], [LeaseFence], [SafeError], [UpdatedAtUtc])
+            VALUES
+                ({environmentId}, {tradingDay}, {0}, {"CAT"}, {1}, {"Failed"}, {0}, {"ProviderAccessDenied"}, {new DateTimeOffset(2026, 10, 3, 9, 0, 0, TimeSpan.Zero)});
+            """,
+            fixture.CancellationToken);
+
+        await context.Database.MigrateAsync(fixture.CancellationToken);
+        context.ChangeTracker.Clear();
+        var legacyAttempt = await context.InstrumentCollectionCategoryAttempts.SingleAsync(
+            item => item.CategoryCode == "CAT" && item.TradingDay == tradingDay,
+            fixture.CancellationToken);
+
+        Assert.Equal("ProviderAccessDenied", legacyAttempt.SafeError);
+        Assert.Null(legacyAttempt.FailureKind);
+        Assert.Null(legacyAttempt.ProviderErrorCode);
+        Assert.Null(legacyAttempt.ProviderErrorCodeParseOutcome);
+        Assert.Null(legacyAttempt.AuthenticationPhase);
+        Assert.Null(legacyAttempt.HttpStatus);
+        Assert.Null(legacyAttempt.Operation);
+        Assert.Null(legacyAttempt.PageNumber);
+        Assert.Null(legacyAttempt.Expected);
+        Assert.Null(legacyAttempt.Actual);
+        Assert.Null(legacyAttempt.HttpRequestCount);
+        Assert.Null(legacyAttempt.InitialPageEvidenceJson);
+        Assert.Null(legacyAttempt.RestartedPageEvidenceJson);
+
+        var nullableDetailColumns = await context.Database.SqlQueryRaw<int>("""
+            SELECT COUNT(*) AS [Value]
+            FROM sys.columns
+            WHERE [object_id] = OBJECT_ID(N'dbo.MarketDetailRunTargets')
+              AND [name] IN (N'FailureKind', N'ProviderErrorCode', N'HttpStatus', N'Operation')
+              AND [is_nullable] = 1
+            """).SingleAsync(fixture.CancellationToken);
+        Assert.Equal(4, nullableDetailColumns);
+    }
+
     /// <summary>Trace: Market Category Instruments Work Item 2. Verifies the single additive migration creates the instrument persistence schema and initializes existing environments to the explicit one-update default without inventing quota allowance.</summary>
     [Fact]
     public async Task MigrateAsync_ShouldCreateInstrumentSchemaAndDefaults_WhenDatabaseIsEmpty()
@@ -517,10 +571,10 @@ public sealed class MarketCategoryInstrumentSqlIntegrationTests(SqlServerDatabas
     }
 
     /// <summary>
-    /// Trace: startup collection during an active trading window.
-    /// Verifies: publishing a category again for the same day and slot after startup lease reacquisition keeps both completed runs.
-    /// Expected: distinct immutable observations remain, the current snapshot advances, and the used daily budget is retained.
-    /// Why: a restart must not fail on the old unique slot index or erase collection history to make room for a fresh check.
+    /// Trace: startup collection during an active trading window and saved collection failure diagnostics.
+    /// Verifies: publishing a newer category snapshot retains history, while a later failed attempt saves only safe typed diagnostics and is read separately from the successful snapshot.
+    /// Expected: the Viewer status preserves both times, the page mismatch fields remain null for this 403, and historical diagnostic columns can remain null without erasing the safe failure.
+    /// Why: a restart must not erase last-good data, and unknown provider denials must not be misclassified or reconstructed from detail-session failures.
     /// </summary>
     [Fact]
     public async Task SaveCompleteAsync_ShouldRetainBothRuns_WhenStartupRecollectsCompletedSlot()
@@ -560,6 +614,31 @@ public sealed class MarketCategoryInstrumentSqlIntegrationTests(SqlServerDatabas
             Provenance("CAT", day, 0, secondId, 1, restartedOwner, restartedFence.Value),
             fixture.CancellationToken);
 
+        var failedAttempt = await PrepareCycleAsync(context, resolver, BrokerEnvironmentKind.Demo, day, 1);
+        var categoryFailure = new MarketCategoryInstrumentFailure(
+            MarketCategoryInstrumentFailureCategory.Rejected,
+            false,
+            Operation: "session",
+            HttpStatusCode: 403,
+            ProviderErrorCode: "error.public-api.exceeded-api-key-allowance",
+            ProviderErrorCodeParseOutcome: MarketCategoryProviderErrorCodeParseOutcome.Parsed,
+            AuthenticationPhase: MarketCategoryInstrumentAuthenticationPhase.Reauthentication,
+            InitialPageEvidence: new(1, 0, 150, 0, 150, 2, 290, 70, 150),
+            RestartedPageEvidence: new(2, 0, 70, 0, 70, 5, 290, 41, 70),
+            HttpRequestCount: 3);
+        Assert.True(await cycles.CompleteCategoryAttemptAsync(
+            BrokerEnvironmentKind.Demo,
+            day,
+            1,
+            "CAT",
+            failedAttempt.Owner,
+            failedAttempt.Fence,
+            now.AddMinutes(2),
+            false,
+            "ProviderAccessDenied",
+            fixture.CancellationToken,
+            failure: categoryFailure));
+
         await using var verificationContext = fixture.CreateDbContext();
         var runs = await verificationContext.MarketCategoryInstrumentCollectionRuns
             .AsNoTracking().OrderBy(item => item.SnapshotVersion).ToListAsync(fixture.CancellationToken);
@@ -579,7 +658,66 @@ public sealed class MarketCategoryInstrumentSqlIntegrationTests(SqlServerDatabas
         var page = await new EfMarketCategoryInstrumentSnapshotStore(verificationContext, resolver)
             .ReadPageAsync(new(BrokerEnvironmentKind.Demo, "CAT", second.SnapshotVersion, null, 10), fixture.CancellationToken);
         Assert.Equal("EPIC-NEW", Assert.Single(page!.Instruments).Epic);
-        Assert.Equal(2, (await verificationContext.InstrumentCollectionCycleStates.SingleAsync(fixture.CancellationToken)).UsedRequestBudget);
+        Assert.Equal(
+            2,
+            (await verificationContext.InstrumentCollectionCycleStates.SingleAsync(
+                item => item.BrokerEnvironmentId == environmentId && item.TradingDay == day && item.ScheduledSlot == 0,
+                fixture.CancellationToken)).UsedRequestBudget);
+
+        var statusReader = new EfMarketCategoryInstrumentStatusReader(
+            verificationContext,
+            new EfMarketDetailReadStore(verificationContext, resolver),
+            resolver);
+        var status = await statusReader.ReadAsync(BrokerEnvironmentKind.Demo, day, fixture.CancellationToken);
+        var categoryStatus = Assert.Single(status.Categories);
+        Assert.Equal(second.Provenance.RetrievedAtUtc, categoryStatus.LastSuccessfulCollectionAtUtc);
+        Assert.Equal(now.AddMinutes(2), categoryStatus.LastAttemptAtUtc);
+        Assert.Equal("ProviderAccessDenied", categoryStatus.SafeFailure);
+        Assert.Equal(MarketCategoryInstrumentFailureCategory.Rejected, categoryStatus.FailureKind);
+        Assert.Equal(1, categoryStatus.Attempts);
+        Assert.Equal(403, categoryStatus.HttpStatus);
+        Assert.Equal("session", categoryStatus.Operation);
+        Assert.Equal("error.public-api.exceeded-api-key-allowance", categoryStatus.ProviderErrorCode);
+        Assert.Equal(MarketCategoryProviderErrorCodeParseOutcome.Parsed, categoryStatus.ProviderErrorCodeParseOutcome);
+        Assert.Equal(MarketCategoryInstrumentAuthenticationPhase.Reauthentication, categoryStatus.AuthenticationPhase);
+        Assert.Equal(1, categoryStatus.InitialPageEvidence?.RequestOrdinal);
+        Assert.Equal(70, categoryStatus.InitialPageEvidence?.RawCount);
+        Assert.Equal(2, categoryStatus.RestartedPageEvidence?.RequestOrdinal);
+        Assert.Equal(41, categoryStatus.RestartedPageEvidence?.RawCount);
+        Assert.Equal(3, categoryStatus.HttpRequestCount);
+        Assert.Null(categoryStatus.PageNumber);
+        Assert.Null(categoryStatus.Expected);
+        Assert.Null(categoryStatus.Actual);
+
+        var persistedFailure = await verificationContext.InstrumentCollectionCategoryAttempts.SingleAsync(
+            item => item.CategoryCode == "CAT" && item.ScheduledSlot == 1,
+            fixture.CancellationToken);
+        persistedFailure.FailureKind = null;
+        persistedFailure.ProviderErrorCode = null;
+        persistedFailure.ProviderErrorCodeParseOutcome = null;
+        persistedFailure.AuthenticationPhase = null;
+        persistedFailure.HttpStatus = null;
+        persistedFailure.Operation = null;
+        persistedFailure.PageNumber = null;
+        persistedFailure.Expected = null;
+        persistedFailure.Actual = null;
+        persistedFailure.HttpRequestCount = null;
+        persistedFailure.InitialPageEvidenceJson = null;
+        persistedFailure.RestartedPageEvidenceJson = null;
+        await verificationContext.SaveChangesAsync(fixture.CancellationToken);
+        verificationContext.ChangeTracker.Clear();
+        var legacyStatus = await statusReader.ReadAsync(BrokerEnvironmentKind.Demo, day, fixture.CancellationToken);
+        var legacyCategory = Assert.Single(legacyStatus.Categories);
+        Assert.Equal("ProviderAccessDenied", legacyCategory.SafeFailure);
+        Assert.Null(legacyCategory.FailureKind);
+        Assert.Null(legacyCategory.HttpStatus);
+        Assert.Null(legacyCategory.Operation);
+        Assert.Null(legacyCategory.ProviderErrorCode);
+        Assert.Null(legacyCategory.ProviderErrorCodeParseOutcome);
+        Assert.Null(legacyCategory.AuthenticationPhase);
+        Assert.Null(legacyCategory.InitialPageEvidence);
+        Assert.Null(legacyCategory.RestartedPageEvidence);
+        Assert.Null(legacyCategory.HttpRequestCount);
     }
 
     /// <summary>Trace: Market Category Instruments Work Item 2 and 3 October provider denial. Verifies expired leases advance the fence, retries are bounded, budgets are shared, and an HTTP 403 safe outcome persists without losing the slot.</summary>

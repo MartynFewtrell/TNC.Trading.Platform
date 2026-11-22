@@ -75,6 +75,35 @@ API tests cover only hosting and composition behavior.
 
 ### Market-category instrument collection coverage
 
+#### Navigation investigation safety
+
+The internal `ProbeMarketNavigationHandler` is offline-tested with synthetic
+HTTP responses. It requires an explicitly approved Demo scope and pre-admitted
+manual diagnostic lease, checks protected account-context evidence, and shares
+allowance/pacing controls for sessions, navigation requests and bounded
+reauthentication. In Development, a confirmed Aspire HTTP resource command
+invokes a separate internal API route protected by an ephemeral AppHost
+capability key. The command requires an approval reference and accepts an
+optional exact node ID. The caller owns approval enforcement and lease cleanup;
+no public API, operator UI or hosted worker invokes this probe.
+
+Infrastructure unit tests cover collection presence distinctions, mixed
+responses, byte bounds, escaped opaque IDs, actual attempt ceilings, denial
+classification, changed contexts, cancellation and late child failures.
+The existing HTTP pipeline test includes navigation to prevent hidden retries.
+Default probe HTTP logging is disabled and shared tracing excludes navigation
+URLs. Internal node identities must not be copied into diagnostics.
+
+These tests establish investigation safety only. They do not verify current
+IG endpoint access, market identity semantics, mappings, complete traversal,
+durable recovery or publication. No real broker calls occur in ordinary CI.
+An authorized local Demo root attempt returned `EndpointUnsupported` after
+two HTTP sends and returned no root shape; no child request was sent. The
+navigation migration remains gated; production pagination and snapshot
+acceptance are unchanged.
+
+#### Paginated collection coverage
+
 The market-data collection and browsing path is validated without real IG
 credentials or provider network access. Application tests cover slot/schedule
 policy, applied-environment checks, shared budget and retries, category-first
@@ -147,7 +176,26 @@ selected listing page/EPIC on return. They assert one detail GET per selected
 EPIC, keep displayed snapshots when independent collection metadata fails,
 and verify accessible headings, status/alert roles, semantic times and
 responsive table overflow. A real-runtime functional deep-link test signs in
+
+Additional recovery coverage verifies bounded safe parsing of allow-listed IG
+error codes, initial versus reauthentication phase evidence, paired page-zero
+evidence, and fixed-size diagnostic traversal. A 290-row controlled fixture
+requires 12 fixed-25 page requests; diagnostic mode cannot publish, and the
+2,501-row boundary is rejected. SQL integration tests cover detail update
+generations and their provenance/lease fencing. The saved
+`infra/scripts/reset-ig-demo-market-data-recovery.sql` asset is executed
+against fixture-owned SQL Server to verify dry-run immutability, target and
+count refusals, reset preservation, rollback, and fresh Categories-first
+admission. These tests never reset a developer database or call IG. A real-runtime functional deep-link test signs in
 as a Viewer and verifies that the controlled IG provider receives no request.
+The 25→14 then size-14→7 incident replay remains an incomplete production
+collection and must not request a later page or publish. The explicit
+diagnostic use case is also tested to refuse full-run conflicts and insufficient
+shared allowance before calling its gateway, and to leave publication
+untouched. API route tests assert Operator authorization. Category-page tests
+verify current status coverage supersedes stale catalogue coverage, missing or
+failed status does not fall back to stale coverage, and overlapping refreshes
+retain the newest projection.
 
 `MarketDetailCapacityPolicyTests` exercises both a 384-target workload and a
 synthetic 15,000-target category-bound workload. For the latter, the current

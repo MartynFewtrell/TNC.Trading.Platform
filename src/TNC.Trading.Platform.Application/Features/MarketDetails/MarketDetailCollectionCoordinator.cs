@@ -25,7 +25,6 @@ internal sealed class MarketDetailCollectionCoordinator(
     IPlatformApplicationLogger logger) : IMarketDetailCollectionCoordinator
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
-    private static readonly TimeSpan MaximumAccountRequestInterval = TimeSpan.FromSeconds(2);
 
     public async Task<CollectMarketDetailsResponse> ExecuteDueCollectionAsync(
         CancellationToken cancellationToken,
@@ -178,7 +177,7 @@ internal sealed class MarketDetailCollectionCoordinator(
                 NextCheck(nowUtc, windowEnd, nextWake));
         }
 
-        var budgetContext = ToBudgetContext(lease, effectiveUpdatesPerDay);
+        var budgetContext = ToBudgetContext(lease, effectiveUpdatesPerDay, frequency.RequestSpacingSeconds);
         if (!await requestBudget.IsExecutionContextStillActiveAsync(budgetContext, cancellationToken).ConfigureAwait(false))
         {
             return new(
@@ -232,7 +231,8 @@ internal sealed class MarketDetailCollectionCoordinator(
             isFailedItemFollowUp: fullRunLease?.Trigger is MarketDataFullRunTrigger.FailedItemRetry);
         var remainingAllowance = await requestBudget.GetRemainingAllowanceAsync(budgetContext, cancellationToken).ConfigureAwait(false);
         var requiredRateTime = TimeSpan.FromTicks(
-            checked(MaximumAccountRequestInterval.Ticks * (long)capacity.WorstCaseRequests));
+            checked(TimeSpan.FromSeconds(frequency.RequestSpacingSeconds).Ticks
+                * Math.Max(0L, capacity.WorstCaseRequests - 1L)));
         var timeRemaining = fullRunLease is null
             ? windowEnd - clock.GetUtcNow().ToUniversalTime()
             : TimeSpan.MaxValue;
@@ -338,6 +338,12 @@ internal sealed class MarketDetailCollectionCoordinator(
                             stopForContextChange = true;
                             break;
                         }
+
+                        MarketCollectionFailureMetrics.Record(
+                            budgetContext.Environment,
+                            "MarketDetails",
+                            result.Failure!.Kind.ToString(),
+                            result.Failure.ProviderErrorCode);
 
                         if (fullRunLease is { } failedParentLease
                             && !await fullRunStore.RecordItemAttemptAsync(
@@ -504,9 +510,11 @@ internal sealed class MarketDetailCollectionCoordinator(
 
     private static MarketDetailRequestBudgetContext ToBudgetContext(
         MarketDetailRunLease lease,
-        int effectiveUpdatesPerDay) =>
+        int effectiveUpdatesPerDay,
+        int requestSpacingSeconds) =>
         new(
             lease.RunId,
+            lease.UpdateGeneration,
             lease.Key.Environment,
             lease.Key.TradingDay,
             lease.Key.SlotIndex,
@@ -516,7 +524,8 @@ internal sealed class MarketDetailCollectionCoordinator(
             effectiveUpdatesPerDay,
             lease.AppliedEndpointProfile,
             lease.WindowEndUtc,
-            lease.FullRunLease);
+            lease.FullRunLease,
+            requestSpacingSeconds);
 
     private static bool IsSupportedAppliedEnvironment(
         AppliedBrokerEnvironmentContext? context,

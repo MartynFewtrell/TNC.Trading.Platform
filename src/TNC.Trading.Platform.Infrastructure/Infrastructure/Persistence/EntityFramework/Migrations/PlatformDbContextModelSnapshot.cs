@@ -1043,6 +1043,29 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                     b.ToTable("IgProofData");
                 });
 
+            modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.IgProviderCooldownEntity", b =>
+                {
+                    b.Property<string>("ScopeType")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("ScopeHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CooldownUntilUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("ScopeType", "ScopeHash");
+
+                    b.ToTable("IgProviderCooldowns", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_IgProviderCooldowns_ScopeHash", "LEN([ScopeHash]) = 64");
+
+                            t.HasCheckConstraint("CK_IgProviderCooldowns_ScopeType", "[ScopeType] IN ('App', 'Account')");
+                        });
+                });
+
             modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.IgProviderRateReservationEntity", b =>
                 {
                     b.Property<Guid>("RequestId")
@@ -1087,11 +1110,54 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<int?>("Actual")
+                        .HasColumnType("int");
+
                     b.Property<int>("Attempts")
                         .HasColumnType("int");
 
+                    b.Property<string>("AuthenticationPhase")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int?>("Expected")
+                        .HasColumnType("int");
+
+                    b.Property<string>("FailureKind")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int?>("HttpRequestCount")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("HttpStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("InitialPageEvidenceJson")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<long>("LeaseFence")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("Operation")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<int?>("PageNumber")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ProviderErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ProviderErrorCodeParseOutcome")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("RestartedPageEvidenceJson")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<string>("SafeError")
                         .HasMaxLength(128)
@@ -1113,9 +1179,21 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         {
                             t.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_Attempts", "[Attempts] BETWEEN 0 AND 3");
 
+                            t.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_AuthenticationPhase", "[AuthenticationPhase] IS NULL OR [AuthenticationPhase] IN ('Initial', 'Reauthentication')");
+
                             t.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_CategoryCode", "LEN(LTRIM(RTRIM([CategoryCode]))) > 0");
 
+                            t.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_DiagnosticCounts", "([PageNumber] IS NULL OR [PageNumber] >= 0) AND ([Expected] IS NULL OR [Expected] >= 0) AND ([Actual] IS NULL OR [Actual] >= 0) AND ([HttpStatus] IS NULL OR [HttpStatus] BETWEEN 100 AND 599) AND ([HttpRequestCount] IS NULL OR [HttpRequestCount] BETWEEN 0 AND 1000)");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_FailureKind", "[FailureKind] IS NULL OR [FailureKind] IN ('CategoryPrerequisiteFailed', 'Unavailable', 'IncompleteCollection', 'InvalidCollection', 'RateLimited', 'AllowanceUnavailable', 'AllowanceExceeded', 'ScheduleClosed', 'UnsupportedEnvironment', 'LeaseLost', 'StorageUnavailable', 'Cancelled', 'Timeout', 'Unauthorized', 'Rejected')");
+
                             t.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_LeaseFence", "[LeaseFence] >= 0");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_Operation", "[Operation] IS NULL OR [Operation] IN ('session', 'instruments')");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_ProviderCodeParseOutcome", "[ProviderErrorCodeParseOutcome] IS NULL OR [ProviderErrorCodeParseOutcome] IN ('Parsed', 'Missing', 'Unknown', 'Malformed', 'NonJson', 'Oversized', 'Unsafe', 'Unavailable')");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_ProviderErrorCode", "[ProviderErrorCode] IS NULL OR [ProviderErrorCode] IN ('error.public-api.exceeded-account-allowance', 'error.public-api.exceeded-account-trading-allowance', 'error.public-api.exceeded-application-allowance', 'error.public-api.exceeded-api-key-allowance', 'error.public-api.exceeded-account-historical-data-allowance', 'error.security.api-key-disabled', 'error.security.api-key-invalid', 'error.security.api-key-restricted', 'error.security.api-key-revoked', 'error.public-api.failure.product-code-not-allowed', 'error.public-api.failure.stockbroking-not-supported', 'error.public-api.epic-not-found')");
 
                             t.HasCheckConstraint("CK_InstrumentCollectionCategoryAttempts_Slot", "[ScheduledSlot] >= 0");
                         });
@@ -1195,6 +1273,12 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                     b.Property<int?>("ApprovedNonTradingDailyRequestAllowance")
                         .HasColumnType("int");
 
+                    b.Property<int>("CategoryPageSize")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CategoryPauseSeconds")
+                        .HasColumnType("int");
+
                     b.Property<long>("ConfigurationVersion")
                         .HasColumnType("bigint");
 
@@ -1210,11 +1294,18 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                     b.Property<int?>("PendingUpdatesPerDay")
                         .HasColumnType("int");
 
+                    b.Property<int>("RequestSpacingSeconds")
+                        .HasColumnType("int");
+
                     b.HasKey("BrokerEnvironmentId");
 
                     b.ToTable("InstrumentCollectionSettings", null, t =>
                         {
                             t.HasCheckConstraint("CK_InstrumentCollectionSettings_Allowance", "[ApprovedNonTradingDailyRequestAllowance] IS NULL OR [ApprovedNonTradingDailyRequestAllowance] >= 0");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionSettings_CategoryPageSize", "[CategoryPageSize] BETWEEN 1 AND 1000");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionSettings_CategoryPauseSeconds", "[CategoryPauseSeconds] BETWEEN 1 AND 300");
 
                             t.HasCheckConstraint("CK_InstrumentCollectionSettings_ConfigurationVersion", "[ConfigurationVersion] >= 1");
 
@@ -1223,6 +1314,8 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                             t.HasCheckConstraint("CK_InstrumentCollectionSettings_LeadInMinutes", "[LeadInMinutes] >= 0");
 
                             t.HasCheckConstraint("CK_InstrumentCollectionSettings_PendingFrequency", "[PendingUpdatesPerDay] IS NULL OR [PendingUpdatesPerDay] >= 0");
+
+                            t.HasCheckConstraint("CK_InstrumentCollectionSettings_RequestSpacingSeconds", "[RequestSpacingSeconds] BETWEEN 1 AND 60");
                         });
                 });
 
@@ -1972,6 +2065,9 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                     b.Property<DateOnly>("TradingDay")
                         .HasColumnType("date");
 
+                    b.Property<int>("UpdateGeneration")
+                        .HasColumnType("int");
+
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1982,7 +2078,7 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
 
                     b.HasIndex("BrokerEnvironmentId", "Status", "UpdatedAtUtc");
 
-                    b.HasIndex("BrokerEnvironmentId", "TradingDay", "ScheduledSlot")
+                    b.HasIndex("BrokerEnvironmentId", "TradingDay", "ScheduledSlot", "UpdateGeneration")
                         .IsUnique();
 
                     b.ToTable("MarketDetailCollectionRuns", null, t =>
@@ -1996,6 +2092,8 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                             t.HasCheckConstraint("CK_MarketDetailCollectionRuns_Revisions", "[CatalogueRevision] >= 0 AND [InterestRevision] >= 0 AND [ScheduleRevision] >= 0");
 
                             t.HasCheckConstraint("CK_MarketDetailCollectionRuns_Slot", "[ScheduledSlot] >= 0");
+
+                            t.HasCheckConstraint("CK_MarketDetailCollectionRuns_UpdateGeneration", "[UpdateGeneration] > 0");
                         });
                 });
 
@@ -2342,7 +2440,12 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                     b.Property<long>("ListingVersion")
                         .HasColumnType("bigint");
 
+                    b.Property<int>("UpdateGeneration")
+                        .HasColumnType("int");
+
                     b.HasKey("RunId", "CategoryCode");
+
+                    b.HasAlternateKey("RunId", "BrokerEnvironmentId", "UpdateGeneration", "CategoryCode");
 
                     b.HasIndex("BrokerEnvironmentId", "CategoryCode", "ListingVersion");
 
@@ -2351,6 +2454,8 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                     b.ToTable("MarketDetailRunSources", null, t =>
                         {
                             t.HasCheckConstraint("CK_MarketDetailRunSources_ListingVersion", "[ListingVersion] > 0");
+
+                            t.HasCheckConstraint("CK_MarketDetailRunSources_UpdateGeneration", "[UpdateGeneration] > 0");
                         });
                 });
 
@@ -2382,6 +2487,21 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("FailureKind")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int?>("HttpStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Operation")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("ProviderErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("SafeFailureCode")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
@@ -2407,6 +2527,14 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
                             t.HasCheckConstraint("CK_MarketDetailRunTargets_Epic", "LEN(LTRIM(RTRIM([Epic]))) > 0");
 
                             t.HasCheckConstraint("CK_MarketDetailRunTargets_ExclusionEvidence", "([Status] = 'Excluded' AND [ExclusionEvidenceCode] IS NOT NULL AND [ExcludedAtUtc] IS NOT NULL) OR ([Status] <> 'Excluded' AND [ExclusionEvidenceCode] IS NULL AND [ExcludedAtUtc] IS NULL)");
+
+                            t.HasCheckConstraint("CK_MarketDetailRunTargets_FailureKind", "[FailureKind] IS NULL OR [FailureKind] IN ('ProviderConfirmedUnavailable', 'TransientProviderFailure', 'RateLimited', 'AllowanceUnavailable', 'Unauthorized', 'InvalidResponse')");
+
+                            t.HasCheckConstraint("CK_MarketDetailRunTargets_HttpStatus", "[HttpStatus] IS NULL OR [HttpStatus] BETWEEN 100 AND 599");
+
+                            t.HasCheckConstraint("CK_MarketDetailRunTargets_Operation", "[Operation] IS NULL OR [Operation] IN ('Session', 'Markets')");
+
+                            t.HasCheckConstraint("CK_MarketDetailRunTargets_ProviderErrorCode", "[ProviderErrorCode] IS NULL OR [ProviderErrorCode] IN ('error.public-api.exceeded-account-allowance', 'error.public-api.exceeded-account-trading-allowance', 'error.public-api.exceeded-application-allowance', 'error.public-api.exceeded-api-key-allowance', 'error.public-api.exceeded-account-historical-data-allowance', 'error.security.api-key-disabled', 'error.security.api-key-invalid', 'error.security.api-key-restricted', 'error.security.api-key-revoked', 'error.public-api.failure.product-code-not-allowed', 'error.public-api.failure.stockbroking-not-supported', 'error.public-api.epic-not-found')");
 
                             t.HasCheckConstraint("CK_MarketDetailRunTargets_Status", "[Status] IN ('Pending', 'Completed', 'Failed', 'Excluded')");
                         });
@@ -3100,17 +3228,17 @@ namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Migrat
 
             modelBuilder.Entity("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketDetailRunSourceEntity", b =>
                 {
-                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketDetailCollectionRunEntity", "Run")
-                        .WithMany("Sources")
-                        .HasForeignKey("RunId", "BrokerEnvironmentId")
-                        .HasPrincipalKey("RunId", "BrokerEnvironmentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketCategoryInstrumentCollectionRunEntity", null)
                         .WithMany()
                         .HasForeignKey("ListingCollectionId", "BrokerEnvironmentId", "CategoryCode")
                         .HasPrincipalKey("CollectionId", "BrokerEnvironmentId", "CategoryCode")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework.Entities.MarketDetailCollectionRunEntity", "Run")
+                        .WithMany("Sources")
+                        .HasForeignKey("RunId", "BrokerEnvironmentId", "UpdateGeneration")
+                        .HasPrincipalKey("RunId", "BrokerEnvironmentId", "UpdateGeneration")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 

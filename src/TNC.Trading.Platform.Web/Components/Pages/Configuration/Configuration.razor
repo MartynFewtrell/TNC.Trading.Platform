@@ -240,6 +240,18 @@ else
                         Market-data lead-in minutes
                         <InputNumber @bind-Value="form.MarketDataLeadInMinutes" min="0" data-testid="market-data-lead-in-minutes" />
                     </label>
+                    <label>
+                        Market-category page size (1–1000)
+                        <InputNumber @bind-Value="form.MarketCategoryPageSize" min="1" max="1000" data-testid="market-category-page-size" />
+                    </label>
+                    <label>
+                        Minimum market-data request spacing seconds (1–60)
+                        <InputNumber @bind-Value="form.MarketDataRequestSpacingSeconds" min="1" max="60" data-testid="market-data-request-spacing-seconds" />
+                    </label>
+                    <label>
+                        Pause between market categories seconds (1–300)
+                        <InputNumber @bind-Value="form.MarketCategoryPauseSeconds" min="1" max="300" data-testid="market-category-pause-seconds" />
+                    </label>
                 </div>
             </section>
         </PlatformAccordionSection>

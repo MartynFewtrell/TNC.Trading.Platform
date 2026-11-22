@@ -20,7 +20,7 @@ public sealed class MarketCategoryInstrumentEndpointTests
     /// <summary>
     /// Trace: Market Category Instruments Work Item 5, steps 1-4.
     /// Verifies: saved category and instrument reads use Viewer authorization while interest edits and manual refresh use Operator authorization.
-    /// Expected: all five resource routes are mapped with their least-privilege named policies.
+    /// Expected: all resource routes are mapped with their least-privilege named policies.
     /// Why: accidental route omission or role broadening would expose shared trading configuration or status.
     /// </summary>
     [Fact]
@@ -44,6 +44,10 @@ public sealed class MarketCategoryInstrumentEndpointTests
         AssertPolicy(endpoints, "/api/platform/instrument-collection/status", PlatformAuthenticationDefaults.Policies.Viewer);
         AssertPolicy(endpoints, "/api/platform/market-categories/{categoryCode}/interest", PlatformAuthenticationDefaults.Policies.Operator);
         AssertPolicy(endpoints, "/api/platform/market-categories/refresh", PlatformAuthenticationDefaults.Policies.Operator);
+        AssertPolicy(
+            endpoints,
+            "/api/platform/market-categories/{categoryCode}/collection-diagnostic",
+            PlatformAuthenticationDefaults.Policies.Operator);
     }
 
     /// <summary>
@@ -94,20 +98,55 @@ public sealed class MarketCategoryInstrumentEndpointTests
     [Fact]
     public void ToResponse_ShouldIncludeSavedAttemptTime_WhenCategoryFailed()
     {
+        var successfulAt = new DateTimeOffset(2026, 10, 3, 8, 0, 0, TimeSpan.Zero);
         var attemptedAt = new DateTimeOffset(2026, 10, 3, 9, 19, 2, TimeSpan.Zero);
         var status = new MarketCategoryInstrumentCollectionStatus(
             BrokerEnvironmentKind.Demo, new DateOnly(2026, 10, 3), null, 0, "Completed",
             "Succeeded", null, 7, 100,
             [new MarketCategoryInstrumentCategoryStatus(
-                "COMMODITIES", null, 1, "Failed", "InvalidResponse", null, attemptedAt)]);
+                "COMMODITIES",
+                successfulAt,
+                1,
+                "Failed",
+                "InvalidResponse",
+                null,
+                attemptedAt,
+                MarketCategoryInstrumentFailureCategory.IncompleteCollection,
+                200,
+                "instruments",
+                3,
+                70,
+                42,
+                "error.public-api.exceeded-account-allowance",
+                MarketCategoryProviderErrorCodeParseOutcome.Parsed,
+                MarketCategoryInstrumentAuthenticationPhase.Reauthentication,
+                new(1, 0, 150, 0, 150, 2, 290, 70, 150),
+                new(2, 0, 70, 0, 70, 5, 290, 41, 70),
+                5)]);
         var response = new GetMarketCategoryInstrumentStatusResponse(
             true, BrokerEnvironmentKind.Demo, status.TradingDay, status, false, null, null, null)
             .ToResponse();
 
         var category = Assert.Single(response.Categories);
+        Assert.Equal(1, category.Attempts);
         Assert.Equal(attemptedAt, category.LastAttemptAtUtc);
-        Assert.Null(category.LastSuccessfulCollectionAtUtc);
+        Assert.Equal(successfulAt, category.LastSuccessfulCollectionAtUtc);
         Assert.Equal("InvalidResponse", category.SafeFailure);
+        Assert.Equal("IncompleteCollection", category.FailureKind);
+        Assert.Equal(200, category.HttpStatus);
+        Assert.Equal("instruments", category.Operation);
+        Assert.Equal(3, category.PageNumber);
+        Assert.Equal(70, category.Expected);
+        Assert.Equal(42, category.Actual);
+        Assert.Equal("error.public-api.exceeded-account-allowance", category.ProviderErrorCode);
+        Assert.Equal("Parsed", category.ProviderErrorCodeParseOutcome);
+        Assert.Equal("Reauthentication", category.AuthenticationPhase);
+        Assert.Equal(1, category.InitialPageEvidence?.RequestOrdinal);
+        Assert.Equal(150, category.InitialPageEvidence?.RequestedPageSize);
+        Assert.Equal(70, category.InitialPageEvidence?.RawCount);
+        Assert.Equal(2, category.RestartedPageEvidence?.RequestOrdinal);
+        Assert.Equal(41, category.RestartedPageEvidence?.RawCount);
+        Assert.Equal(5, category.HttpRequestCount);
     }
 
     /// <summary>

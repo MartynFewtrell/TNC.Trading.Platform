@@ -110,7 +110,8 @@ public static class Extensions
             {
                 metrics.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddRuntimeInstrumentation();
+                    .AddRuntimeInstrumentation()
+                    .AddMeter("TNC.Trading.Platform.MarketCollection");
             })
             .WithTracing(tracing =>
             {
@@ -123,7 +124,11 @@ public static class Extensions
                     )
                     // Uncomment the following line to enable gRPC instrumentation (requires the OpenTelemetry.Instrumentation.GrpcNetClient package)
                     //.AddGrpcClientInstrumentation()
-                    .AddHttpClientInstrumentation();
+                    .AddHttpClientInstrumentation(options =>
+                        options.FilterHttpRequestMessage = request =>
+                            request.RequestUri is not { } uri
+                            || !(uri.AbsolutePath.Equals("/gateway/deal/marketnavigation", StringComparison.Ordinal)
+                                || uri.AbsolutePath.StartsWith("/gateway/deal/marketnavigation/", StringComparison.Ordinal)));
             });
 
         builder.AddOpenTelemetryExporters();

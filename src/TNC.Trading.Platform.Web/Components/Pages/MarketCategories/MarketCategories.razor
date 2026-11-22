@@ -87,6 +87,9 @@ else
                                 item => string.Equals(item.CategoryCode, category.Code, StringComparison.Ordinal));
                             var outcome = attemptStatus is null ? category.CollectionOutcome : attemptStatus.Outcome;
                             var safeFailure = attemptStatus is null ? category.SafeFailure : attemptStatus.SafeFailure;
+                            var lastSuccessfulCollectionAtUtc = attemptStatus?.LastSuccessfulCollectionAtUtc
+                                ?? category.LastSuccessfulCollectionAtUtc;
+                            var detailCoverage = attemptStatus?.DetailCoverage;
                             <tr @key="category.Code">
                                 <td><a class="market-category-link" href="@($"/market-categories/{Uri.EscapeDataString(category.Code)}/instruments")">@category.Code</a></td>
                                 <td>@(category.NonTradeable ? "Non-tradeable (provider fact)" : "Tradeable")</td>
@@ -103,7 +106,7 @@ else
                                     }
                                 </td>
                                 <td>
-                                    @if (category.LastSuccessfulCollectionAtUtc is { } collectedAt)
+                                    @if (lastSuccessfulCollectionAtUtc is { } collectedAt)
                                     {
                                         <time datetime="@collectedAt.ToString("O")">@collectedAt.ToLocalTime().ToString("g")</time>
                                     }
@@ -128,9 +131,69 @@ else
                                     {
                                         <span class="warning"> — @safeFailure</span>
                                     }
+                                    @if (attemptStatus?.FailureKind is { } failureKind)
+                                    {
+                                        <div class="saved-failure-diagnostics" data-testid="market-category-failure-diagnostics">
+                                            <span>Category attempts: @attemptStatus.Attempts</span>
+                                            @if (attemptStatus.HttpRequestCount is { } httpRequestCount)
+                                            {
+                                                <span>Gateway HTTP calls: @httpRequestCount</span>
+                                            }
+                                            @if (failureKind == "AllowanceUnavailable")
+                                            {
+                                                <span>IG confirmed a known provider allowance limit.</span>
+                                            }
+                                            else if (failureKind == "Rejected" && attemptStatus.HttpStatus == 403)
+                                            {
+                                                <span>IG denied access (HTTP 403); the cause is not classified.</span>
+                                            }
+                                            else
+                                            {
+                                                <span>Failure kind: @failureKind</span>
+                                            }
+                                            @if (attemptStatus.HttpStatus is { } httpStatus)
+                                            {
+                                                <span> — HTTP @httpStatus</span>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(attemptStatus.Operation))
+                                            {
+                                                <span> — Operation: @attemptStatus.Operation</span>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(attemptStatus.AuthenticationPhase))
+                                            {
+                                                <span> — Authentication phase: @attemptStatus.AuthenticationPhase</span>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(attemptStatus.ProviderErrorCode))
+                                            {
+                                                <span> — Safe provider code: @attemptStatus.ProviderErrorCode</span>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(attemptStatus.ProviderErrorCodeParseOutcome))
+                                            {
+                                                <span> — Provider-code parse: @attemptStatus.ProviderErrorCodeParseOutcome</span>
+                                            }
+                                            @if (attemptStatus.PageNumber is { } pageNumber
+                                                && attemptStatus.Expected is { } expected
+                                                && attemptStatus.Actual is { } actual)
+                                            {
+                                                <span> — Provider page index @pageNumber: expected @expected rows, received @actual.</span>
+                                            }
+                                            @if (attemptStatus.InitialPageEvidence is { } initialPageEvidence)
+                                            {
+                                                <span> — Initial page request #@initialPageEvidence.RequestOrdinal requested page @initialPageEvidence.RequestedPageNumber, size @initialPageEvidence.RequestedPageSize; returned page @initialPageEvidence.ReturnedPageNumber, size @initialPageEvidence.ReturnedPageSize, @initialPageEvidence.RawCount rows, total @initialPageEvidence.TotalResults.</span>
+                                            }
+                                            @if (attemptStatus.RestartedPageEvidence is { } restartedPageEvidence)
+                                            {
+                                                <span> — Restarted page request #@restartedPageEvidence.RequestOrdinal requested page @restartedPageEvidence.RequestedPageNumber, size @restartedPageEvidence.RequestedPageSize; returned page @restartedPageEvidence.ReturnedPageNumber, size @restartedPageEvidence.ReturnedPageSize, @restartedPageEvidence.RawCount rows, total @restartedPageEvidence.TotalResults (expected @restartedPageEvidence.ExpectedCount).</span>
+                                            }
+                                        </div>
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(safeFailure))
+                                    {
+                                        <span class="hint">Structured diagnostics are unavailable for this historical attempt.</span>
+                                    }
                                 </td>
                                 <td data-testid="market-detail-category-coverage">
-                                    @if (category.DetailCoverage is { } coverage)
+                                    @if (detailCoverage is { } coverage)
                                     {
                                         <span>@coverage.State</span>
                                         @if (coverage.LastCompleteAtUtc is { } lastCompleteAt)

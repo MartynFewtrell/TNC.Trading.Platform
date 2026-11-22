@@ -8,4 +8,9 @@ internal sealed record MarketDetailResponse(
     long? ListingSnapshotVersion,
     DateTimeOffset? ListingRetrievedAtUtc,
     MarketDetailCoverageResponse Coverage,
-    MarketDetailObservationResponse? SavedObservation);
+    MarketDetailObservationResponse? SavedObservation,
+    string? FailureKind = null,
+    string? ProviderErrorCode = null,
+    int? HttpStatus = null,
+    string? Operation = null,
+    string? TargetFailureCode = null);

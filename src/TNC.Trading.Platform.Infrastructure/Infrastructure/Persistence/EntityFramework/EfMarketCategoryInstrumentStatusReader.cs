@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
@@ -80,7 +81,21 @@ internal sealed class EfMarketCategoryInstrumentStatusReader(
                     latestAttempt?.State,
                     latestAttempt?.SafeError,
                     coverage,
-                    latestAttempt?.UpdatedAtUtc);
+                    latestAttempt?.UpdatedAtUtc,
+                    ParseFailureKind(latestAttempt?.FailureKind),
+                    latestAttempt?.HttpStatus,
+                    latestAttempt?.Operation,
+                    latestAttempt?.PageNumber,
+                    latestAttempt?.Expected,
+                    latestAttempt?.Actual,
+                    MarketDetailProviderErrorCodes.IsAllowed(latestAttempt?.ProviderErrorCode)
+                        ? latestAttempt?.ProviderErrorCode
+                        : null,
+                    ParseEnum<MarketCategoryProviderErrorCodeParseOutcome>(latestAttempt?.ProviderErrorCodeParseOutcome),
+                    ParseEnum<MarketCategoryInstrumentAuthenticationPhase>(latestAttempt?.AuthenticationPhase),
+                    ReadPageEvidence(latestAttempt?.InitialPageEvidenceJson),
+                    ReadPageEvidence(latestAttempt?.RestartedPageEvidenceJson),
+                    latestAttempt?.HttpRequestCount is >= 0 and <= 1000 ? latestAttempt.HttpRequestCount : null);
             })
             .ToArray();
         return new(
@@ -95,4 +110,37 @@ internal sealed class EfMarketCategoryInstrumentStatusReader(
             allowance,
             categories);
     }
+
+    private static TEnum? ParseEnum<TEnum>(string? value)
+        where TEnum : struct, Enum =>
+        Enum.TryParse<TEnum>(value, ignoreCase: false, out var parsed) && Enum.IsDefined(parsed)
+            ? parsed
+            : null;
+
+    private static MarketCategoryInstrumentPageEvidence? ReadPageEvidence(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json) || json.Length > 256)
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<MarketCategoryInstrumentPageEvidence>(json);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    private static MarketCategoryInstrumentFailureCategory? ParseFailureKind(string? value) =>
+        Enum.TryParse<MarketCategoryInstrumentFailureCategory>(value, out var failureKind)
+            && Enum.IsDefined(failureKind)
+                ? failureKind
+                : null;
 }

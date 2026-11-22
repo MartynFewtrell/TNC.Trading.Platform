@@ -6,4 +6,8 @@ internal sealed record MarketDetailAvailability(
     bool IsCategoryFollowed,
     MarketDetailTargetStatus TargetStatus,
     DateTimeOffset? DetailRetrievedAtUtc,
-    string? SafeFailureCode);
+    string? SafeFailureCode,
+    MarketDetailTargetFailureKind? FailureKind = null,
+    string? ProviderErrorCode = null,
+    int? HttpStatus = null,
+    string? Operation = null);

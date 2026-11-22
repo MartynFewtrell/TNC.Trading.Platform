@@ -2,8 +2,10 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging.Abstractions;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDetails;
 using TNC.Trading.Platform.Infrastructure.Integrations.Ig;
 
 namespace TNC.Trading.Platform.Infrastructure.UnitTests.Integrations.Ig;
@@ -44,6 +46,565 @@ public sealed class IgMarketCategoryInstrumentsGatewayTests
         Assert.Equal("cst", handler.Requests[1].Header("CST"));
         Assert.Equal("security", handler.Requests[1].Header("X-SECURITY-TOKEN"));
         Assert.DoesNotContain("password-secret", result.ToString(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery plan Phase 3, steps 3.1 and 3.5. Verifies the diagnostic-only fixed-size traversal with a coherent advertised sequence.
+    /// Expected: totalResults=290 traverses exactly twelve GET pages at size 25 and counts 290 unique rows, with a diagnostic-only outcome.
+    /// Why: this bounded evidence path must bypass adaptive shrinking without being able to publish a production snapshot.
+    /// </summary>
+    [Fact]
+    public async Task CollectDiagnosticAsync_ShouldFetchTwelveFixedSizePages_WhenTotalResultsIsTwoHundredNinety()
+    {
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse("cst", "security");
+            }
+
+            var pageNumber = int.Parse(QueryValue(request.Uri, "pageNumber"), System.Globalization.CultureInfo.InvariantCulture);
+            var count = Math.Min(25, 290 - pageNumber * 25);
+            var rows = Enumerable.Range(pageNumber * 25, count)
+                .Select(index => Instrument($"EPIC-{index}", $"Instrument {index}"))
+                .ToArray();
+            return PageResponse(pageNumber, 25, 12, 290, rows);
+        });
+        var budget = new FakeRequestBudget();
+
+        var summary = await CreateGateway(handler, budget, pageSize: 25)
+            .CollectDiagnosticAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
+
+        Assert.Equal(MarketCategoryInstrumentDiagnosticOutcome.AdvertisedSequenceExhausted, summary.Outcome);
+        Assert.Equal(25, summary.PageSize);
+        Assert.Equal(12, summary.AdvertisedPageCount);
+        Assert.Equal(290, summary.AdvertisedResultCount);
+        Assert.Equal(12, summary.PageRequestCount);
+        Assert.Equal(12, summary.PageResultCount);
+        Assert.Equal(12, summary.PagesVisited);
+        Assert.Equal(290, summary.UniqueValidRowCount);
+        Assert.Equal("DiagnosticOnlyNoCompletenessClaim", summary.ReasonCode);
+        Assert.NotEmpty(summary.Pages);
+        Assert.Equal(13, summary.HttpRequestCount);
+        var getRequests = handler.Requests.Where(request => request.Method == HttpMethod.Get).ToArray();
+        Assert.Equal(12, getRequests.Length);
+        Assert.All(getRequests, request => Assert.Equal("25", QueryValue(request.Uri, "pageSize")));
+        Assert.Equal(13, budget.Reservations);
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery plan Phase 3, steps 3.1 and 3.5. Verifies sparse intermediate pages are all visited in diagnostic mode.
+    /// Expected: both advertised pages are requested despite a five-row first page, then the short unique union is reported without a completeness claim.
+    /// Why: diagnostic traversal must gather the bounded advertised sequence without weakening production's complete-only acceptance rule.
+    /// </summary>
+    [Fact]
+    public async Task CollectDiagnosticAsync_ShouldVisitLaterPagesAndRejectShortUnion_WhenIntermediatePageIsSparse()
+    {
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse("cst", "security");
+            }
+
+            var pageNumber = int.Parse(QueryValue(request.Uri, "pageNumber"), System.Globalization.CultureInfo.InvariantCulture);
+            var rows = pageNumber == 0
+                ? Enumerable.Range(0, 5).Select(index => Instrument($"EPIC-{index}", $"Instrument {index}")).ToArray()
+                : Enumerable.Range(5, 25).Select(index => Instrument($"EPIC-{index}", $"Instrument {index}")).ToArray();
+            return PageResponse(pageNumber, 25, 2, 50, rows);
+        });
+
+        var summary = await CreateGateway(handler, pageSize: 25)
+            .CollectDiagnosticAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
+
+        Assert.IsType<MarketCategoryInstrumentDiagnosticResult>(summary);
+        Assert.Equal(MarketCategoryInstrumentDiagnosticOutcome.AdvertisedSequenceExhausted, summary.Outcome);
+        Assert.Equal("UniqueCountDiffersFromAdvertisedTotal", summary.ReasonCode);
+        Assert.Equal(2, summary.PageRequestCount);
+        Assert.Equal(2, summary.PageResultCount);
+        Assert.Equal(2, summary.PagesVisited);
+        Assert.Equal(30, summary.UniqueValidRowCount);
+        Assert.Equal(3, handler.Requests.Count);
+    }
+
+    /// <summary>
+    /// Trace: IG category-collection completeness plan P2. Verifies the synthetic 294-candidate incident shape in fixed-size diagnostic mode.
+    /// Expected: the first 25 candidates yield 14 visible rows (the first 14 yield seven), all twelve advertised pages are visited at size 25, and the 283-row visible union remains diagnostic-only.
+    /// Why: the observed shrink replay is evidence of a mismatch, not permission to accept a partial collection or change production completeness checks.
+    /// </summary>
+    [Fact]
+    public async Task CollectDiagnosticAsync_ShouldRecordSparseCandidatePagesWithoutClaimingCompleteness_WhenVisibleCountsDiffer()
+    {
+        var candidateUniverse = Enumerable.Range(0, 294)
+            .Select(index => (Index: index, Visible: index < 14
+                ? index % 2 == 0
+                : index < 21 || index >= 25))
+            .ToArray();
+        Assert.Equal(7, candidateUniverse.Take(14).Count(candidate => candidate.Visible));
+        Assert.Equal(14, candidateUniverse.Take(25).Count(candidate => candidate.Visible));
+
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse("cst", "security");
+            }
+
+            var pageNumber = int.Parse(QueryValue(request.Uri, "pageNumber"), System.Globalization.CultureInfo.InvariantCulture);
+            var candidates = candidateUniverse.Skip(pageNumber * 25).Take(25);
+            var rows = candidates.Where(candidate => candidate.Visible)
+                .Select(candidate => Instrument($"EPIC-{candidate.Index}", $"Instrument {candidate.Index}"))
+                .ToArray();
+            return PageResponse(pageNumber, 25, 12, 294, rows);
+        });
+
+        var result = await CreateGateway(handler, pageSize: 25)
+            .CollectDiagnosticAsync(
+                BrokerEnvironmentKind.Demo,
+                "COMMODITIES",
+                BudgetContext(),
+                maximumHttpRequests: 15,
+                CancellationToken.None);
+
+        Assert.Equal(MarketCategoryInstrumentDiagnosticOutcome.AdvertisedSequenceExhausted, result.Outcome);
+        Assert.Equal("UniqueCountDiffersFromAdvertisedTotal", result.ReasonCode);
+        Assert.Equal(12, result.PagesVisited);
+        Assert.Equal(12, result.PageRequestCount);
+        Assert.Equal(283, result.UniqueValidRowCount);
+        Assert.Equal(14, result.Pages[0].RawArrayCount);
+        Assert.Equal(14, result.Pages[0].DeserializedRowCount);
+        Assert.Contains("RawCountDiffersFromFormula", result.Pages[0].DiscrepancyCodes);
+        var sanitizedEvidence = JsonSerializer.Serialize(result);
+        Assert.DoesNotContain("EPIC-", sanitizedEvidence, StringComparison.Ordinal);
+        Assert.DoesNotContain("Instrument ", sanitizedEvidence, StringComparison.Ordinal);
+        Assert.All(handler.Requests.Where(request => request.Method == HttpMethod.Get), request =>
+        {
+            Assert.Equal("25", QueryValue(request.Uri, "pageSize"));
+            Assert.NotEqual("14", QueryValue(request.Uri, "pageSize"));
+        });
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery plan Phase 3, step 3.5. Verifies the final diagnostic union is counted across every fixed-size page.
+    /// Expected: a sparse intermediate page does not trigger an early smaller-page replay; all twelve pages are fetched and the 280-row union is recorded against totalResults=290.
+    /// Why: short pages remain diagnostic evidence only and cannot be mistaken for a complete collection.
+    /// </summary>
+    [Fact]
+    public async Task CollectDiagnosticAsync_ShouldRejectShortUnionAfterVisitingAdvertisedPages_WhenIntermediatePageIsShort()
+    {
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse("cst", "security");
+            }
+
+            var pageNumber = int.Parse(QueryValue(request.Uri, "pageNumber"), System.Globalization.CultureInfo.InvariantCulture);
+            var count = pageNumber == 4 ? 15 : Math.Min(25, 290 - pageNumber * 25);
+            var rows = Enumerable.Range(pageNumber * 25, count)
+                .Select(index => Instrument($"EPIC-{index}", $"Instrument {index}"))
+                .ToArray();
+            return PageResponse(pageNumber, 25, 12, 290, rows);
+        });
+
+        var summary = await CreateGateway(handler, pageSize: 25)
+            .CollectDiagnosticAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
+
+        Assert.Equal(MarketCategoryInstrumentDiagnosticOutcome.AdvertisedSequenceExhausted, summary.Outcome);
+        Assert.Equal("UniqueCountDiffersFromAdvertisedTotal", summary.ReasonCode);
+        Assert.Equal(12, summary.PageRequestCount);
+        Assert.Equal(12, summary.PageResultCount);
+        Assert.Equal(12, summary.PagesVisited);
+        Assert.Equal(280, summary.UniqueValidRowCount);
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery plan Phase 3, step 3.5. Verifies duplicate identities remain count-only evidence.
+    /// Expected: the repeated epic is counted as a cross-page overlap and never becomes a production collection.
+    /// Why: duplicates make observed and advertised counts diverge and must remain visible to an operator.
+    /// </summary>
+    [Fact]
+    public async Task CollectDiagnosticAsync_ShouldRejectDuplicateIdentity_WhenEpicRepeatsAcrossPages()
+    {
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse("cst", "security");
+            }
+
+            var pageNumber = int.Parse(QueryValue(request.Uri, "pageNumber"), System.Globalization.CultureInfo.InvariantCulture);
+            var rows = pageNumber == 0
+                ? Enumerable.Range(0, 25).Select(index => Instrument($"EPIC-{index}", $"Instrument {index}")).ToArray()
+                : [Instrument("EPIC-0", "Instrument 0")];
+            return PageResponse(pageNumber, 25, 2, 26, rows);
+        });
+
+        var summary = await CreateGateway(handler, pageSize: 25)
+            .CollectDiagnosticAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
+
+        Assert.Equal(MarketCategoryInstrumentDiagnosticOutcome.AdvertisedSequenceExhausted, summary.Outcome);
+        Assert.Equal("UniqueCountDiffersFromAdvertisedTotal", summary.ReasonCode);
+        Assert.Equal(2, summary.PageRequestCount);
+        Assert.Equal(2, summary.PagesVisited);
+        Assert.Equal(25, summary.UniqueValidRowCount);
+        Assert.Equal(1, summary.DuplicateEpicCount);
+        Assert.Equal(1, summary.CrossPageEpicOverlapCount);
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery plan Phase 3, step 3.5. Verifies pagination metadata remains stable during diagnostic traversal.
+    /// Expected: a changed totalResults value on the second page is rejected after exactly two page responses.
+    /// Why: a changing advertised target cannot establish a coherent diagnostic count.
+    /// </summary>
+    [Fact]
+    public async Task CollectDiagnosticAsync_ShouldRejectMetadataDrift_WhenTotalResultsChanges()
+    {
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse("cst", "security");
+            }
+
+            var pageNumber = int.Parse(QueryValue(request.Uri, "pageNumber"), System.Globalization.CultureInfo.InvariantCulture);
+            return pageNumber == 0
+                ? PageResponse(0, 25, 2, 26, Enumerable.Range(0, 25).Select(index => Instrument($"EPIC-{index}", $"Instrument {index}")).ToArray())
+                : PageResponse(1, 25, 2, 27, Instrument("EPIC-25", "Instrument 25"));
+        });
+
+        var summary = await CreateGateway(handler, pageSize: 25)
+            .CollectDiagnosticAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
+
+        Assert.Equal(MarketCategoryInstrumentDiagnosticOutcome.PagingMetadataChanged, summary.Outcome);
+        Assert.Equal("TotalResultsChanged", summary.ReasonCode);
+        Assert.Equal(2, summary.PageResultCount);
+        Assert.Equal(2, summary.PageRequestCount);
+        Assert.Equal("TotalResultsChanged", Assert.Single(summary.Pages.Skip(1)).DiscrepancyCodes.Single());
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery plan Phase 3, step 3.5. Verifies an already-returned page number cannot be repeated as a later result.
+    /// Expected: page one reporting page zero is rejected before the later page can count toward a traversal.
+    /// Why: response page identity must match the requested sequence to avoid silently skipping advertised data.
+    /// </summary>
+    [Fact]
+    public async Task CollectDiagnosticAsync_ShouldRejectRepeatedReturnedPageNumber_WhenLaterPageReportsPageZero()
+    {
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse("cst", "security");
+            }
+
+            var requestedPage = int.Parse(QueryValue(request.Uri, "pageNumber"), System.Globalization.CultureInfo.InvariantCulture);
+            var returnedPage = requestedPage == 1 ? 0 : requestedPage;
+            return PageResponse(
+                returnedPage,
+                25,
+                2,
+                26,
+                Enumerable.Range(requestedPage * 25, requestedPage == 0 ? 25 : 1)
+                    .Select(index => Instrument($"EPIC-{index}", $"Instrument {index}"))
+                    .ToArray());
+        });
+
+        var summary = await CreateGateway(handler, pageSize: 25)
+            .CollectDiagnosticAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
+
+        Assert.Equal(MarketCategoryInstrumentDiagnosticOutcome.InvalidPagingMetadata, summary.Outcome);
+        Assert.Equal("InvalidPageNumber", summary.ReasonCode);
+        Assert.Equal(2, summary.PageRequestCount);
+        Assert.Equal("InvalidPageNumber", Assert.Single(summary.Pages.Skip(1)).DiscrepancyCodes.Single());
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery plan Phase 3, step 3.5. Verifies invalid rows are counted without stopping safe paging.
+    /// Expected: a row without valid required identity fields contributes to invalid-row evidence, not the unique-valid count.
+    /// Why: diagnostic counts are useful only when based on the same validated instrument shape as production.
+    /// </summary>
+    [Fact]
+    public async Task CollectDiagnosticAsync_ShouldRejectInvalidRow_WhenRequiredIdentityFieldsAreMissing()
+    {
+        var handler = new ControlledHandler(request => request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal)
+            ? SessionResponse("cst", "security")
+            : PageResponse(0, 25, 1, 1, JsonSerializer.SerializeToNode(new { epic = "", instrumentName = "" })!));
+
+        var summary = await CreateGateway(handler, pageSize: 25)
+            .CollectDiagnosticAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
+
+        Assert.Equal(MarketCategoryInstrumentDiagnosticOutcome.AdvertisedSequenceExhausted, summary.Outcome);
+        Assert.Equal("UniqueCountDiffersFromAdvertisedTotal", summary.ReasonCode);
+        Assert.Equal(0, summary.UniqueValidRowCount);
+        Assert.Equal(1, summary.InvalidRowCount);
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery plan Phase 3, step 3.5. Verifies advertised sequences remain inside the unchanged fixed-size bounds.
+    /// Expected: page-count and provider-result limits stop the diagnostic before additional page requests.
+    /// Why: the diagnostic must retain existing ceilings instead of silently expanding provider request budgets.
+    /// </summary>
+    [Theory]
+    [InlineData(2_501, 101)]
+    [InlineData(2_500, 101)]
+    [InlineData(15_001, 601)]
+    public async Task CollectDiagnosticAsync_ShouldEnforcePageAndRowBounds_WhenAdvertisedSequenceExceedsLimits(
+        int totalResults,
+        int totalPages)
+    {
+        var handler = new ControlledHandler(request => request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal)
+            ? SessionResponse("cst", "security")
+            : PageResponse(
+                0,
+                25,
+                totalPages,
+                totalResults,
+                Enumerable.Range(0, 25).Select(index => Instrument($"EPIC-{index}", $"Instrument {index}")).ToArray()));
+
+        var summary = await CreateGateway(handler, pageSize: 25)
+            .CollectDiagnosticAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
+
+        Assert.Equal(MarketCategoryInstrumentDiagnosticOutcome.DiagnosticLimitReached, summary.Outcome);
+        Assert.Equal("DiagnosticLimitReached", summary.ReasonCode);
+        Assert.Equal(100, summary.MaximumPages);
+        Assert.Equal(15_000, summary.MaximumResults);
+        Assert.Equal(2_500, summary.MaximumRows);
+        Assert.Equal(totalResults, summary.AdvertisedResultCount);
+        Assert.Equal(1, summary.PageRequestCount);
+        Assert.Equal(1, summary.PageResultCount);
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery plan Phase 3, steps 3.1 and 3.5. Verifies session retry sends and page requests are counted separately from page results.
+    /// Expected: one session, one unauthorized GET, reauthentication, and a successful replay produce four HTTP attempts, two GET attempts, and one page result.
+    /// Why: request accounting must include auth retries without inflating the number of pages or valid results.
+    /// </summary>
+    [Fact]
+    public async Task CollectDiagnosticAsync_ShouldCountAuthenticationRetrySeparately_WhenFirstPageIsUnauthorized()
+    {
+        var getAttempts = 0;
+        var sessionAttempts = 0;
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse($"cst-{sessionAttempts++}", "security");
+            }
+
+            getAttempts++;
+            return getAttempts == 1
+                ? Response(HttpStatusCode.Unauthorized, "{}")
+                : PageResponse(0, 25, 1, 1, Instrument("EPIC-1", "Instrument 1"));
+        });
+
+        var summary = await CreateGateway(handler, pageSize: 25)
+            .CollectDiagnosticAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
+
+        Assert.Equal(MarketCategoryInstrumentDiagnosticOutcome.AdvertisedSequenceExhausted, summary.Outcome);
+        Assert.Equal(4, summary.HttpRequestCount);
+        Assert.Equal(2, summary.PageRequestCount);
+        Assert.Equal(1, summary.PageResultCount);
+        Assert.Equal(1, summary.PagesVisited);
+        Assert.Equal(1, summary.UniqueValidRowCount);
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery plan Phase 1. Verifies the exact page-zero restart regression using fabricated provider responses.
+    /// Expected: request size 150 returning 70 followed by restarted size 70 returning 41 of total 290 is reported as expected 70 versus actual 41, with no later page and no complete collection.
+    /// Why: the diagnostic restart must not reinterpret a short first page as a complete provider universe or publish a partial snapshot.
+    /// </summary>
+    [Fact]
+    public async Task CollectCompleteAsync_ShouldReportPairedPageZeroEvidenceAndRejectShortRestart_WhenInitialPageHasSeventyRows()
+    {
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse("cst", "security");
+            }
+
+            var size = int.Parse(QueryValue(request.Uri, "pageSize"), System.Globalization.CultureInfo.InvariantCulture);
+            return size == 150
+                ? PageResponse(0, 150, 2, 290, Enumerable.Range(0, 70).Select(index => Instrument($"INITIAL-{index}", $"Initial {index}")).ToArray())
+                : PageResponse(0, 70, 5, 290, Enumerable.Range(0, 41).Select(index => Instrument($"RESTART-{index}", $"Restart {index}")).ToArray());
+        });
+        var budget = new FakeRequestBudget();
+
+        var result = await CreateGateway(handler, budget)
+            .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
+
+        var failure = Assert.IsType<MarketCategoryInstrumentCollectionResult.Failed>(result).Failure;
+        Assert.Equal(MarketCategoryInstrumentFailureCategory.IncompleteCollection, failure.Category);
+        Assert.Equal("PageRowCountMismatch", failure.Reason);
+        Assert.Equal(0, failure.PageNumber);
+        Assert.Equal(70, failure.Expected);
+        Assert.Equal(41, failure.Actual);
+        Assert.Equal(3, failure.HttpRequestCount);
+        Assert.Equal(["150", "70"], handler.Requests
+            .Where(request => request.Method == HttpMethod.Get)
+            .Select(request => QueryValue(request.Uri, "pageSize")));
+        Assert.Equal(3, budget.Reservations);
+        Assert.Equal(1, failure.InitialPageEvidence?.RequestOrdinal);
+        Assert.Equal(150, failure.InitialPageEvidence?.RequestedPageSize);
+        Assert.Equal(70, failure.InitialPageEvidence?.RawCount);
+        Assert.Equal(150, failure.InitialPageEvidence?.ExpectedCount);
+        Assert.Equal(2, failure.InitialPageEvidence?.TotalPages);
+        Assert.Equal(290, failure.InitialPageEvidence?.TotalResults);
+        Assert.Equal(2, failure.RestartedPageEvidence?.RequestOrdinal);
+        Assert.Equal(70, failure.RestartedPageEvidence?.RequestedPageSize);
+        Assert.Equal(41, failure.RestartedPageEvidence?.RawCount);
+        Assert.Equal(70, failure.RestartedPageEvidence?.ExpectedCount);
+        Assert.Equal(5, failure.RestartedPageEvidence?.TotalPages);
+        Assert.Equal(290, failure.RestartedPageEvidence?.TotalResults);
+        Assert.DoesNotContain(handler.Requests, request =>
+            request.Method == HttpMethod.Get
+            && QueryValue(request.Uri, "pageNumber") != "0");
+    }
+
+    /// <summary>
+    /// Trace: IG category-collection completeness plan P1. Reproduces the observed 25/14/7/294 page-zero sequence with synthetic payloads.
+    /// Expected: page zero is retried once at size 14, then fails with expected 14 versus raw 7; both responses are retained as evidence and no later page is requested.
+    /// Why: this prevents an undocumented page-size-cap theory from weakening complete-only collection acceptance.
+    /// </summary>
+    [Fact]
+    public async Task CollectCompleteAsync_ShouldRejectObservedTwentyFiveToFourteenToSevenSequence_WhenTotalsStayAtTwoHundredNinetyFour()
+    {
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse("cst", "security");
+            }
+
+            var size = int.Parse(QueryValue(request.Uri, "pageSize"), System.Globalization.CultureInfo.InvariantCulture);
+            return size == 25
+                ? PageResponse(0, 25, 12, 294, Enumerable.Range(0, 14)
+                    .Select(index => Instrument($"INITIAL-{index}", $"Initial {index}")).ToArray())
+                : PageResponse(0, 14, 21, 294, Enumerable.Range(0, 7)
+                    .Select(index => Instrument($"RESTART-{index}", $"Restart {index}")).ToArray());
+        });
+        var budget = new FakeRequestBudget();
+
+        var result = await CreateGateway(handler, budget, pageSize: 25)
+            .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "COMMODITIES", BudgetContext(), CancellationToken.None);
+
+        var failure = Assert.IsType<MarketCategoryInstrumentCollectionResult.Failed>(result).Failure;
+        Assert.Equal(MarketCategoryInstrumentFailureCategory.IncompleteCollection, failure.Category);
+        Assert.Equal("PageRowCountMismatch", failure.Reason);
+        Assert.Equal(14, failure.Expected);
+        Assert.Equal(7, failure.Actual);
+        Assert.Equal(3, failure.HttpRequestCount);
+        Assert.Equal(3, budget.Reservations);
+        Assert.Equal([1, 2], new[]
+        {
+            failure.InitialPageEvidence?.RequestOrdinal,
+            failure.RestartedPageEvidence?.RequestOrdinal
+        });
+        Assert.Equal(14, failure.InitialPageEvidence?.RawCount);
+        Assert.Equal(7, failure.RestartedPageEvidence?.RawCount);
+        Assert.Equal(294, failure.InitialPageEvidence?.TotalResults);
+        Assert.Equal(294, failure.RestartedPageEvidence?.TotalResults);
+        Assert.Equal(["25", "14"], handler.Requests
+            .Where(request => request.Method == HttpMethod.Get)
+            .Select(request => QueryValue(request.Uri, "pageSize")));
+        Assert.DoesNotContain(handler.Requests, request =>
+            request.Method == HttpMethod.Get
+            && QueryValue(request.Uri, "pageNumber") != "0");
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery plan Phase 1. Verifies a denied initial session is distinguished from reauthentication and its response is safely classified.
+    /// Expected: one session HTTP request is recorded, no instruments page is requested, and only the allow-listed code plus safe parse outcome are returned.
+    /// Why: operators need to distinguish login denial from page authorization failure without retaining provider response content.
+    /// </summary>
+    [Fact]
+    public async Task CollectCompleteAsync_ShouldReportInitialSessionDenialWithoutRequestingPages_WhenSessionReturnsForbidden()
+    {
+        var handler = new ControlledHandler(_ =>
+            Response(HttpStatusCode.Forbidden, """{"errorCode":"error.public-api.exceeded-account-allowance"}"""));
+        var budget = new FakeRequestBudget();
+
+        var result = await CreateGateway(handler, budget)
+            .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
+
+        var failure = Assert.IsType<MarketCategoryInstrumentCollectionResult.Failed>(result).Failure;
+        Assert.Equal("session", failure.Operation);
+        Assert.Equal(MarketCategoryInstrumentFailureCategory.AllowanceUnavailable, failure.Category);
+        Assert.False(failure.IsRetryable);
+        Assert.Equal(MarketCategoryInstrumentAuthenticationPhase.Initial, failure.AuthenticationPhase);
+        Assert.Equal("error.public-api.exceeded-account-allowance", failure.ProviderErrorCode);
+        Assert.Equal(MarketCategoryProviderErrorCodeParseOutcome.Parsed, failure.ProviderErrorCodeParseOutcome);
+        Assert.Equal(403, failure.HttpStatusCode);
+        Assert.Equal(1, failure.HttpRequestCount);
+        Assert.Single(handler.Requests);
+        Assert.Equal(1, budget.Reservations);
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery plan Phase 1. Verifies a page 401 followed by a denied reauthentication session keeps HTTP requests distinct from category retries.
+    /// Expected: one initial session, one page request, and one reauthentication are recorded; the final diagnostic names the reauthentication phase.
+    /// Why: session renewal failures must not be misreported as initial login denials or as a page failure.
+    /// </summary>
+    [Fact]
+    public async Task CollectCompleteAsync_ShouldReportReauthenticationSessionDenial_WhenPageReturnsUnauthorized()
+    {
+        var sessions = 0;
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                sessions++;
+                return sessions > 1
+                    ? Response(HttpStatusCode.Forbidden, """{"errorCode":"error.public-api.exceeded-api-key-allowance"}""")
+                    : SessionResponse("cst", "security");
+            }
+
+            return Response(HttpStatusCode.Unauthorized, "{}");
+        });
+        var budget = new FakeRequestBudget();
+
+        var result = await CreateGateway(handler, budget)
+            .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
+
+        var failure = Assert.IsType<MarketCategoryInstrumentCollectionResult.Failed>(result).Failure;
+        Assert.Equal("session", failure.Operation);
+        Assert.Equal(MarketCategoryInstrumentFailureCategory.AllowanceUnavailable, failure.Category);
+        Assert.False(failure.IsRetryable);
+        Assert.Equal(MarketCategoryInstrumentAuthenticationPhase.Reauthentication, failure.AuthenticationPhase);
+        Assert.Equal("error.public-api.exceeded-api-key-allowance", failure.ProviderErrorCode);
+        Assert.Equal(MarketCategoryProviderErrorCodeParseOutcome.Parsed, failure.ProviderErrorCodeParseOutcome);
+        Assert.Equal(403, failure.HttpStatusCode);
+        Assert.Equal(3, failure.HttpRequestCount);
+        Assert.Equal(3, budget.Reservations);
+        Assert.Equal(2, sessions);
+        Assert.Equal(1, handler.Requests.Count(request => request.Method == HttpMethod.Get));
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery plan Phase 4, Step 4.1.
+    /// Verifies: a documented API-key configuration denial remains safely classified and nonretryable at initial login.
+    /// Expected: the key-specific safe code and authentication phase are retained, with no instruments request or provider-body leakage.
+    /// Why: waiting or retrying cannot repair a disabled key and must not create repeated login traffic.
+    /// </summary>
+    [Fact]
+    public async Task CollectCompleteAsync_ShouldExposeSafeConfigurationDenial_WhenInitialSessionRejectsApiKey()
+    {
+        var handler = new ControlledHandler(_ =>
+            Response(HttpStatusCode.Forbidden, """{"errorCode":"error.security.api-key-disabled","secret":"do-not-expose"}"""));
+
+        var result = await CreateGateway(handler)
+            .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "INDICES", BudgetContext(), CancellationToken.None);
+
+        var failure = Assert.IsType<MarketCategoryInstrumentCollectionResult.Failed>(result).Failure;
+        Assert.Equal(MarketCategoryInstrumentFailureCategory.Rejected, failure.Category);
+        Assert.False(failure.IsRetryable);
+        Assert.Equal("ApiKeyDisabled", MarketDetailProviderErrorCodes.GetSafeDenialReason(failure.ProviderErrorCode));
+        Assert.Equal("error.security.api-key-disabled", failure.ProviderErrorCode);
+        Assert.Equal(MarketCategoryProviderErrorCodeParseOutcome.Parsed, failure.ProviderErrorCodeParseOutcome);
+        Assert.Equal(MarketCategoryInstrumentAuthenticationPhase.Initial, failure.AuthenticationPhase);
+        Assert.Single(handler.Requests);
+        Assert.DoesNotContain("do-not-expose", result.ToString(), StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -153,6 +714,124 @@ public sealed class IgMarketCategoryInstrumentsGatewayTests
         Assert.Equal(65, failure.Expected);
         Assert.Equal(64, failure.Actual);
         Assert.Equal(3, handler.Requests.Count);
+    }
+
+    /// <summary>
+    /// Trace: IG market collection failures, Phase 2, step 2.1; independent 70-of-150 commodities capture.
+    /// Verifies a short first page advertising 290 results is replayed once using the returned 70-row size and all pages are checked.
+    /// Expected: coherent replay pages are published as one complete 290-instrument collection with page size 70.
+    /// Why: an independently observed provider page shape must recover only when the bounded replay establishes a coherent complete listing.
+    /// </summary>
+    [Fact]
+    public async Task CollectCompleteAsync_ShouldPublishAllRows_When70Of150ReplayIsCoherent()
+    {
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse("cst", "security");
+            }
+
+            var requestedSize = int.Parse(QueryValue(request.Uri, "pageSize"), System.Globalization.CultureInfo.InvariantCulture);
+            var pageNumber = int.Parse(QueryValue(request.Uri, "pageNumber"), System.Globalization.CultureInfo.InvariantCulture);
+            if (requestedSize == 150)
+            {
+                return PageResponse(0, 150, 2, 290, Enumerable.Range(0, 70)
+                    .Select(index => Instrument($"EPIC-{index}", $"Instrument {index}")).ToArray());
+            }
+
+            var start = pageNumber * requestedSize;
+            var count = Math.Min(requestedSize, 290 - start);
+            return PageResponse(pageNumber, requestedSize, 5, 290, Enumerable.Range(start, count)
+                .Select(index => Instrument($"EPIC-{index}", $"Instrument {index}")).ToArray());
+        });
+
+        var result = await CreateGateway(handler)
+            .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "COMMODITIES", BudgetContext(), CancellationToken.None);
+
+        var complete = Assert.IsType<MarketCategoryInstrumentCollectionResult.Complete>(result);
+        Assert.Equal(290, complete.Collection.Instruments.Count);
+        Assert.Equal(Enumerable.Range(0, 290).Select(index => $"EPIC-{index}"),
+            complete.Collection.Instruments.Select(instrument => instrument.Epic));
+        Assert.Equal(70, complete.Collection.Metadata.PageSize);
+        Assert.Equal(Enumerable.Range(0, 5), complete.Collection.Metadata.PageNumbersFetched);
+        Assert.Equal(["150", "70", "70", "70", "70", "70"], handler.Requests.Skip(1)
+            .Select(request => QueryValue(request.Uri, "pageSize")));
+    }
+
+    /// <summary>
+    /// Trace: IG market collection failures, Phase 2, step 2.1; independent 70-of-150 commodities capture.
+    /// Verifies the bounded smaller-page replay is rejected when it still returns fewer rows than its stable metadata requires.
+    /// Expected: the gateway returns an incomplete page-zero failure with expected 70 and actual 69, without requesting later pages.
+    /// Why: a replay that remains internally inconsistent must never turn the original partial response into published category data.
+    /// </summary>
+    [Fact]
+    public async Task CollectCompleteAsync_ShouldFailClosed_When70Of150ReplayRemainsInconsistent()
+    {
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse("cst", "security");
+            }
+
+            var requestedSize = int.Parse(QueryValue(request.Uri, "pageSize"), System.Globalization.CultureInfo.InvariantCulture);
+            var count = requestedSize == 150 ? 70 : 69;
+            var instruments = Enumerable.Range(0, count)
+                .Select(index => Instrument($"EPIC-{index}", $"Instrument {index}")).ToArray();
+            return PageResponse(0, requestedSize, requestedSize == 150 ? 2 : 5, 290, instruments);
+        });
+
+        var result = await CreateGateway(handler)
+            .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "COMMODITIES", BudgetContext(), CancellationToken.None);
+
+        var failure = Assert.IsType<MarketCategoryInstrumentCollectionResult.Failed>(result).Failure;
+        Assert.Equal(MarketCategoryInstrumentFailureCategory.IncompleteCollection, failure.Category);
+        Assert.Equal("PageRowCountMismatch", failure.Reason);
+        Assert.Equal(0, failure.PageNumber);
+        Assert.Equal(70, failure.Expected);
+        Assert.Equal(69, failure.Actual);
+        Assert.Equal(["150", "70"], handler.Requests.Skip(1)
+            .Select(request => QueryValue(request.Uri, "pageSize")));
+    }
+
+    /// <summary>
+    /// Trace: IG market collection failures, Phase 2, step 2.1; separate logged expected-70/actual-42 failure.
+    /// Verifies the default 150-row request policy accepts page zero but checks the 70-row final page against its advertised total.
+    /// Expected: page one fails with PageRowCountMismatch (expected 70, actual 42), and no complete result is returned.
+    /// Why: the separate logged mismatch must remain fail closed even after a full first page; partial multi-page data is not publishable.
+    /// </summary>
+    [Fact]
+    public async Task CollectCompleteAsync_ShouldFailClosed_WhenFinalPageHas42Of70RowsAtDefaultPageSize()
+    {
+        var handler = new ControlledHandler(request =>
+        {
+            if (request.Uri.AbsolutePath.EndsWith("/session", StringComparison.Ordinal))
+            {
+                return SessionResponse("cst", "security");
+            }
+
+            var pageNumber = int.Parse(QueryValue(request.Uri, "pageNumber"), System.Globalization.CultureInfo.InvariantCulture);
+            var count = pageNumber == 0 ? 150 : 42;
+            var start = pageNumber * 150;
+            var instruments = Enumerable.Range(start, count)
+                .Select(index => Instrument($"EPIC-{index}", $"Instrument {index}")).ToArray();
+            return PageResponse(pageNumber, 150, 2, 220, instruments);
+        });
+
+        var result = await CreateGateway(handler)
+            .CollectCompleteAsync(BrokerEnvironmentKind.Demo, "COMMODITIES", BudgetContext(), CancellationToken.None);
+
+        var failure = Assert.IsType<MarketCategoryInstrumentCollectionResult.Failed>(result).Failure;
+        Assert.Equal(MarketCategoryInstrumentFailureCategory.IncompleteCollection, failure.Category);
+        Assert.Equal("PageRowCountMismatch", failure.Reason);
+        Assert.Equal(1, failure.PageNumber);
+        Assert.Equal(70, failure.Expected);
+        Assert.Equal(42, failure.Actual);
+        Assert.Equal(["150", "150"], handler.Requests.Skip(1)
+            .Select(request => QueryValue(request.Uri, "pageSize")));
+        Assert.Equal(["0", "1"], handler.Requests.Skip(1)
+            .Select(request => QueryValue(request.Uri, "pageNumber")));
     }
 
     /// <summary>
@@ -849,7 +1528,8 @@ public sealed class IgMarketCategoryInstrumentsGatewayTests
             credentials ?? new FakeCredentialService(),
             contextResolver ?? new FakeContextResolver(context ?? Context("IgDemo", "Demo")),
             budget ?? new FakeRequestBudget(),
-            new IgProviderRequestThrottle(TimeSpan.Zero),
+            new IgProviderRequestThrottle(TimeSpan.Zero, new ImmediateTimeProvider()),
+            NullLogger<IgMarketCategoryInstrumentsGateway>.Instance,
             pageSize);
 
     private static ControlledHandler SuccessfulSinglePage(JsonNode? instrument, int pageSize = 150) =>
@@ -997,6 +1677,15 @@ public sealed class IgMarketCategoryInstrumentsGatewayTests
         private readonly Func<int, bool> reserve = allowReservation ?? (_ => true);
         public int Reservations { get; private set; }
         public List<MarketCategoryInstrumentRequestBudgetContext> Contexts { get; } = [];
+
+        public Task<int?> GetRemainingManualRequestBudgetAsync(
+            BrokerEnvironmentKind environment,
+            MarketCategoryInstrumentRequestBudgetContext context,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<int?>(10_000 - Reservations);
+        }
 
         public Task<bool> TryReserveAsync(
             BrokerEnvironmentKind environment,

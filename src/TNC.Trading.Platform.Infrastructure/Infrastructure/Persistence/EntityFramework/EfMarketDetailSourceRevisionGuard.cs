@@ -36,7 +36,9 @@ internal static class EfMarketDetailSourceRevisionGuard
             .Select(item => item.CategoryCode)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         var sources = await dbContext.MarketDetailRunSources.AsNoTracking()
-            .Where(item => item.RunId == detailRun.RunId && item.BrokerEnvironmentId == environmentId)
+            .Where(item => item.RunId == detailRun.RunId
+                && item.BrokerEnvironmentId == environmentId
+                && item.UpdateGeneration == detailRun.UpdateGeneration)
             .OrderBy(item => item.CategoryCode)
             .Select(item => new
             {

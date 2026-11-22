@@ -1,12 +1,14 @@
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 using TNC.Trading.Platform.Application.Features.MarketDetails;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 
 namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 
 internal sealed class EfMarketDetailRequestBudget(
     EfMarketCategoryInstrumentCycleStore cycleStore,
     IMarketCategoryInstrumentScheduleGuard? scheduleGuard = null,
-    TimeProvider? timeProvider = null) : IMarketDetailRequestBudget
+    TimeProvider? timeProvider = null,
+    IMarketDataFullRunStore? fullRunStore = null) : IMarketDetailRequestBudget
 {
     private TimeProvider Clock => timeProvider ?? TimeProvider.System;
 
@@ -74,7 +76,7 @@ internal sealed class EfMarketDetailRequestBudget(
     {
         if (context.FullRunLease is null
             && Clock.GetUtcNow().ToUniversalTime() >= context.WindowEndUtc
-            || !await IsExecutionContextStillActiveAsync(context, cancellationToken).ConfigureAwait(false))
+            || !await RenewAsync(context, cancellationToken).ConfigureAwait(false))
         {
             return false;
         }
@@ -82,6 +84,34 @@ internal sealed class EfMarketDetailRequestBudget(
         return await cycleStore.TryConsumeDetailRequestBudgetAsync(
             context,
             Clock.GetUtcNow().ToUniversalTime(),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<bool> RenewAsync(
+        MarketDetailRequestBudgetContext context,
+        CancellationToken cancellationToken)
+    {
+        if (!await IsExecutionContextStillActiveAsync(context, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        var nowUtc = Clock.GetUtcNow().ToUniversalTime();
+        if (context.FullRunLease is { } fullRunLease
+            && (fullRunStore is null
+                || !await fullRunStore.TryRenewLeaseAsync(
+                    fullRunLease,
+                    nowUtc,
+                    TimeSpan.FromMinutes(5),
+                    cancellationToken).ConfigureAwait(false)))
+        {
+            return false;
+        }
+
+        return await cycleStore.TryRenewDetailRequestLeaseAsync(
+            context,
+            nowUtc,
+            TimeSpan.FromMinutes(2),
             cancellationToken).ConfigureAwait(false);
     }
 }

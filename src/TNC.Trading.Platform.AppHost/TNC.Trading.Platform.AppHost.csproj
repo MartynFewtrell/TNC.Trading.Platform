@@ -1,8 +1,11 @@
-﻿<Project Sdk="Aspire.AppHost.Sdk/13.5.4">
+<Project Sdk="Aspire.AppHost.Sdk/17.1.0-preview.1.26563.10">
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Hosting.Keycloak" Version="13.5.4-preview.1.26464.4" />
-    <PackageReference Include="Aspire.Hosting.SqlServer" Version="13.5.4" />
+    <PackageReference Include="Aspire.Hosting" Version="17.1.0-preview.1.26563.10" />
+    <PackageReference Include="Aspire.Hosting.Keycloak" Version="17.1.0-preview.1.26563.10" />
+    <PackageReference Include="Aspire.Hosting.SqlServer" Version="17.1.0-preview.1.26563.10" />
+    <PackageReference Include="MessagePack" Version="2.5.307" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.15" />
     <ProjectReference Include="..\TNC.Trading.Platform.Api\TNC.Trading.Platform.Api.csproj" />
     <ProjectReference Include="..\TNC.Trading.Platform.Web\TNC.Trading.Platform.Web.csproj" />
   </ItemGroup>

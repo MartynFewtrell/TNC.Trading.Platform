@@ -86,6 +86,37 @@ public sealed class UpdatePlatformInstrumentCollectionSettingsTests
         Assert.Equal(settings.Current, response.InstrumentCollectionFrequency);
     }
 
+    /// <summary>
+    /// Trace: IG market-data recovery Phase 2, Step 2.1.
+    /// Verifies: the conservative page-size and pacing profile is saved through the existing partial settings update path.
+    /// Expected: page size 25, five-second request spacing, and sixty-second category pause remain SQL-store values after the update.
+    /// Why: the runtime collector must consume the operator-managed profile rather than an inert default.
+    /// </summary>
+    [Fact]
+    public async Task HandleAsync_ShouldPersistConservativeCollectionProfile_WhenProfileSettingsAreUpdated()
+    {
+        var settings = new FrequencySettingsStore(new(
+            1,
+            null,
+            null,
+            30,
+            CategoryPageSize: 75,
+            RequestSpacingSeconds: 10,
+            CategoryPauseSeconds: 120));
+        var handler = CreateHandler(settings);
+
+        await handler.HandleAsync(
+            new(CreateUpdate(
+                marketCategoryPageSize: 25,
+                marketDataRequestSpacingSeconds: 5,
+                marketCategoryPauseSeconds: 60)),
+            CancellationToken.None);
+
+        Assert.Equal(25, settings.Current.CategoryPageSize);
+        Assert.Equal(5, settings.Current.RequestSpacingSeconds);
+        Assert.Equal(60, settings.Current.CategoryPauseSeconds);
+    }
+
     private static UpdatePlatformConfigurationHandler CreateHandler(
         FrequencySettingsStore settings,
         IMarketCategoryInstrumentStatusReader? statusReader = null)
@@ -107,7 +138,10 @@ public sealed class UpdatePlatformInstrumentCollectionSettingsTests
 
     private static PlatformConfigurationUpdate CreateUpdate(
         int? instrumentUpdatesPerDay = null,
-        int? approvedAllowance = null) =>
+        int? approvedAllowance = null,
+        int? marketCategoryPageSize = null,
+        int? marketDataRequestSpacingSeconds = null,
+        int? marketCategoryPauseSeconds = null) =>
         new(
             BrokerEnvironmentKind.Demo,
             new(new TimeOnly(8, 0), new TimeOnly(16, 0),
@@ -120,7 +154,10 @@ public sealed class UpdatePlatformInstrumentCollectionSettingsTests
             null,
             "unit-test",
             instrumentUpdatesPerDay,
-            approvedAllowance);
+            approvedAllowance,
+            MarketCategoryPageSize: marketCategoryPageSize,
+            MarketDataRequestSpacingSeconds: marketDataRequestSpacingSeconds,
+            MarketCategoryPauseSeconds: marketCategoryPauseSeconds);
 
     private static PlatformConfigurationSnapshot CreateSnapshot() =>
         new(

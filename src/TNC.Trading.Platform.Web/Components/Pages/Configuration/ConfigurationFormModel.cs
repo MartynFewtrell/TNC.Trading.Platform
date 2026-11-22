@@ -42,6 +42,12 @@ internal sealed class ConfigurationFormModel
 
     public int? MarketDataLeadInMinutes { get; set; }
 
+    public int? MarketCategoryPageSize { get; set; }
+
+    public int? MarketDataRequestSpacingSeconds { get; set; }
+
+    public int? MarketCategoryPauseSeconds { get; set; }
+
     public InstrumentCollectionConfigurationViewModel InstrumentCollection { get; set; } =
         new(false, "SettingsUnavailable", null, null, null, null, null, null, null, null, null, null);
 }

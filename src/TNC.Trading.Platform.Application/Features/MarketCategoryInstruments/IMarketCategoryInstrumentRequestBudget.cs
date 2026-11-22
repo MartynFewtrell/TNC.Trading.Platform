@@ -15,4 +15,16 @@ internal interface IMarketCategoryInstrumentRequestBudget
         BrokerEnvironmentKind environment,
         MarketCategoryInstrumentRequestBudgetContext context,
         CancellationToken cancellationToken);
+
+    Task<int?> GetRemainingManualRequestBudgetAsync(
+        BrokerEnvironmentKind environment,
+        MarketCategoryInstrumentRequestBudgetContext context,
+        CancellationToken cancellationToken) =>
+        Task.FromResult<int?>(null);
+
+    Task<bool> RenewAsync(
+        BrokerEnvironmentKind environment,
+        MarketCategoryInstrumentRequestBudgetContext context,
+        CancellationToken cancellationToken) =>
+        IsExecutionContextStillActiveAsync(environment, context, cancellationToken);
 }

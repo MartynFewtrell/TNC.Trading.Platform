@@ -1,0 +1,26 @@
+namespace TNC.Trading.Platform.Api.Features.Platform;
+
+internal sealed record MarketCategoryInstrumentDiagnosticPageResponse(
+    int RequestOrdinal,
+    int RequestedPageNumber,
+    int RequestedPageSize,
+    int? ReturnedPageNumber,
+    int? ReturnedPageSize,
+    int? TotalPages,
+    int? TotalResults,
+    string MetadataValueKind,
+    string InstrumentsValueKind,
+    string PageNumberValueKind,
+    string PageSizeValueKind,
+    string TotalPagesValueKind,
+    string TotalResultsValueKind,
+    int? RawArrayCount,
+    int? DeserializedRowCount,
+    int NullRowCount,
+    int ValidRowCount,
+    int InvalidRowCount,
+    int DuplicateEpicCount,
+    int DuplicateNameCount,
+    int CrossPageEpicOverlapCount,
+    int? FormulaExpectedRowCount,
+    IReadOnlyList<string> DiscrepancyCodes);

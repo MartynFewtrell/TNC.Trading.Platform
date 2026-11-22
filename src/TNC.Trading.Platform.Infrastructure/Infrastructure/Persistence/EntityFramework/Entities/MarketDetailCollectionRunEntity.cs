@@ -7,6 +7,7 @@ internal sealed class MarketDetailCollectionRunEntity
     public string EndpointProfile { get; set; } = string.Empty;
     public DateOnly TradingDay { get; set; }
     public int ScheduledSlot { get; set; }
+    public int UpdateGeneration { get; set; }
     public long CatalogueRevision { get; set; }
     public long InterestRevision { get; set; }
     public long ScheduleRevision { get; set; }

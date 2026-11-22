@@ -3,8 +3,10 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDetails;
 
 namespace TNC.Trading.Platform.Infrastructure.Integrations.Ig;
 
@@ -14,11 +16,14 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
     IAppliedBrokerEnvironmentContextResolver contextResolver,
     IMarketCategoryInstrumentRequestBudget requestBudget,
     IgProviderRequestThrottle throttle,
-    int pageSize = 150,
+    ILogger<IgMarketCategoryInstrumentsGateway> logger,
+    int? pageSize = null,
     TimeProvider? timeProvider = null) : IMarketCategoryInstrumentsGateway
 {
     private const int MaximumPages = 100;
     private const int MaximumResults = 15_000;
+    private const int DiagnosticPageSize = 25;
+    private const int DiagnosticMaximumRows = MaximumPages * DiagnosticPageSize;
     private const decimal MaximumStoredDecimalMagnitude = 999_999_999_999_999_999m;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private TimeProvider Clock => timeProvider ?? TimeProvider.System;
@@ -40,6 +45,11 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
         var collectionToken = collectionCancellation.Token;
         var operation = "session";
         var requestedPage = 0;
+        var pageRequestOrdinal = 0;
+        var httpRequestCount = 0;
+        MarketCategoryInstrumentPageEvidence? initialPageEvidence = null;
+        MarketCategoryInstrumentPageEvidence? restartedPageEvidence = null;
+        var requestStarted = (Action)(() => httpRequestCount++);
 
         try
         {
@@ -60,10 +70,19 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
                 return Failed(MarketCategoryInstrumentFailureCategory.UnsupportedEnvironment, reason: "MissingCredentials");
             }
 
-            var session = await CreateSessionAsync(credentials, environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, collectionToken)
+            var session = await CreateSessionAsync(
+                    credentials,
+                    environmentId,
+                    endpointProfile,
+                    baseAddress,
+                    environment,
+                    MarketCategoryInstrumentAuthenticationPhase.Initial,
+                    requestBudgetContext,
+                    requestStarted,
+                    collectionToken)
                 .ConfigureAwait(false);
             operation = "instruments";
-            var requestedPageSize = pageSize;
+            var requestedPageSize = pageSize ?? requestBudgetContext.CategoryPageSize;
             var firstPage = await GetPageAsync(
                 credentials.ApiKey,
                 credentials.Identifier,
@@ -75,12 +94,23 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
                 categoryCode,
                 0,
                 requestedPageSize,
+                ++pageRequestOrdinal,
                 requestBudgetContext,
+                requestStarted,
                 collectionToken).ConfigureAwait(false);
             if (firstPage.Unauthorized)
             {
                 operation = "session";
-                session = await CreateSessionAsync(credentials, environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, collectionToken)
+                session = await CreateSessionAsync(
+                        credentials,
+                        environmentId,
+                        endpointProfile,
+                        baseAddress,
+                        environment,
+                        MarketCategoryInstrumentAuthenticationPhase.Reauthentication,
+                        requestBudgetContext,
+                        requestStarted,
+                        collectionToken)
                     .ConfigureAwait(false);
                 operation = "instruments";
                 firstPage = await GetPageAsync(
@@ -94,11 +124,14 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
                     categoryCode,
                     0,
                     requestedPageSize,
+                    ++pageRequestOrdinal,
                     requestBudgetContext,
+                    requestStarted,
                     collectionToken).ConfigureAwait(false);
                 if (firstPage.Unauthorized)
                 {
-                    return Failed(MarketCategoryInstrumentFailureCategory.Unauthorized, reason: "SessionUnauthorized", operation: operation, pageNumber: 0, httpStatusCode: 401);
+                    return Failed(MarketCategoryInstrumentFailureCategory.Unauthorized, reason: "SessionUnauthorized",
+                        operation: operation, pageNumber: 0, httpStatusCode: 401, httpRequestCount: httpRequestCount);
                 }
             }
 
@@ -108,30 +141,54 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
             {
                 if (firstPage.Body?.Metadata is not { } metadata || firstPage.Body.Instruments is null)
                 {
-                    return Failed(MarketCategoryInstrumentFailureCategory.InvalidCollection, reason: "MissingMetadata", operation: operation, pageNumber: 0);
+                    return Failed(MarketCategoryInstrumentFailureCategory.InvalidCollection, reason: "MissingMetadata",
+                        operation: operation, pageNumber: 0, httpRequestCount: httpRequestCount);
+                }
+
+                var pageEvidence = CreatePageEvidence(
+                    pageRequestOrdinal,
+                    0,
+                    requestedPageSize,
+                    firstPage.Body);
+                if (requestedPageSize == (pageSize ?? requestBudgetContext.CategoryPageSize))
+                {
+                    initialPageEvidence ??= pageEvidence;
+                }
+                else
+                {
+                    restartedPageEvidence = pageEvidence;
                 }
 
                 firstMetadata = metadata;
                 metadataFailure = ValidateMetadata(firstMetadata, 0, requestedPageSize);
                 if (metadataFailure is not null)
                 {
-                    return FailedMetadata(MarketCategoryInstrumentFailureCategory.InvalidCollection, metadataFailure, firstMetadata, 0, requestedPageSize);
+                    return FailedMetadata(
+                        MarketCategoryInstrumentFailureCategory.InvalidCollection,
+                        metadataFailure,
+                        firstMetadata,
+                        0,
+                        requestedPageSize,
+                        initialPageEvidence,
+                        restartedPageEvidence,
+                        httpRequestCount);
                 }
                 if (firstMetadata.TotalPages!.Value > MaximumPages || firstMetadata.TotalResults!.Value > MaximumResults)
                 {
                     return Failed(MarketCategoryInstrumentFailureCategory.InvalidCollection, reason: "ResultLimitExceeded",
-                        operation: operation, pageNumber: 0);
+                        operation: operation, pageNumber: 0, httpRequestCount: httpRequestCount);
                 }
                 var expectedPages = GetExpectedPageCount(firstMetadata.TotalResults.Value, requestedPageSize);
                 if (firstMetadata.TotalPages.Value != expectedPages)
                 {
                     return Failed(MarketCategoryInstrumentFailureCategory.InvalidCollection, reason: "TotalPagesMismatch",
-                        operation: operation, pageNumber: 0, expected: expectedPages, actual: firstMetadata.TotalPages);
+                        operation: operation, pageNumber: 0, expected: expectedPages, actual: firstMetadata.TotalPages,
+                        httpRequestCount: httpRequestCount);
                 }
 
                 var firstPageRows = firstPage.Body.Instruments.Count;
                 var expectedRows = GetExpectedInstrumentCount(firstMetadata.TotalResults.Value, 0, requestedPageSize);
-                if (requestedPageSize != pageSize || firstPageRows == expectedRows
+                if (requestedPageSize != (pageSize ?? requestBudgetContext.CategoryPageSize) || firstPageRows == expectedRows
                     || firstPageRows == 0 || firstPageRows > expectedRows)
                 {
                     break;
@@ -142,21 +199,24 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
                 firstPage = await GetPageAsync(
                     credentials.ApiKey, credentials.Identifier, session, environmentId, endpointProfile,
                     baseAddress, environment, categoryCode, 0, requestedPageSize,
-                    requestBudgetContext, collectionToken).ConfigureAwait(false);
+                    ++pageRequestOrdinal,
+                    requestBudgetContext, requestStarted, collectionToken).ConfigureAwait(false);
                 if (firstPage.Unauthorized)
                 {
                     operation = "session";
                     session = await CreateSessionAsync(credentials, environmentId, endpointProfile, baseAddress,
-                        environment, requestBudgetContext, collectionToken).ConfigureAwait(false);
+                        environment, MarketCategoryInstrumentAuthenticationPhase.Reauthentication,
+                        requestBudgetContext, requestStarted, collectionToken).ConfigureAwait(false);
                     operation = "instruments";
                     firstPage = await GetPageAsync(
                         credentials.ApiKey, credentials.Identifier, session, environmentId, endpointProfile,
                         baseAddress, environment, categoryCode, 0, requestedPageSize,
-                        requestBudgetContext, collectionToken).ConfigureAwait(false);
+                        ++pageRequestOrdinal,
+                        requestBudgetContext, requestStarted, collectionToken).ConfigureAwait(false);
                     if (firstPage.Unauthorized)
                     {
                         return Failed(MarketCategoryInstrumentFailureCategory.Unauthorized, reason: "SessionUnauthorized",
-                            operation: operation, pageNumber: 0, httpStatusCode: 401);
+                            operation: operation, pageNumber: 0, httpStatusCode: 401, httpRequestCount: httpRequestCount);
                     }
                 }
             }
@@ -189,12 +249,23 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
                         categoryCode,
                         pageNumber,
                         requestedPageSize,
+                        ++pageRequestOrdinal,
                         requestBudgetContext,
+                        requestStarted,
                         collectionToken).ConfigureAwait(false);
                     if (pageResult.Unauthorized)
                     {
                         operation = "session";
-                        session = await CreateSessionAsync(credentials, environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, collectionToken)
+                        session = await CreateSessionAsync(
+                                credentials,
+                                environmentId,
+                                endpointProfile,
+                                baseAddress,
+                                environment,
+                                MarketCategoryInstrumentAuthenticationPhase.Reauthentication,
+                                requestBudgetContext,
+                                requestStarted,
+                                collectionToken)
                             .ConfigureAwait(false);
                         operation = "instruments";
                         pageResult = await GetPageAsync(
@@ -208,12 +279,15 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
                             categoryCode,
                             pageNumber,
                             requestedPageSize,
+                            ++pageRequestOrdinal,
                             requestBudgetContext,
+                            requestStarted,
                             collectionToken).ConfigureAwait(false);
                         if (pageResult.Unauthorized)
                         {
                             return Failed(MarketCategoryInstrumentFailureCategory.Unauthorized, reason: "SessionUnauthorized",
-                                operation: operation, pageNumber: pageNumber, httpStatusCode: 401);
+                                operation: operation, pageNumber: pageNumber, httpStatusCode: 401,
+                                httpRequestCount: httpRequestCount);
                         }
                     }
 
@@ -223,29 +297,66 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
                 if (page.Metadata is not { } metadata || page.Instruments is null)
                 {
                     return Failed(MarketCategoryInstrumentFailureCategory.IncompleteCollection, reason: "MissingMetadata",
-                        operation: operation, pageNumber: pageNumber);
+                        operation: operation, pageNumber: pageNumber, httpRequestCount: httpRequestCount);
                 }
 
                 metadataFailure = ValidateMetadata(metadata, pageNumber, requestedPageSize);
                 if (metadataFailure is not null)
                 {
-                    return FailedMetadata(MarketCategoryInstrumentFailureCategory.IncompleteCollection, metadataFailure, metadata, pageNumber, requestedPageSize);
+                    return FailedMetadata(
+                        MarketCategoryInstrumentFailureCategory.IncompleteCollection,
+                        metadataFailure,
+                        metadata,
+                        pageNumber,
+                        requestedPageSize,
+                        initialPageEvidence,
+                        restartedPageEvidence,
+                        httpRequestCount);
                 }
                 if (metadata.TotalPages != firstMetadata.TotalPages)
                 {
                     return Failed(MarketCategoryInstrumentFailureCategory.IncompleteCollection, reason: "TotalPagesMismatch",
-                        operation: operation, pageNumber: pageNumber, expected: firstMetadata.TotalPages, actual: metadata.TotalPages);
+                        operation: operation, pageNumber: pageNumber, expected: firstMetadata.TotalPages, actual: metadata.TotalPages,
+                        httpRequestCount: httpRequestCount);
                 }
                 if (metadata.TotalResults != firstMetadata.TotalResults)
                 {
                     return Failed(MarketCategoryInstrumentFailureCategory.IncompleteCollection, reason: "TotalResultsMismatch",
-                        operation: operation, pageNumber: pageNumber, expected: firstMetadata.TotalResults, actual: metadata.TotalResults);
+                        operation: operation, pageNumber: pageNumber, expected: firstMetadata.TotalResults, actual: metadata.TotalResults,
+                        httpRequestCount: httpRequestCount);
                 }
                 var expectedRows = GetExpectedInstrumentCount(totalResults, pageNumber, requestedPageSize);
                 if (page.Instruments.Count != expectedRows)
                 {
-                    return Failed(MarketCategoryInstrumentFailureCategory.IncompleteCollection, reason: "PageRowCountMismatch",
-                        operation: operation, pageNumber: pageNumber, expected: expectedRows, actual: page.Instruments.Count);
+                    if (pageNumber == 0)
+                    {
+                        restartedPageEvidence = CreatePageEvidence(
+                            firstPage.RequestOrdinal,
+                            0,
+                            requestedPageSize,
+                            page);
+                        if (initialPageEvidence is not null && restartedPageEvidence is not null)
+                        {
+                            LogPageZeroMismatch(
+                                initialPageEvidence,
+                                restartedPageEvidence,
+                                expectedRows,
+                                page.Instruments.Count,
+                                httpRequestCount,
+                                requestBudgetContext);
+                        }
+                    }
+
+                    return Failed(
+                        MarketCategoryInstrumentFailureCategory.IncompleteCollection,
+                        reason: "PageRowCountMismatch",
+                        operation: operation,
+                        pageNumber: pageNumber,
+                        expected: expectedRows,
+                        actual: page.Instruments.Count,
+                        initialPageEvidence: initialPageEvidence,
+                        restartedPageEvidence: restartedPageEvidence,
+                        httpRequestCount: httpRequestCount);
                 }
 
                 fetchedPageNumbers.Add(metadata.PageNumber!.Value);
@@ -255,7 +366,8 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
                     if (!TryMapInstrument(raw, epics, names, out var instrument, out var reason, out var field))
                     {
                         return Failed(MarketCategoryInstrumentFailureCategory.InvalidCollection, reason: reason,
-                            operation: operation, pageNumber: pageNumber, rowIndex: rowIndex, fieldName: field);
+                            operation: operation, pageNumber: pageNumber, rowIndex: rowIndex, fieldName: field,
+                            httpRequestCount: httpRequestCount);
                     }
 
                     instruments.Add(instrument);
@@ -268,7 +380,8 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
                 || instruments.Count != totalResults)
             {
                 return Failed(MarketCategoryInstrumentFailureCategory.IncompleteCollection, reason: "TotalResultsMismatch",
-                    operation: operation, pageNumber: requestedPage, expected: totalResults, actual: instruments.Count);
+                    operation: operation, pageNumber: requestedPage, expected: totalResults, actual: instruments.Count,
+                    httpRequestCount: httpRequestCount);
             }
 
             if (!await IgEndpointProfileResolver.IsStillAppliedAsync(
@@ -299,33 +412,604 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
         }
         catch (OperationCanceledException) when (requestBudgetContext.ScheduleCancellationToken.IsCancellationRequested)
         {
-            return Failed(MarketCategoryInstrumentFailureCategory.ScheduleClosed, reason: "RequestBudgetOrScheduleClosed", operation: operation);
+            return Failed(MarketCategoryInstrumentFailureCategory.ScheduleClosed, reason: "RequestBudgetOrScheduleClosed",
+                operation: operation, httpRequestCount: httpRequestCount);
         }
         catch (TaskCanceledException)
         {
-            return Failed(MarketCategoryInstrumentFailureCategory.Timeout, retryable: true, reason: "Timeout", operation: operation, pageNumber: requestedPage);
+            return Failed(MarketCategoryInstrumentFailureCategory.Timeout, retryable: true, reason: "Timeout",
+                operation: operation, pageNumber: requestedPage, httpRequestCount: httpRequestCount);
         }
         catch (HttpRequestException exception)
         {
             return Failed(MarketCategoryInstrumentFailureCategory.Unavailable, retryable: true,
                 reason: exception.StatusCode is null ? "HttpRequestFailed" : "HttpStatus",
-                operation: operation, pageNumber: requestedPage, httpStatusCode: (int?)exception.StatusCode);
+                operation: operation, pageNumber: requestedPage, httpStatusCode: (int?)exception.StatusCode,
+                httpRequestCount: httpRequestCount);
         }
         catch (JsonException)
         {
-            return Failed(MarketCategoryInstrumentFailureCategory.InvalidCollection, reason: "JsonMalformed", operation: operation, pageNumber: requestedPage);
+            return Failed(MarketCategoryInstrumentFailureCategory.InvalidCollection, reason: "JsonMalformed",
+                operation: operation, pageNumber: requestedPage, httpRequestCount: httpRequestCount);
         }
         catch (ProviderRequestException exception)
         {
-            return Failed(exception.Category, exception.Retryable, exception.Reason, requestedPage, operation: operation, httpStatusCode: exception.HttpStatusCode);
+            return Failed(
+                exception.Category,
+                exception.Retryable,
+                exception.Reason,
+                requestedPage,
+                operation: exception.Operation ?? operation,
+                httpStatusCode: exception.HttpStatusCode,
+                providerErrorCode: exception.ProviderErrorCode,
+                providerErrorCodeParseOutcome: exception.ProviderErrorCodeParseOutcome,
+                authenticationPhase: exception.AuthenticationPhase,
+                initialPageEvidence: initialPageEvidence,
+                restartedPageEvidence: restartedPageEvidence,
+                httpRequestCount: httpRequestCount);
         }
         catch (InvalidOperationException)
         {
-            return Failed(MarketCategoryInstrumentFailureCategory.UnsupportedEnvironment, reason: "UnsupportedEnvironment", operation: operation);
+            return Failed(MarketCategoryInstrumentFailureCategory.UnsupportedEnvironment, reason: "UnsupportedEnvironment",
+                operation: operation, httpRequestCount: httpRequestCount);
         }
         catch (OverflowException)
         {
-            return Failed(MarketCategoryInstrumentFailureCategory.InvalidCollection, reason: "InvalidField", operation: operation, pageNumber: requestedPage);
+            return Failed(MarketCategoryInstrumentFailureCategory.InvalidCollection, reason: "InvalidField",
+                operation: operation, pageNumber: requestedPage, httpRequestCount: httpRequestCount);
+        }
+    }
+
+    /// <summary>
+    /// Traverses a bounded advertised sequence and returns count-only evidence without a production collection.
+    /// </summary>
+    internal Task<MarketCategoryInstrumentDiagnosticResult> CollectDiagnosticAsync(
+        BrokerEnvironmentKind appliedBrokerEnvironment,
+        string categoryCode,
+        MarketCategoryInstrumentRequestBudgetContext requestBudgetContext,
+        CancellationToken cancellationToken) =>
+        CollectDiagnosticAsync(
+            appliedBrokerEnvironment,
+            categoryCode,
+            requestBudgetContext,
+            MaximumPages + 3,
+            cancellationToken);
+
+    public async Task<MarketCategoryInstrumentDiagnosticResult> CollectDiagnosticAsync(
+        BrokerEnvironmentKind appliedBrokerEnvironment,
+        string categoryCode,
+        MarketCategoryInstrumentRequestBudgetContext requestBudgetContext,
+        int maximumHttpRequests,
+        CancellationToken cancellationToken)
+    {
+        var httpRequestCount = 0;
+        var pageRequestCount = 0;
+        var pageResultCount = 0;
+        var pagesVisited = new HashSet<int>();
+        var epics = new HashSet<string>(StringComparer.Ordinal);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        var pageEvidence = new List<MarketCategoryInstrumentDiagnosticPageEvidence>();
+        int? totalPages = null;
+        int? totalResults = null;
+        var outcome = MarketCategoryInstrumentDiagnosticOutcome.InvalidRequest;
+        string? reasonCode = "InvalidRequest";
+
+        MarketCategoryInstrumentDiagnosticResult Result() =>
+            new(
+                outcome,
+                DiagnosticPageSize,
+                MaximumPages,
+                MaximumResults,
+                DiagnosticMaximumRows,
+                maximumHttpRequests,
+                totalPages,
+                totalResults,
+                httpRequestCount,
+                pageRequestCount,
+                pageResultCount,
+                pagesVisited.Count,
+                pageEvidence.Sum(item => item.RawArrayCount ?? 0),
+                pageEvidence.Sum(item => item.DeserializedRowCount ?? 0),
+                pageEvidence.Sum(item => item.NullRowCount),
+                pageEvidence.Sum(item => item.ValidRowCount),
+                pageEvidence.Sum(item => item.InvalidRowCount),
+                epics.Count,
+                pageEvidence.Sum(item => item.DuplicateEpicCount),
+                pageEvidence.Sum(item => item.DuplicateNameCount),
+                pageEvidence.Sum(item => item.CrossPageEpicOverlapCount),
+                reasonCode,
+                pageEvidence.ToArray());
+
+        if (!IsValidRequest(categoryCode, requestBudgetContext)
+            || maximumHttpRequests is < 2 or > MaximumPages + 3)
+        {
+            return Result();
+        }
+
+        using var collectionCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            requestBudgetContext.ScheduleCancellationToken);
+        var collectionToken = collectionCancellation.Token;
+        var reauthenticationUsed = false;
+        outcome = MarketCategoryInstrumentDiagnosticOutcome.ProviderRequestFailed;
+        reasonCode = null;
+
+        void Stop(MarketCategoryInstrumentDiagnosticOutcome stopOutcome, string stopReason)
+        {
+            outcome = stopOutcome;
+            reasonCode = stopReason;
+        }
+
+        MarketCategoryInstrumentDiagnosticPageEvidence CreateEvidence(
+            int requestedPage,
+            PageResult? result,
+            int validRows,
+            int invalidRows,
+            int duplicateEpics,
+            int duplicateNames,
+            int crossPageOverlaps,
+            IReadOnlyList<string> discrepancies)
+        {
+            var body = result?.Body;
+            var metadata = body?.Metadata;
+            var shape = result?.DiagnosticShape;
+            int? expectedRows = metadata?.TotalResults is { } count && count >= 0
+                ? GetExpectedInstrumentCount(count, requestedPage, DiagnosticPageSize)
+                : null;
+            return new(
+                result?.RequestOrdinal ?? 0,
+                requestedPage,
+                DiagnosticPageSize,
+                metadata?.PageNumber,
+                metadata?.PageSize,
+                metadata?.TotalPages,
+                metadata?.TotalResults,
+                shape?.MetadataValueKind ?? DiagnosticJsonValueKind.Missing,
+                shape?.InstrumentsValueKind ?? DiagnosticJsonValueKind.Missing,
+                shape?.PageNumberValueKind ?? DiagnosticJsonValueKind.Missing,
+                shape?.PageSizeValueKind ?? DiagnosticJsonValueKind.Missing,
+                shape?.TotalPagesValueKind ?? DiagnosticJsonValueKind.Missing,
+                shape?.TotalResultsValueKind ?? DiagnosticJsonValueKind.Missing,
+                shape?.RawArrayCount,
+                body?.Instruments?.Count,
+                body?.Instruments?.Count(item => item is null) ?? 0,
+                validRows,
+                invalidRows,
+                duplicateEpics,
+                duplicateNames,
+                crossPageOverlaps,
+                expectedRows,
+                discrepancies);
+        }
+
+        try
+        {
+            var context = await contextResolver.ResolveAppliedAsync(collectionToken).ConfigureAwait(false);
+            if (!IgEndpointProfileResolver.TryResolve(context, out var environment, out var baseAddress)
+                || environment != appliedBrokerEnvironment)
+            {
+                Stop(MarketCategoryInstrumentDiagnosticOutcome.UnsupportedEnvironment, "UnsupportedEnvironment");
+                return Result();
+            }
+
+            var environmentId = context!.BrokerEnvironmentId;
+            var endpointProfile = context.EndpointProfile;
+            var credentials = await protectedCredentialService
+                .GetCredentialsAsync(environmentId, collectionToken)
+                .ConfigureAwait(false);
+            if (!HasCredentials(credentials))
+            {
+                Stop(MarketCategoryInstrumentDiagnosticOutcome.MissingCredentials, "MissingCredentials");
+                return Result();
+            }
+
+            var availableRequestBudget = await requestBudget.GetRemainingManualRequestBudgetAsync(
+                environment,
+                requestBudgetContext,
+                collectionToken).ConfigureAwait(false);
+            if (availableRequestBudget is null or < 2)
+            {
+                Stop(MarketCategoryInstrumentDiagnosticOutcome.RequestAllowanceInsufficient, "RequestAllowanceUnavailable");
+                return Result();
+            }
+
+            var session = await CreateSessionAsync(
+                    credentials,
+                    environmentId,
+                    endpointProfile,
+                    baseAddress,
+                    environment,
+                    MarketCategoryInstrumentAuthenticationPhase.Initial,
+                    requestBudgetContext,
+                    () => httpRequestCount++,
+                    collectionToken)
+                .ConfigureAwait(false);
+            var requestOrdinal = 0;
+
+            async Task<PageResult?> RequestPageAsync(int pageNumber)
+            {
+                if (httpRequestCount >= maximumHttpRequests)
+                {
+                    Stop(MarketCategoryInstrumentDiagnosticOutcome.CallCeilingExceeded, "CallCeilingExceeded");
+                    return null;
+                }
+
+                var result = await GetPageAsync(
+                        credentials.ApiKey,
+                        credentials.Identifier,
+                        session,
+                        environmentId,
+                        endpointProfile,
+                        baseAddress,
+                        environment,
+                        categoryCode,
+                        pageNumber,
+                        DiagnosticPageSize,
+                        ++requestOrdinal,
+                        requestBudgetContext,
+                        () =>
+                        {
+                            httpRequestCount++;
+                            pageRequestCount++;
+                        },
+                        collectionToken,
+                        captureDiagnosticEvidence: true)
+                    .ConfigureAwait(false);
+
+                if (result.Unauthorized)
+                {
+                    if (reauthenticationUsed || httpRequestCount + 2 > maximumHttpRequests)
+                    {
+                        Stop(
+                            reauthenticationUsed
+                                ? MarketCategoryInstrumentDiagnosticOutcome.ProviderRequestFailed
+                                : MarketCategoryInstrumentDiagnosticOutcome.CallCeilingExceeded,
+                            reauthenticationUsed ? "SessionUnauthorized" : "CallCeilingExceeded");
+                        return null;
+                    }
+
+                    reauthenticationUsed = true;
+                    session = await CreateSessionAsync(
+                            credentials,
+                            environmentId,
+                            endpointProfile,
+                            baseAddress,
+                            environment,
+                            MarketCategoryInstrumentAuthenticationPhase.Reauthentication,
+                            requestBudgetContext,
+                            () => httpRequestCount++,
+                            collectionToken)
+                        .ConfigureAwait(false);
+                    if (httpRequestCount >= maximumHttpRequests)
+                    {
+                        Stop(MarketCategoryInstrumentDiagnosticOutcome.CallCeilingExceeded, "CallCeilingExceeded");
+                        return null;
+                    }
+
+                    result = await GetPageAsync(
+                            credentials.ApiKey,
+                            credentials.Identifier,
+                            session,
+                            environmentId,
+                            endpointProfile,
+                            baseAddress,
+                            environment,
+                            categoryCode,
+                            pageNumber,
+                            DiagnosticPageSize,
+                            ++requestOrdinal,
+                            requestBudgetContext,
+                            () =>
+                            {
+                                httpRequestCount++;
+                                pageRequestCount++;
+                            },
+                            collectionToken,
+                            captureDiagnosticEvidence: true)
+                        .ConfigureAwait(false);
+                }
+
+                if (result.Unauthorized)
+                {
+                    Stop(MarketCategoryInstrumentDiagnosticOutcome.ProviderRequestFailed, "SessionUnauthorized");
+                    return null;
+                }
+
+                if (result.Body is not null)
+                {
+                    pageResultCount++;
+                }
+
+                return result;
+            }
+
+            var firstPageResult = await RequestPageAsync(0).ConfigureAwait(false);
+            if (firstPageResult is null)
+            {
+                return Result();
+            }
+
+            if (firstPageResult.JsonMalformed)
+            {
+                pageEvidence.Add(CreateEvidence(0, firstPageResult, 0, 0, 0, 0, 0, ["JsonMalformed"]));
+                Stop(MarketCategoryInstrumentDiagnosticOutcome.ResponseMalformed, "JsonMalformed");
+                return Result();
+            }
+
+            if (firstPageResult.Body is not { Metadata: { } firstMetadata, Instruments: not null })
+            {
+                pageEvidence.Add(CreateEvidence(0, firstPageResult, 0, 0, 0, 0, 0, ["MissingMetadataOrInstruments"]));
+                Stop(MarketCategoryInstrumentDiagnosticOutcome.InvalidPagingMetadata, "MissingMetadataOrInstruments");
+                return Result();
+            }
+
+            var metadataFailure = ValidateMetadata(firstMetadata, 0, DiagnosticPageSize);
+            if (metadataFailure is not null)
+            {
+                pageEvidence.Add(CreateEvidence(0, firstPageResult, 0, 0, 0, 0, 0, [metadataFailure]));
+                Stop(MarketCategoryInstrumentDiagnosticOutcome.InvalidPagingMetadata, metadataFailure);
+                return Result();
+            }
+
+            totalPages = firstMetadata.TotalPages!.Value;
+            totalResults = firstMetadata.TotalResults!.Value;
+            var expectedPages = GetExpectedPageCount(totalResults.Value, DiagnosticPageSize);
+            if (totalResults > MaximumResults || totalPages > MaximumPages)
+            {
+                pageEvidence.Add(CreateEvidence(0, firstPageResult, 0, 0, 0, 0, 0, ["DiagnosticLimitReached"]));
+                Stop(MarketCategoryInstrumentDiagnosticOutcome.DiagnosticLimitReached, "DiagnosticLimitReached");
+                return Result();
+            }
+
+            var firstPageDiscrepancies = new List<string>();
+            if (totalPages != expectedPages)
+            {
+                firstPageDiscrepancies.Add("TotalPagesFormulaMismatch");
+            }
+
+            var remainingAfterFirstPage = Math.Max(0, totalPages.Value - 1);
+            var reservedReauthenticationCalls = reauthenticationUsed || remainingAfterFirstPage == 0 ? 0 : 2;
+            var requiredRemainingCalls = remainingAfterFirstPage + reservedReauthenticationCalls;
+            if (requiredRemainingCalls > maximumHttpRequests - httpRequestCount)
+            {
+                pageEvidence.Add(CreateEvidence(
+                    0,
+                    firstPageResult,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    [.. firstPageDiscrepancies, "CallCeilingInsufficientForAdvertisedPages"]));
+                Stop(MarketCategoryInstrumentDiagnosticOutcome.CallCeilingExceeded, "CallCeilingInsufficientForAdvertisedPages");
+                return Result();
+            }
+
+            availableRequestBudget = await requestBudget.GetRemainingManualRequestBudgetAsync(
+                environment,
+                requestBudgetContext,
+                collectionToken).ConfigureAwait(false);
+            if (availableRequestBudget is null || availableRequestBudget < requiredRemainingCalls)
+            {
+                pageEvidence.Add(CreateEvidence(
+                    0,
+                    firstPageResult,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    [.. firstPageDiscrepancies, "RequestAllowanceInsufficientForAdvertisedPages"]));
+                Stop(
+                    MarketCategoryInstrumentDiagnosticOutcome.RequestAllowanceInsufficient,
+                    "RequestAllowanceInsufficientForAdvertisedPages");
+                return Result();
+            }
+
+            for (var pageNumber = 0; pageNumber < totalPages; pageNumber++)
+            {
+                var result = pageNumber == 0
+                    ? firstPageResult
+                    : await RequestPageAsync(pageNumber).ConfigureAwait(false);
+                if (result is null)
+                {
+                    return Result();
+                }
+
+                if (result.JsonMalformed)
+                {
+                    pageEvidence.Add(CreateEvidence(pageNumber, result, 0, 0, 0, 0, 0, ["JsonMalformed"]));
+                    Stop(MarketCategoryInstrumentDiagnosticOutcome.ResponseMalformed, "JsonMalformed");
+                    return Result();
+                }
+
+                if (result.Body is not { Metadata: { } metadata, Instruments: not null } page)
+                {
+                    pageEvidence.Add(CreateEvidence(pageNumber, result, 0, 0, 0, 0, 0, ["MissingMetadataOrInstruments"]));
+                    Stop(MarketCategoryInstrumentDiagnosticOutcome.InvalidPagingMetadata, "MissingMetadataOrInstruments");
+                    return Result();
+                }
+
+                metadataFailure = ValidateMetadata(metadata, pageNumber, DiagnosticPageSize);
+                if (metadataFailure is not null)
+                {
+                    pageEvidence.Add(CreateEvidence(pageNumber, result, 0, 0, 0, 0, 0, [metadataFailure]));
+                    Stop(MarketCategoryInstrumentDiagnosticOutcome.InvalidPagingMetadata, metadataFailure);
+                    return Result();
+                }
+                if (metadata.TotalPages != totalPages)
+                {
+                    pageEvidence.Add(CreateEvidence(pageNumber, result, 0, 0, 0, 0, 0, ["TotalPagesChanged"]));
+                    Stop(MarketCategoryInstrumentDiagnosticOutcome.PagingMetadataChanged, "TotalPagesChanged");
+                    return Result();
+                }
+                if (metadata.TotalResults != totalResults)
+                {
+                    pageEvidence.Add(CreateEvidence(pageNumber, result, 0, 0, 0, 0, 0, ["TotalResultsChanged"]));
+                    Stop(MarketCategoryInstrumentDiagnosticOutcome.PagingMetadataChanged, "TotalResultsChanged");
+                    return Result();
+                }
+                if (page.Instruments.Count > DiagnosticPageSize)
+                {
+                    pageEvidence.Add(CreateEvidence(pageNumber, result, 0, 0, 0, 0, 0, ["PageRowCountExceeded"]));
+                    Stop(MarketCategoryInstrumentDiagnosticOutcome.DiagnosticLimitReached, "PageRowCountExceeded");
+                    return Result();
+                }
+                if (!pagesVisited.Add(metadata.PageNumber!.Value))
+                {
+                    pageEvidence.Add(CreateEvidence(pageNumber, result, 0, 0, 0, 0, 0, ["RepeatedPageNumber"]));
+                    Stop(MarketCategoryInstrumentDiagnosticOutcome.InvalidPagingMetadata, "RepeatedPageNumber");
+                    return Result();
+                }
+
+                var discrepancies = new List<string>();
+                if (pageNumber == 0)
+                {
+                    discrepancies.AddRange(firstPageDiscrepancies);
+                }
+
+                var rawArrayCount = result.DiagnosticShape?.RawArrayCount;
+                if (rawArrayCount is { } rawCount && rawCount != page.Instruments.Count)
+                {
+                    discrepancies.Add("RawAndDeserializedCountsDiffer");
+                }
+                if (page.Instruments.Any(item => item is null))
+                {
+                    discrepancies.Add("NullRowsPresent");
+                }
+
+                var priorPageEpics = new HashSet<string>(epics, StringComparer.Ordinal);
+                var validRows = 0;
+                var invalidRows = 0;
+                var duplicateEpics = 0;
+                var duplicateNames = 0;
+                var crossPageOverlaps = 0;
+                foreach (var raw in page.Instruments)
+                {
+                    var candidateEpic = raw?.Epic?.Trim();
+                    var isPriorPageEpic = !string.IsNullOrWhiteSpace(candidateEpic) && priorPageEpics.Contains(candidateEpic);
+                    if (!TryMapInstrument(raw, epics, names, out _, out var reason, out _))
+                    {
+                        invalidRows++;
+                        if (string.Equals(reason, "DuplicateEpic", StringComparison.Ordinal))
+                        {
+                            duplicateEpics++;
+                            if (isPriorPageEpic)
+                            {
+                                crossPageOverlaps++;
+                            }
+                        }
+                        else if (string.Equals(reason, "DuplicateName", StringComparison.Ordinal))
+                        {
+                            duplicateNames++;
+                        }
+                    }
+                    else
+                    {
+                        validRows++;
+                    }
+                }
+
+                if (invalidRows > 0)
+                {
+                    discrepancies.Add("InvalidRowsPresent");
+                }
+                if (duplicateEpics > 0)
+                {
+                    discrepancies.Add("DuplicateEpicsPresent");
+                }
+                if (duplicateNames > 0)
+                {
+                    discrepancies.Add("DuplicateNamesPresent");
+                }
+                if (rawArrayCount is { } pageRawCount
+                    && GetExpectedInstrumentCount(totalResults.Value, pageNumber, DiagnosticPageSize) != pageRawCount)
+                {
+                    discrepancies.Add("RawCountDiffersFromFormula");
+                }
+
+                pageEvidence.Add(CreateEvidence(
+                    pageNumber,
+                    result,
+                    validRows,
+                    invalidRows,
+                    duplicateEpics,
+                    duplicateNames,
+                    crossPageOverlaps,
+                    discrepancies.Distinct(StringComparer.Ordinal).ToArray()));
+            }
+
+            if (!await IgEndpointProfileResolver.IsStillAppliedAsync(
+                    contextResolver,
+                    environmentId,
+                    environment,
+                    endpointProfile,
+                    baseAddress,
+                    collectionToken)
+                .ConfigureAwait(false))
+            {
+                Stop(MarketCategoryInstrumentDiagnosticOutcome.ExecutionInvalidated, "AppliedEnvironmentChanged");
+                return Result();
+            }
+
+            outcome = MarketCategoryInstrumentDiagnosticOutcome.AdvertisedSequenceExhausted;
+            reasonCode = pagesVisited.Count != totalPages
+                ? "AdvertisedSequenceNotExhausted"
+                : epics.Count != totalResults
+                    ? "UniqueCountDiffersFromAdvertisedTotal"
+                    : "DiagnosticOnlyNoCompletenessClaim";
+            return Result();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            Stop(MarketCategoryInstrumentDiagnosticOutcome.Cancelled, "Cancelled");
+            return Result();
+        }
+        catch (OperationCanceledException) when (requestBudgetContext.ScheduleCancellationToken.IsCancellationRequested)
+        {
+            Stop(MarketCategoryInstrumentDiagnosticOutcome.ExecutionInvalidated, "ExecutionInvalidated");
+            return Result();
+        }
+        catch (TaskCanceledException)
+        {
+            Stop(MarketCategoryInstrumentDiagnosticOutcome.ProviderRequestFailed, "Timeout");
+            return Result();
+        }
+        catch (HttpRequestException exception)
+        {
+            Stop(
+                exception.StatusCode == System.Net.HttpStatusCode.TooManyRequests
+                    ? MarketCategoryInstrumentDiagnosticOutcome.RequestAllowanceInsufficient
+                    : MarketCategoryInstrumentDiagnosticOutcome.ProviderRequestFailed,
+                exception.StatusCode == System.Net.HttpStatusCode.TooManyRequests ? "ProviderRateLimited" : "HttpRequestFailed");
+            return Result();
+        }
+        catch (JsonException)
+        {
+            Stop(MarketCategoryInstrumentDiagnosticOutcome.ResponseMalformed, "JsonMalformed");
+            return Result();
+        }
+        catch (ProviderRequestException exception)
+        {
+            var stopOutcome = exception.Category switch
+            {
+                MarketCategoryInstrumentFailureCategory.AllowanceExceeded => MarketCategoryInstrumentDiagnosticOutcome.RequestAllowanceInsufficient,
+                MarketCategoryInstrumentFailureCategory.ScheduleClosed => MarketCategoryInstrumentDiagnosticOutcome.ExecutionInvalidated,
+                MarketCategoryInstrumentFailureCategory.UnsupportedEnvironment => MarketCategoryInstrumentDiagnosticOutcome.UnsupportedEnvironment,
+                _ => MarketCategoryInstrumentDiagnosticOutcome.ProviderRequestFailed
+            };
+            Stop(stopOutcome, exception.Reason);
+            return Result();
+        }
+        catch (InvalidOperationException)
+        {
+            Stop(MarketCategoryInstrumentDiagnosticOutcome.UnsupportedEnvironment, "UnsupportedEnvironment");
+            return Result();
+        }
+        catch (OverflowException)
+        {
+            Stop(MarketCategoryInstrumentDiagnosticOutcome.ResponseMalformed, "InvalidField");
+            return Result();
         }
     }
 
@@ -335,14 +1019,21 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
         string endpointProfile,
         Uri baseAddress,
         BrokerEnvironmentKind environment,
+        MarketCategoryInstrumentAuthenticationPhase authenticationPhase,
         MarketCategoryInstrumentRequestBudgetContext requestBudgetContext,
+        Action requestStarted,
         CancellationToken cancellationToken)
     {
         if (!await throttle.WaitAsync(
                 credentials.ApiKey,
                 credentials.Identifier,
-                requestBudgetContext.ScheduleWindowEndUtc ?? DateTimeOffset.MaxValue,
-                cancellationToken).ConfigureAwait(false))
+                requestBudgetContext.FullRunLease is null
+                    ? requestBudgetContext.ScheduleWindowEndUtc ?? DateTimeOffset.MaxValue
+                    : DateTimeOffset.MaxValue,
+                cancellationToken,
+                TimeSpan.FromSeconds(requestBudgetContext.RequestSpacingSeconds),
+                ct => requestBudget.RenewAsync(environment, requestBudgetContext, ct),
+                honorProviderCooldown: true).ConfigureAwait(false))
         {
             throw new ProviderRequestException(MarketCategoryInstrumentFailureCategory.ScheduleClosed, retryable: false);
         }
@@ -358,13 +1049,31 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
             encryptedPassword = false
         });
 
+        requestStarted();
         using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         await VerifyRequestStillValidAsync(
             environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, cancellationToken)
             .ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            throw CreateProviderException(response.StatusCode);
+            var parseResult = await IgProviderErrorCodeParser.ParseAsync(response.Content, cancellationToken)
+                .ConfigureAwait(false);
+            await throttle.ApplyProviderDenialCooldownAsync(
+                credentials.ApiKey,
+                credentials.Identifier,
+                response.StatusCode == HttpStatusCode.Forbidden ? parseResult.SafeCode : null,
+                cancellationToken).ConfigureAwait(false);
+            LogFailedProviderResponse(
+                response.StatusCode,
+                "session",
+                authenticationPhase,
+                parseResult,
+                requestBudgetContext);
+            throw CreateProviderException(
+                response.StatusCode,
+                "session",
+                authenticationPhase,
+                parseResult);
         }
 
         var body = await response.Content.ReadFromJsonAsync<IgSessionResponseBody>(JsonOptions, cancellationToken).ConfigureAwait(false);
@@ -389,14 +1098,22 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
         string categoryCode,
         int pageNumber,
         int requestedPageSize,
+        int requestOrdinal,
         MarketCategoryInstrumentRequestBudgetContext requestBudgetContext,
-        CancellationToken cancellationToken)
+        Action requestStarted,
+        CancellationToken cancellationToken,
+        bool captureDiagnosticEvidence = false)
     {
         if (!await throttle.WaitAsync(
                 apiKey,
                 accountIdentifier,
-                requestBudgetContext.ScheduleWindowEndUtc ?? DateTimeOffset.MaxValue,
-                cancellationToken).ConfigureAwait(false))
+                requestBudgetContext.FullRunLease is null
+                    ? requestBudgetContext.ScheduleWindowEndUtc ?? DateTimeOffset.MaxValue
+                    : DateTimeOffset.MaxValue,
+                cancellationToken,
+                TimeSpan.FromSeconds(requestBudgetContext.RequestSpacingSeconds),
+                ct => requestBudget.RenewAsync(environment, requestBudgetContext, ct),
+                honorProviderCooldown: true).ConfigureAwait(false))
         {
             throw new ProviderRequestException(MarketCategoryInstrumentFailureCategory.ScheduleClosed, retryable: false);
         }
@@ -409,27 +1126,109 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
         request.Headers.Add("Version", "1");
         request.Headers.Accept.ParseAdd("application/json; charset=UTF-8");
 
+        requestStarted();
         using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         await VerifyRequestStillValidAsync(
             environmentId, endpointProfile, baseAddress, environment, requestBudgetContext, cancellationToken)
             .ConfigureAwait(false);
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
-            return new(null, true);
+            return new(null, true, requestOrdinal);
         }
 
         if (!response.IsSuccessStatusCode)
         {
-            throw CreateProviderException(response.StatusCode);
+            var parseResult = await IgProviderErrorCodeParser.ParseAsync(response.Content, cancellationToken)
+                .ConfigureAwait(false);
+            await throttle.ApplyProviderDenialCooldownAsync(
+                apiKey,
+                accountIdentifier,
+                response.StatusCode == HttpStatusCode.Forbidden ? parseResult.SafeCode : null,
+                cancellationToken).ConfigureAwait(false);
+            LogFailedProviderResponse(
+                response.StatusCode,
+                "instruments",
+                null,
+                parseResult,
+                requestBudgetContext);
+            throw CreateProviderException(
+                response.StatusCode,
+                "instruments",
+                null,
+                parseResult);
         }
 
-        var body = await response.Content.ReadFromJsonAsync<IgInstrumentPageRaw>(JsonOptions, cancellationToken).ConfigureAwait(false);
-        if (body is null)
+        var content = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        DiagnosticPageShape? diagnosticShape = null;
+        try
         {
-            throw new JsonException();
-        }
+            if (captureDiagnosticEvidence)
+            {
+                using var document = JsonDocument.Parse(content);
+                diagnosticShape = CaptureDiagnosticPageShape(document.RootElement);
+            }
 
-        return new(body, false);
+            var body = JsonSerializer.Deserialize<IgInstrumentPageRaw>(content, JsonOptions);
+            if (body is null)
+            {
+                throw new JsonException();
+            }
+
+            return new(body, false, requestOrdinal, diagnosticShape);
+        }
+        catch (JsonException) when (captureDiagnosticEvidence)
+        {
+            return new(null, false, requestOrdinal, diagnosticShape, JsonMalformed: true);
+        }
+    }
+
+    private void LogFailedProviderResponse(
+        HttpStatusCode statusCode,
+        string operation,
+        MarketCategoryInstrumentAuthenticationPhase? authenticationPhase,
+        IgProviderErrorCodeParseResult parseResult,
+        MarketCategoryInstrumentRequestBudgetContext requestBudgetContext)
+    {
+        logger.LogWarning(
+            "IG category-instrument {Operation} request failed with HTTP {StatusCode}; authentication phase {AuthenticationPhase}; provider-code parse outcome {ParseOutcome}; safe provider code {ProviderErrorCode} on {TradingDay} slot {ScheduledSlot}.",
+            operation,
+            (int)statusCode,
+            authenticationPhase?.ToString() ?? "NotApplicable",
+            parseResult.Outcome,
+            parseResult.SafeCode ?? "Unavailable",
+            requestBudgetContext.TradingDay,
+            requestBudgetContext.ScheduledSlot);
+    }
+
+    private void LogPageZeroMismatch(
+        MarketCategoryInstrumentPageEvidence initialPageEvidence,
+        MarketCategoryInstrumentPageEvidence restartedPageEvidence,
+        int expectedCount,
+        int actualCount,
+        int httpRequestCount,
+        MarketCategoryInstrumentRequestBudgetContext requestBudgetContext)
+    {
+        logger.LogWarning(
+            "IG category-instrument page-zero completeness validation failed on {TradingDay} slot {ScheduledSlot}: initial request #{InitialOrdinal} requested page {InitialRequestedPage} size {InitialRequestedSize}, returned page {InitialReturnedPage} size {InitialReturnedSize}, {InitialRawCount} rows of total {InitialTotalResults}; restarted request #{RestartedOrdinal} requested page {RestartedRequestedPage} size {RestartedRequestedSize}, returned page {RestartedReturnedPage} size {RestartedReturnedSize}, {RestartedRawCount} rows of total {RestartedTotalResults}; expected {ExpectedCount} rows, received {ActualCount}, across {HttpRequestCount} gateway HTTP calls.",
+            requestBudgetContext.TradingDay,
+            requestBudgetContext.ScheduledSlot,
+            initialPageEvidence.RequestOrdinal,
+            initialPageEvidence.RequestedPageNumber,
+            initialPageEvidence.RequestedPageSize,
+            initialPageEvidence.ReturnedPageNumber,
+            initialPageEvidence.ReturnedPageSize,
+            initialPageEvidence.RawCount,
+            initialPageEvidence.TotalResults,
+            restartedPageEvidence.RequestOrdinal,
+            restartedPageEvidence.RequestedPageNumber,
+            restartedPageEvidence.RequestedPageSize,
+            restartedPageEvidence.ReturnedPageNumber,
+            restartedPageEvidence.ReturnedPageSize,
+            restartedPageEvidence.RawCount,
+            restartedPageEvidence.TotalResults,
+            expectedCount,
+            actualCount,
+            httpRequestCount);
     }
 
     private async Task ReserveRequestAsync(
@@ -496,23 +1295,133 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
         : metadata.TotalResults is null or < 0 ? "TotalResultsMismatch"
         : null;
 
+    private static DiagnosticPageShape CaptureDiagnosticPageShape(JsonElement root)
+    {
+        var metadataKind = TryGetPropertyIgnoreCase(root, "metadata", out var metadata)
+            ? GetDiagnosticValueKind(metadata.ValueKind)
+            : DiagnosticJsonValueKind.Missing;
+        var instrumentsKind = TryGetPropertyIgnoreCase(root, "instruments", out var instruments)
+            ? GetDiagnosticValueKind(instruments.ValueKind)
+            : DiagnosticJsonValueKind.Missing;
+        int? rawArrayCount = instrumentsKind == DiagnosticJsonValueKind.Array
+            ? instruments.GetArrayLength()
+            : null;
+
+        var pageNumber = GetDiagnosticInteger(metadata, "pageNumber");
+        var pageSize = GetDiagnosticInteger(metadata, "pageSize");
+        var totalPages = GetDiagnosticInteger(metadata, "totalPages");
+        var totalResults = GetDiagnosticInteger(metadata, "totalResults");
+
+        return new(
+            rawArrayCount,
+            metadataKind,
+            instrumentsKind,
+            pageNumber.Kind,
+            pageNumber.Value,
+            pageSize.Kind,
+            pageSize.Value,
+            totalPages.Kind,
+            totalPages.Value,
+            totalResults.Kind,
+            totalResults.Value);
+    }
+
+    private static (DiagnosticJsonValueKind Kind, int? Value) GetDiagnosticInteger(
+        JsonElement metadata,
+        string propertyName)
+    {
+        if (metadata.ValueKind != JsonValueKind.Object
+            || !TryGetPropertyIgnoreCase(metadata, propertyName, out var value))
+        {
+            return (DiagnosticJsonValueKind.Missing, null);
+        }
+
+        return (
+            GetDiagnosticValueKind(value.ValueKind),
+            value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number) ? number : null);
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static DiagnosticJsonValueKind GetDiagnosticValueKind(JsonValueKind valueKind) =>
+        valueKind switch
+        {
+            JsonValueKind.Null => DiagnosticJsonValueKind.Null,
+            JsonValueKind.Number => DiagnosticJsonValueKind.Number,
+            JsonValueKind.String => DiagnosticJsonValueKind.String,
+            JsonValueKind.Object => DiagnosticJsonValueKind.Object,
+            JsonValueKind.Array => DiagnosticJsonValueKind.Array,
+            JsonValueKind.True => DiagnosticJsonValueKind.True,
+            JsonValueKind.False => DiagnosticJsonValueKind.False,
+            _ => DiagnosticJsonValueKind.Other
+        };
+
     private MarketCategoryInstrumentCollectionResult.Failed FailedMetadata(
         MarketCategoryInstrumentFailureCategory category,
         string reason,
         IgPaginationMetadataRaw metadata,
         int requestedPage,
-        int requestedPageSize) =>
+        int requestedPageSize,
+        MarketCategoryInstrumentPageEvidence? initialPageEvidence = null,
+        MarketCategoryInstrumentPageEvidence? restartedPageEvidence = null,
+        int? httpRequestCount = null) =>
         reason switch
         {
             "InvalidPageNumber" => Failed(category, reason: reason, operation: "instruments",
-                pageNumber: requestedPage, expected: requestedPage, actual: metadata.PageNumber),
+                pageNumber: requestedPage, expected: requestedPage, actual: metadata.PageNumber,
+                initialPageEvidence: initialPageEvidence, restartedPageEvidence: restartedPageEvidence,
+                httpRequestCount: httpRequestCount),
             "PageSizeMismatch" => Failed(category, reason: reason, operation: "instruments",
-                pageNumber: requestedPage, expected: requestedPageSize, actual: metadata.PageSize),
+                pageNumber: requestedPage, expected: requestedPageSize, actual: metadata.PageSize,
+                initialPageEvidence: initialPageEvidence, restartedPageEvidence: restartedPageEvidence,
+                httpRequestCount: httpRequestCount),
             "TotalPagesMismatch" => Failed(category, reason: reason, operation: "instruments",
-                pageNumber: requestedPage, expected: 1, actual: metadata.TotalPages),
+                pageNumber: requestedPage, expected: 1, actual: metadata.TotalPages,
+                initialPageEvidence: initialPageEvidence, restartedPageEvidence: restartedPageEvidence,
+                httpRequestCount: httpRequestCount),
             _ => Failed(category, reason: reason, operation: "instruments",
-                pageNumber: requestedPage, expected: 0, actual: metadata.TotalResults)
+                pageNumber: requestedPage, expected: 0, actual: metadata.TotalResults,
+                initialPageEvidence: initialPageEvidence, restartedPageEvidence: restartedPageEvidence,
+                httpRequestCount: httpRequestCount)
         };
+
+    private static MarketCategoryInstrumentPageEvidence CreatePageEvidence(
+        int requestOrdinal,
+        int requestedPageNumber,
+        int requestedPageSize,
+        IgInstrumentPageRaw body)
+    {
+        var metadata = body.Metadata;
+        int? expectedCount = metadata?.TotalResults is { } totalResults && totalResults >= 0
+            ? GetExpectedInstrumentCount(totalResults, requestedPageNumber, requestedPageSize)
+            : null;
+        return new(
+            requestOrdinal,
+            requestedPageNumber,
+            requestedPageSize,
+            metadata?.PageNumber,
+            metadata?.PageSize,
+            metadata?.TotalPages,
+            metadata?.TotalResults,
+            body.Instruments?.Count ?? 0,
+            expectedCount);
+    }
 
     private bool TryMapInstrument(
         IgInstrumentRaw? raw,
@@ -557,17 +1466,19 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
             field = "Expiry";
             return false;
         }
-        if (!epics.Add(epic))
+        if (epics.Contains(epic))
         {
             reason = "DuplicateEpic";
             return false;
         }
-        if (!names.Add(instrumentName))
+        if (names.Contains(instrumentName))
         {
             reason = "DuplicateName";
             return false;
         }
 
+        epics.Add(epic);
+        names.Add(instrumentName);
         reason = null;
         instrument = new(
             epic,
@@ -600,7 +1511,9 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
         && context.ScheduledSlot >= 0
         && context.LeaseOwner != Guid.Empty
         && context.LeaseFence > 0
-        && pageSize is >= 1 and <= 1000;
+        && (pageSize ?? context.CategoryPageSize) is >= 1 and <= 1000
+        && context.RequestSpacingSeconds is >= 1 and <= 60
+        && context.CategoryPauseSeconds is >= 1 and <= 300;
 
     private static bool HasCredentials(IgCredentials credentials) =>
         !string.IsNullOrWhiteSpace(credentials.ApiKey)
@@ -659,6 +1572,27 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
             _ => new(MarketCategoryInstrumentFailureCategory.Rejected, retryable: false, (int)statusCode)
         };
 
+    private static ProviderRequestException CreateProviderException(
+        HttpStatusCode statusCode,
+        string operation,
+        MarketCategoryInstrumentAuthenticationPhase? authenticationPhase,
+        IgProviderErrorCodeParseResult parseResult)
+    {
+        var exception = CreateProviderException(statusCode);
+        var category = statusCode == HttpStatusCode.Forbidden
+            && MarketDetailProviderErrorCodes.IsAllowanceCode(parseResult.SafeCode)
+                ? MarketCategoryInstrumentFailureCategory.AllowanceUnavailable
+                : exception.Category;
+        return new(
+            category,
+            exception.Retryable,
+            (int)statusCode,
+            operation,
+            parseResult.SafeCode,
+            parseResult.Outcome,
+            authenticationPhase);
+    }
+
     private static MarketCategoryInstrumentCollectionResult.Failed Failed(
         MarketCategoryInstrumentFailureCategory category,
         bool retryable = false,
@@ -669,13 +1603,39 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
         string? operation = null,
         int? httpStatusCode = null,
         int? expected = null,
-        int? actual = null) =>
+        int? actual = null,
+        string? providerErrorCode = null,
+        MarketCategoryProviderErrorCodeParseOutcome? providerErrorCodeParseOutcome = null,
+        MarketCategoryInstrumentAuthenticationPhase? authenticationPhase = null,
+        MarketCategoryInstrumentPageEvidence? initialPageEvidence = null,
+        MarketCategoryInstrumentPageEvidence? restartedPageEvidence = null,
+        int? httpRequestCount = null) =>
         new(new MarketCategoryInstrumentFailure(category, retryable, reason, pageNumber, rowIndex,
-            fieldName, operation, httpStatusCode, expected, actual));
+            fieldName, operation, httpStatusCode, expected, actual, providerErrorCode,
+            providerErrorCodeParseOutcome, authenticationPhase, initialPageEvidence,
+            restartedPageEvidence, httpRequestCount));
 
     private sealed record Session(string Cst, string SecurityToken);
 
-    private sealed record PageResult(IgInstrumentPageRaw? Body, bool Unauthorized);
+    private sealed record PageResult(
+        IgInstrumentPageRaw? Body,
+        bool Unauthorized,
+        int RequestOrdinal,
+        DiagnosticPageShape? DiagnosticShape = null,
+        bool JsonMalformed = false);
+
+    private sealed record DiagnosticPageShape(
+        int? RawArrayCount,
+        DiagnosticJsonValueKind MetadataValueKind,
+        DiagnosticJsonValueKind InstrumentsValueKind,
+        DiagnosticJsonValueKind PageNumberValueKind,
+        int? PageNumberValue,
+        DiagnosticJsonValueKind PageSizeValueKind,
+        int? PageSizeValue,
+        DiagnosticJsonValueKind TotalPagesValueKind,
+        int? TotalPagesValue,
+        DiagnosticJsonValueKind TotalResultsValueKind,
+        int? TotalResultsValue);
 
     private sealed record IgSessionResponseBody([property: JsonPropertyName("currentAccountId")] string? CurrentAccountId);
 
@@ -713,11 +1673,19 @@ internal sealed class IgMarketCategoryInstrumentsGateway(
     private sealed class ProviderRequestException(
         MarketCategoryInstrumentFailureCategory category,
         bool retryable,
-        int? httpStatusCode = null) : Exception
+        int? httpStatusCode = null,
+        string? operation = null,
+        string? providerErrorCode = null,
+        MarketCategoryProviderErrorCodeParseOutcome? providerErrorCodeParseOutcome = null,
+        MarketCategoryInstrumentAuthenticationPhase? authenticationPhase = null) : Exception
     {
         internal MarketCategoryInstrumentFailureCategory Category { get; } = category;
         internal bool Retryable { get; } = retryable;
         internal int? HttpStatusCode { get; } = httpStatusCode;
+        internal string? Operation { get; } = operation;
+        internal string? ProviderErrorCode { get; } = providerErrorCode;
+        internal MarketCategoryProviderErrorCodeParseOutcome? ProviderErrorCodeParseOutcome { get; } = providerErrorCodeParseOutcome;
+        internal MarketCategoryInstrumentAuthenticationPhase? AuthenticationPhase { get; } = authenticationPhase;
         internal string Reason => HttpStatusCode is not null
             ? Category == MarketCategoryInstrumentFailureCategory.Unauthorized ? "SessionUnauthorized"
                 : Category == MarketCategoryInstrumentFailureCategory.Timeout ? "Timeout" : "HttpStatus"

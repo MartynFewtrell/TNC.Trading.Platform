@@ -13,4 +13,7 @@ internal sealed record InstrumentCollectionConfigurationResponse(
     string? CollectionOutcome,
     string? SafeFailure,
     int? LeadInMinutes,
-    string? CapacityWarning);
+    string? CapacityWarning,
+    int? CategoryPageSize = 25,
+    int? RequestSpacingSeconds = 5,
+    int? CategoryPauseSeconds = 60);

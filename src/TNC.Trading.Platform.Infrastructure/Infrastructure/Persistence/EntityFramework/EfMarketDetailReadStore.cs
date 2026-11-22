@@ -54,7 +54,8 @@ internal sealed class EfMarketDetailReadStore(
             availability.Coverage.LastCompleteAtUtc,
             availability.Coverage.NextScheduledCheckUtc,
             instrument.SafeFailureCode ?? availability.Coverage.SafeFailureCode,
-            null);
+            ToLatestFailure(instrument),
+            instrument.SafeFailureCode);
     }
 
     public async Task<MarketDetailAvailabilityReadResult> ReadAvailabilityAsync(
@@ -145,7 +146,8 @@ internal sealed class EfMarketDetailReadStore(
                 counts,
                 lastCompleteAtUtc,
                 null,
-                safeFailureCode);
+                safeFailureCode,
+                run.UpdateGeneration);
         }).ToArray();
     }
 
@@ -212,7 +214,14 @@ internal sealed class EfMarketDetailReadStore(
                 .Where(item => item.RunId == currentRun.RunId
                     && item.BrokerEnvironmentId == environmentId
                     && epics.Contains(item.Epic))
-                .Select(item => new TargetState(item.Epic, item.Status, item.SafeFailureCode))
+                .Select(item => new TargetState(
+                    item.Epic,
+                    item.Status,
+                    item.SafeFailureCode,
+                    item.FailureKind,
+                    item.ProviderErrorCode,
+                    item.HttpStatus,
+                    item.Operation))
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
         var targetByEpic = targets.ToDictionary(item => item.Epic, StringComparer.Ordinal);
@@ -244,7 +253,8 @@ internal sealed class EfMarketDetailReadStore(
             null,
             aggregateStatus is MarketDetailRunStatus.Blocked or MarketDetailRunStatus.Incomplete or MarketDetailRunStatus.Superseded
                 ? currentRun?.SafeReasonCode
-                : null);
+                : null,
+            currentRun?.UpdateGeneration);
         var availability = epics.Select(epic =>
         {
             var member = membershipEpics.Contains(epic);
@@ -265,7 +275,13 @@ internal sealed class EfMarketDetailReadStore(
                 isFollowed,
                 targetStatus,
                 detailTimes.ContainsKey(epic) ? retrievedAtUtc : null,
-                failure);
+                failure,
+                target is null ? null : ParseFailureKind(target.FailureKind),
+                target is not null && MarketDetailProviderErrorCodes.IsAllowed(target.ProviderErrorCode)
+                    ? target.ProviderErrorCode
+                    : null,
+                target?.HttpStatus is >= 100 and <= 599 ? target.HttpStatus : null,
+                target?.Operation is "Session" or "Markets" ? target.Operation : null);
         }).ToArray();
 
         return new(
@@ -341,10 +357,12 @@ internal sealed class EfMarketDetailReadStore(
                 && item.ListingVersion == listing.SnapshotVersion)
             .OrderByDescending(item => item.Run.TradingDay)
             .ThenByDescending(item => item.Run.ScheduledSlot)
+            .ThenByDescending(item => item.Run.UpdateGeneration)
             .ThenByDescending(item => item.Run.UpdatedAtUtc)
             .Select(item => new CurrentDetailRun(
                 item.RunId,
                 item.CategoryCode,
+                item.Run.UpdateGeneration,
                 item.IsValidatedComplete,
                 item.Run.Status,
                 item.Run.UpdatedAtUtc,
@@ -378,10 +396,12 @@ internal sealed class EfMarketDetailReadStore(
             select sources
                 .OrderByDescending(item => item.Run.TradingDay)
                 .ThenByDescending(item => item.Run.ScheduledSlot)
+                .ThenByDescending(item => item.Run.UpdateGeneration)
                 .ThenByDescending(item => item.Run.UpdatedAtUtc)
                 .Select(item => new CurrentDetailRun(
                     item.RunId,
                     item.CategoryCode,
+                    item.Run.UpdateGeneration,
                     item.IsValidatedComplete,
                     item.Run.Status,
                     item.Run.UpdatedAtUtc,
@@ -443,6 +463,30 @@ internal sealed class EfMarketDetailReadStore(
             cancellationToken,
             requireExecutable: false).ConfigureAwait(false);
 
+    private static MarketDetailTargetFailureKind? ParseFailureKind(string? value) =>
+        Enum.TryParse<MarketDetailTargetFailureKind>(value, out var failureKind)
+            && Enum.IsDefined(failureKind)
+                ? failureKind
+                : null;
+
+    private static MarketDetailGatewayFailure? ToLatestFailure(MarketDetailAvailability availability)
+    {
+        if (availability.FailureKind is not { } failureKind)
+        {
+            return null;
+        }
+
+        return new(
+            failureKind,
+            false,
+            failureKind == MarketDetailTargetFailureKind.ProviderConfirmedUnavailable,
+            MarketDetailProviderErrorCodes.IsAllowed(availability.ProviderErrorCode)
+                ? availability.ProviderErrorCode
+                : null,
+            availability.HttpStatus is >= 100 and <= 599 ? availability.HttpStatus : null,
+            availability.Operation is "Session" or "Markets" ? availability.Operation : null);
+    }
+
     private static MarketDetailRunStatus ResolveAggregateStatus(CurrentDetailRun run, MarketDetailRunCounts counts)
     {
         if (!run.IsValidatedComplete)
@@ -489,12 +533,20 @@ internal sealed class EfMarketDetailReadStore(
     private sealed record CurrentDetailRun(
         Guid RunId,
         string CategoryCode,
+        int UpdateGeneration,
         bool IsValidatedComplete,
         string RunStatus,
         DateTimeOffset UpdatedAtUtc,
         string? SafeReasonCode);
 
-    private sealed record TargetState(string Epic, string Status, string? SafeFailureCode);
+    private sealed record TargetState(
+        string Epic,
+        string Status,
+        string? SafeFailureCode,
+        string? FailureKind,
+        string? ProviderErrorCode,
+        int? HttpStatus,
+        string? Operation);
 
     private sealed record TargetStatusCount(Guid RunId, string CategoryCode, string Status, int Count);
 }

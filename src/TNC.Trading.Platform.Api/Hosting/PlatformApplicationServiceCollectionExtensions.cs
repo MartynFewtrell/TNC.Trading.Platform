@@ -10,6 +10,7 @@ using TNC.Trading.Platform.Application.Features.GetPlatformStatus;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 using TNC.Trading.Platform.Application.Features.MarketDetails;
+using TNC.Trading.Platform.Application.Features.MarketNavigation;
 using TNC.Trading.Platform.Application.Features.ReconcilePlatformAuthentication;
 using TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent;
 using TNC.Trading.Platform.Application.Features.TriggerManualAuthRetry;
@@ -68,6 +69,8 @@ internal static class PlatformApplicationServiceCollectionExtensions
         services.AddScoped<GetMarketCategoriesWithInterestHandler>();
         services.AddScoped<RefreshMarketCategoriesHandler>();
         services.AddScoped<RefreshMarketCategoriesManuallyHandler>();
+        services.AddScoped<DiagnoseMarketCategoryCollectionHandler>();
+        services.AddScoped<RunMarketNavigationProbeHandler>();
         services.AddScoped<GetMarketCategoryInstrumentPageHandler>();
         services.AddScoped<GetMarketCategoryInstrumentStatusHandler>();
         services.AddScoped<GetMarketDetailHandler>();

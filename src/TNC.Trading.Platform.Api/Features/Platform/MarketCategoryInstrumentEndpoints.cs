@@ -34,6 +34,17 @@ internal static class MarketCategoryInstrumentEndpoints
             .ProducesProblem(StatusCodes.Status502BadGateway)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .ProducesProblem(StatusCodes.Status504GatewayTimeout);
+        platform.MapPost("/market-categories/{categoryCode}/collection-diagnostic", DiagnoseMarketCategoryCollectionAsync)
+            .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Operator)
+            .WithName("DiagnoseMarketCategoryCollection")
+            .WithSummary("Run an explicitly authorized bounded category diagnostic.")
+            .WithDescription("Collects sanitized, count-only evidence for one category under the shared request budget and execution lease. It never publishes a collection snapshot.")
+            .Produces<DiagnoseMarketCategoryCollectionHttpResponse>()
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         platform.MapGet("/market-categories/{categoryCode}/instruments", GetInstrumentPageAsync)
             .RequireAuthorization(PlatformAuthenticationDefaults.Policies.Viewer)
             .WithName("GetMarketCategoryInstruments")
@@ -101,6 +112,57 @@ internal static class MarketCategoryInstrumentEndpoints
     {
         var result = await handler.HandleAsync(new RefreshMarketCategoriesManuallyRequest(), cancellationToken).ConfigureAwait(false);
         return result.ToHttpResult();
+    }
+
+    private static async Task<IResult> DiagnoseMarketCategoryCollectionAsync(
+        string categoryCode,
+        MarketCategoryInstrumentDiagnosticRequest request,
+        DiagnoseMarketCategoryCollectionHandler handler,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(categoryCode)
+            || categoryCode.Length > 128
+            || categoryCode.Any(char.IsControl)
+            || request.MaximumHttpRequests is < 2 or > 103)
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(categoryCode)] = string.IsNullOrWhiteSpace(categoryCode)
+                    || categoryCode.Length > 128
+                    || categoryCode.Any(char.IsControl)
+                    ? ["Category code is invalid."]
+                    : [],
+                [nameof(request.MaximumHttpRequests)] = request.MaximumHttpRequests is < 2 or > 103
+                    ? ["MaximumHttpRequests must be between 2 and 103."]
+                    : []
+            }.Where(item => item.Value.Length > 0).ToDictionary(item => item.Key, item => item.Value));
+        }
+
+        var result = await handler.HandleAsync(
+            new(categoryCode, request.MaximumHttpRequests),
+            cancellationToken).ConfigureAwait(false);
+        return result.Status switch
+        {
+            DiagnoseMarketCategoryCollectionStatus.Completed => TypedResults.Ok(result.ToResponse()),
+            DiagnoseMarketCategoryCollectionStatus.CategoryNotFound => TypedResults.Problem(
+                "The requested category is not in the saved catalogue.",
+                statusCode: StatusCodes.Status404NotFound),
+            DiagnoseMarketCategoryCollectionStatus.Conflict => TypedResults.Problem(
+                "Another market-data execution is active; no diagnostic request was sent.",
+                statusCode: StatusCodes.Status409Conflict),
+            DiagnoseMarketCategoryCollectionStatus.Refused when result.SafeReasonCode == "RequestAllowanceInsufficient" =>
+                TypedResults.Problem(
+                    "The approved request allowance cannot cover the requested diagnostic ceiling.",
+                    statusCode: StatusCodes.Status429TooManyRequests),
+            DiagnoseMarketCategoryCollectionStatus.Refused when result.SafeReasonCode == "UnsupportedEnvironment" =>
+                TypedResults.Problem(
+                    "The applied market-data environment is unsupported.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable),
+            DiagnoseMarketCategoryCollectionStatus.Refused => TypedResults.Problem(
+                $"The diagnostic was refused ({result.SafeReasonCode ?? "Unavailable"}); no evidence was collected.",
+                statusCode: StatusCodes.Status409Conflict),
+            _ => throw new InvalidOperationException("Unknown category diagnostic status.")
+        };
     }
 
     private static async Task<IResult> GetInstrumentPageAsync(

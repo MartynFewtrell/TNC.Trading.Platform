@@ -9,6 +9,47 @@ namespace TNC.Trading.Platform.Api.UnitTests;
 public sealed class MarketDetailEndpointMappingTests
 {
     /// <summary>
+    /// Trace: saved market-detail failure diagnostics.
+    /// Verifies: a target's allow-listed failure code, HTTP status, and fixed operation survive API mapping independently of category coverage.
+    /// Expected: the Viewer response contains the exact saved target diagnostics while the coverage failure remains unchanged.
+    /// Why: operators need to distinguish a known provider allowance from unclassified access denial without inferring a cause from category state.
+    /// </summary>
+    [Fact]
+    public void ToHttpResult_ShouldPreserveSavedTargetFailureDiagnostics_WhenAllowanceWasConfirmed()
+    {
+        var response = FoundResponse(new(
+            true,
+            true,
+            4,
+            new DateTimeOffset(2026, 9, 25, 12, 0, 0, TimeSpan.Zero),
+            true,
+            MarketDetailTargetStatus.NotCollected,
+            null,
+            MarketDetailRunStatus.Incomplete,
+            new(1, 0, 0),
+            null,
+            null,
+            "CategoryFailure",
+            new(
+                MarketDetailTargetFailureKind.AllowanceUnavailable,
+                false,
+                false,
+                "error.public-api.exceeded-application-allowance",
+                403,
+                "Session"),
+            "AllowanceUnavailable"));
+
+        var result = Assert.IsType<Ok<MarketDetailResponse>>(response.ToHttpResult());
+
+        Assert.Equal("CategoryFailure", result.Value!.Coverage.SafeFailureCode);
+        Assert.Equal("AllowanceUnavailable", result.Value.FailureKind);
+        Assert.Equal("error.public-api.exceeded-application-allowance", result.Value.ProviderErrorCode);
+        Assert.Equal(403, result.Value.HttpStatus);
+        Assert.Equal("Session", result.Value.Operation);
+        Assert.Equal("AllowanceUnavailable", result.Value.TargetFailureCode);
+    }
+
+    /// <summary>
     /// Trace: Market Details Work Item 5, steps 1 and 2.
     /// Verifies: a known current EPIC without an observation returns a successful, explicit NotCollected response with separate listing provenance.
     /// Expected: HTTP 200 includes the current listing time, null detail observation, and independent aggregate coverage.

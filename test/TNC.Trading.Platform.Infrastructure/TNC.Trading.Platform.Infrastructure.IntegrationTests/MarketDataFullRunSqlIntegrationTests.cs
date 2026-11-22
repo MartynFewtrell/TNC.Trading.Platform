@@ -229,6 +229,7 @@ public sealed class MarketDataFullRunSqlIntegrationTests(SqlServerDatabaseFixtur
                 EndpointProfile = sourceLease.EndpointProfile,
                 TradingDay = sourceLease.TradingDay,
                 ScheduledSlot = 0,
+                UpdateGeneration = 1,
                 CatalogueRevision = 1,
                 InterestRevision = sourceLease.InterestRevision,
                 ScheduleRevision = sourceLease.ScheduleRevision,
@@ -395,6 +396,7 @@ public sealed class MarketDataFullRunSqlIntegrationTests(SqlServerDatabaseFixtur
                 EndpointProfile = closingSourceLease.EndpointProfile,
                 TradingDay = closingSourceLease.TradingDay,
                 ScheduledSlot = 1,
+                UpdateGeneration = 1,
                 CatalogueRevision = 1,
                 InterestRevision = closingSourceLease.InterestRevision,
                 ScheduleRevision = closingSourceLease.ScheduleRevision,
@@ -573,7 +575,8 @@ public sealed class MarketDataFullRunSqlIntegrationTests(SqlServerDatabaseFixtur
         childLease = childLease with { Fence = Assert.IsType<long>(fence) };
         var requestBudget = new EfMarketCategoryInstrumentRequestBudget(
             cycleStore,
-            TimeProvider.System);
+            TimeProvider.System,
+            fullRunStore: fullRunStore);
         var budgetContext = new MarketCategoryInstrumentRequestBudgetContext(
             childLease.TradingDay,
             childLease.ScheduledSlot,

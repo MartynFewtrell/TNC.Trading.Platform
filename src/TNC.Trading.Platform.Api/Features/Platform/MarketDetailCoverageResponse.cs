@@ -10,4 +10,5 @@ internal sealed record MarketDetailCoverageResponse(
     int? OutstandingCount,
     DateTimeOffset? LastCompleteAtUtc,
     DateTimeOffset? NextScheduledCheckUtc,
-    string? SafeFailureCode);
+    string? SafeFailureCode,
+    int? UpdateGeneration = null);

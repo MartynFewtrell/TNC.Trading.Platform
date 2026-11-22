@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.AspNetCore.DataProtection;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.BrokerEnvironments;
@@ -47,6 +49,62 @@ public sealed class MarketDetailSqlIntegrationTests(SqlServerDatabaseFixture fix
         Assert.Equal(1, targetStatusIndexCount);
         Assert.Equal(1, uniqueSlotIndexCount);
         Assert.Equal(1, epicCollationCount);
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery Phase 4. Verifies existing single-slot run and source history is backfilled into generation one.
+    /// Expected: the existing run and its source retain their data and both receive generation one before the expanded unique index is applied.
+    /// Why: the additive generation migration must preserve deployed provenance and make it addressable without rewriting history.
+    /// </summary>
+    [Fact]
+    public async Task MigrateAsync_ShouldBackfillExistingRunAndSourceToGenerationOne()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        var migrator = context.Database.GetService<IMigrator>();
+        await migrator.MigrateAsync("20261004142853_AddIgProviderDenialCooldowns", fixture.CancellationToken);
+        var environmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(context, fixture.CancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var tradingDay = DateOnly.FromDateTime(now.UtcDateTime);
+        await SeedListingsAsync(context, environmentId, now, new Dictionary<string, string[]>
+        {
+            ["CAT-A"] = ["CS.D.ADAUSD.CFD.IP"]
+        });
+        var listing = await context.MarketCategoryInstrumentCatalogStates.SingleAsync(
+            item => item.BrokerEnvironmentId == environmentId && item.CategoryCode == "CAT-A",
+            fixture.CancellationToken);
+        var runId = Guid.NewGuid();
+        await context.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO [MarketDetailCollectionRuns]
+                ([RunId], [BrokerEnvironmentId], [EndpointProfile], [TradingDay], [ScheduledSlot],
+                 [CatalogueRevision], [InterestRevision], [ScheduleRevision], [Status], [ExpectedCount],
+                 [CompletedCount], [ExcludedCount], [IsUniverseStaged], [WindowEndUtc], [LeaseOwner],
+                 [LeaseFence], [LeaseExpiresAtUtc], [CreatedAtUtc], [UpdatedAtUtc], [SafeReasonCode])
+            VALUES
+                ({runId}, {environmentId}, {"IgDemo"}, {tradingDay}, {0}, {1L}, {1L}, {1L}, {"Complete"},
+                 {1}, {1}, {0}, {true}, {now.AddMinutes(10)}, {null}, {0L}, {null}, {now}, {now}, {null});
+            INSERT INTO [MarketDetailRunSources]
+                ([RunId], [BrokerEnvironmentId], [CategoryCode], [ListingCollectionId], [ListingVersion],
+                 [IsValidatedComplete], [IsFresh])
+            VALUES
+                ({runId}, {environmentId}, {"CAT-A"}, {listing.CollectionId}, {listing.SnapshotVersion}, {true}, {true});
+            """,
+            fixture.CancellationToken);
+
+        await migrator.MigrateAsync(cancellationToken: fixture.CancellationToken);
+
+        await using var verificationContext = fixture.CreateDbContext();
+        var run = await verificationContext.MarketDetailCollectionRuns.SingleAsync(
+            item => item.RunId == runId,
+            fixture.CancellationToken);
+        var source = await verificationContext.MarketDetailRunSources.SingleAsync(
+            item => item.RunId == runId,
+            fixture.CancellationToken);
+        Assert.Equal(1, run.UpdateGeneration);
+        Assert.Equal("Complete", run.Status);
+        Assert.Equal(1, run.CompletedCount);
+        Assert.Equal(1, source.UpdateGeneration);
+        Assert.Equal(listing.CollectionId, source.ListingCollectionId);
     }
 
     /// <summary>
@@ -392,6 +450,266 @@ public sealed class MarketDetailSqlIntegrationTests(SqlServerDatabaseFixture fix
     }
 
     /// <summary>
+    /// Trace: IG market-data recovery Phase 4. Reproduces same-slot acquisition after a listing and its catalogue, interest, and schedule provenance change.
+    /// Expected: the prior successful run remains historical, the changed source acquires generation two, and current readers expose only the new generation.
+    /// Why: a legitimate same-slot update must be eligible without erasing historical provenance or reusing the prior lease fence.
+    /// </summary>
+    [Fact]
+    public async Task TryAcquireAsync_ShouldCreateNewGenerationAndRetainHistory_WhenListingAndSourceProvenanceChanges()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var context = fixture.CreateDbContext();
+        await context.Database.MigrateAsync(fixture.CancellationToken);
+        var environmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(context, fixture.CancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var tradingDay = DateOnly.FromDateTime(now.UtcDateTime);
+        var key = new MarketDetailRunKey(BrokerEnvironmentKind.Demo, tradingDay, 0);
+        await SeedListingsAsync(context, environmentId, now, new Dictionary<string, string[]>
+        {
+            ["CAT-A"] = ["CS.D.ADAUSD.CFD.IP"]
+        });
+        await SeedCompletedCycleAsync(context, environmentId, tradingDay);
+
+        var store = CreateStore(context, environmentId, new ManualTimeProvider(now));
+        var sourceReader = new EfMarketDetailListingSourceReader(context);
+        var initialSources = await sourceReader.ReadAsync(
+            key,
+            scheduleRevision: 1,
+            "IgDemo",
+            fixture.CancellationToken);
+        var firstLease = await store.TryAcquireAsync(
+            key,
+            initialSources.Revisions,
+            "IgDemo",
+            Guid.NewGuid(),
+            now,
+            TimeSpan.FromMinutes(5),
+            now.AddMinutes(10),
+            fixture.CancellationToken);
+        Assert.NotNull(firstLease);
+        var firstUniverse = new MarketDetailUniversePolicy().Freeze(
+            initialSources.Sources,
+            prerequisitesValidated: true,
+            hasSelectedCurrentCategories: true);
+        Assert.Equal(
+            MarketDetailRunStatus.Running,
+            await store.StageUniverseAsync(firstLease!, firstUniverse, fixture.CancellationToken));
+        var firstTarget = Assert.Single(await store.ReadOutstandingTargetsAsync(firstLease!, 50, fixture.CancellationToken));
+        var firstObservation = CreateObservation(firstTarget.Epic, now.AddSeconds(10));
+        await store.SaveValidatedAsync(firstLease!, firstObservation, fixture.CancellationToken);
+        Assert.Equal(
+            MarketDetailRunStatus.Complete,
+            await store.FinalizeAsync(firstLease!, true, true, true, false, fixture.CancellationToken));
+
+        await SeedListingForSlotAsync(
+            context,
+            environmentId,
+            now.AddMinutes(1),
+            tradingDay,
+            0,
+            "CAT-A",
+            "CS.D.BTCUSD.CFD.IP",
+            catalogueRevision: 2);
+        var catalogue = await context.MarketCategoryCatalogStates.SingleAsync(
+            item => item.BrokerEnvironmentId == environmentId,
+            fixture.CancellationToken);
+        catalogue.Revision = 2;
+        var interest = await context.MarketCategoryInterestStates.SingleAsync(
+            item => item.BrokerEnvironmentId == environmentId,
+            fixture.CancellationToken);
+        interest.Revision = 2;
+        var cycle = await context.InstrumentCollectionCycleStates.SingleAsync(
+            item => item.BrokerEnvironmentId == environmentId
+                && item.TradingDay == tradingDay
+                && item.ScheduledSlot == 0,
+            fixture.CancellationToken);
+        cycle.ScheduleRevision = 2;
+        await context.SaveChangesAsync(fixture.CancellationToken);
+
+        var updatedSources = await sourceReader.ReadAsync(
+            key,
+            scheduleRevision: 2,
+            "IgDemo",
+            fixture.CancellationToken);
+        Assert.True(updatedSources.PrerequisitesValidated);
+        Assert.Equal(new MarketDetailRevisions(2, 2, 2), updatedSources.Revisions);
+        Assert.Equal(["CS.D.BTCUSD.CFD.IP"], Assert.Single(updatedSources.Sources).Epics);
+
+        var secondLease = await store.TryAcquireAsync(
+            key,
+            updatedSources.Revisions,
+            "IgDemo",
+            Guid.NewGuid(),
+            now.AddMinutes(1),
+            TimeSpan.FromMinutes(5),
+            now.AddMinutes(10),
+            fixture.CancellationToken);
+        Assert.NotNull(secondLease);
+        Assert.Equal(1, firstLease!.UpdateGeneration);
+        Assert.Equal(2, secondLease!.UpdateGeneration);
+        Assert.NotEqual(firstLease.RunId, secondLease.RunId);
+        Assert.Equal(
+            MarketDetailRunStatus.Running,
+            await store.StageUniverseAsync(
+                secondLease,
+                new MarketDetailUniversePolicy().Freeze(
+                    updatedSources.Sources,
+                    prerequisitesValidated: true,
+                    hasSelectedCurrentCategories: true),
+                fixture.CancellationToken));
+        var secondTarget = Assert.Single(await store.ReadOutstandingTargetsAsync(secondLease, 50, fixture.CancellationToken));
+        Assert.Equal("CS.D.BTCUSD.CFD.IP", secondTarget.Epic);
+        await store.SaveValidatedAsync(secondLease, CreateObservation(secondTarget.Epic, now.AddMinutes(1).AddSeconds(10)), fixture.CancellationToken);
+        Assert.Equal(
+            MarketDetailRunStatus.Complete,
+            await store.FinalizeAsync(secondLease, true, true, true, false, fixture.CancellationToken));
+
+        await using var verificationContext = fixture.CreateDbContext();
+        var runs = await verificationContext.MarketDetailCollectionRuns
+            .OrderBy(item => item.UpdateGeneration)
+            .ToArrayAsync(fixture.CancellationToken);
+        Assert.Equal([1, 2], runs.Select(item => item.UpdateGeneration));
+        Assert.Equal([firstLease.RunId, secondLease.RunId], runs.Select(item => item.RunId));
+        Assert.All(runs, item => Assert.Equal("Complete", item.Status));
+        Assert.Equal(new MarketDetailRevisions(1, 1, 1), new(
+            runs[0].CatalogueRevision,
+            runs[0].InterestRevision,
+            runs[0].ScheduleRevision));
+        Assert.Equal(new MarketDetailRevisions(2, 2, 2), new(
+            runs[1].CatalogueRevision,
+            runs[1].InterestRevision,
+            runs[1].ScheduleRevision));
+        var sourceGenerations = await verificationContext.MarketDetailRunSources
+            .OrderBy(item => item.UpdateGeneration)
+            .Select(item => item.UpdateGeneration)
+            .ToArrayAsync(fixture.CancellationToken);
+        Assert.Equal([1, 2], sourceGenerations);
+        var observations = await verificationContext.MarketDetailObservations
+            .OrderBy(item => item.RunId)
+            .Select(item => new { item.RunId, item.Epic })
+            .ToArrayAsync(fixture.CancellationToken);
+        Assert.Equal(2, observations.Length);
+        Assert.Contains(observations, item => item.RunId == firstLease.RunId && item.Epic == "CS.D.ADAUSD.CFD.IP");
+        Assert.Contains(observations, item => item.RunId == secondLease.RunId && item.Epic == "CS.D.BTCUSD.CFD.IP");
+
+        var coverage = Assert.Single(await new EfMarketDetailReadStore(verificationContext)
+            .ReadCategoryCoverageAsync(BrokerEnvironmentKind.Demo, fixture.CancellationToken));
+        Assert.Equal(2, coverage.UpdateGeneration);
+        Assert.Equal(MarketDetailRunStatus.Complete, coverage.AggregateStatus);
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery Phase 4. Verifies concurrent same-slot acquisition creates one generation for changed provenance.
+    /// Expected: exactly one contender owns generation two while the original run is superseded and no duplicate generation is inserted.
+    /// Why: recovery must remain safe when multiple application replicas observe the same newly eligible source simultaneously.
+    /// </summary>
+    [Fact]
+    public async Task TryAcquireAsync_ShouldCreateSingleGeneration_WhenProvenanceChangesConcurrently()
+    {
+        await fixture.ResetDatabaseAsync();
+        await using var seedContext = fixture.CreateDbContext();
+        await seedContext.Database.MigrateAsync(fixture.CancellationToken);
+        var environmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(seedContext, fixture.CancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var tradingDay = DateOnly.FromDateTime(now.UtcDateTime);
+        var key = new MarketDetailRunKey(BrokerEnvironmentKind.Demo, tradingDay, 0);
+        await SeedListingsAsync(seedContext, environmentId, now, new Dictionary<string, string[]>
+        {
+            ["CAT-A"] = ["CS.D.ADAUSD.CFD.IP"]
+        });
+        await SeedCompletedCycleAsync(seedContext, environmentId, tradingDay);
+        var clock = new ManualTimeProvider(now);
+        var initialSnapshot = await new EfMarketDetailListingSourceReader(seedContext).ReadAsync(
+            key,
+            scheduleRevision: 1,
+            "IgDemo",
+            fixture.CancellationToken);
+        var firstLease = await CreateStore(seedContext, environmentId, clock).TryAcquireAsync(
+            key,
+            initialSnapshot.Revisions,
+            "IgDemo",
+            Guid.NewGuid(),
+            now,
+            TimeSpan.FromMinutes(5),
+            now.AddMinutes(10),
+            fixture.CancellationToken);
+        Assert.NotNull(firstLease);
+
+        await SeedListingForSlotAsync(
+            seedContext,
+            environmentId,
+            now.AddMinutes(1),
+            tradingDay,
+            0,
+            "CAT-A",
+            "CS.D.BTCUSD.CFD.IP",
+            catalogueRevision: 2);
+        (await seedContext.MarketCategoryCatalogStates.SingleAsync(
+            item => item.BrokerEnvironmentId == environmentId,
+            fixture.CancellationToken)).Revision = 2;
+        (await seedContext.MarketCategoryInterestStates.SingleAsync(
+            item => item.BrokerEnvironmentId == environmentId,
+            fixture.CancellationToken)).Revision = 2;
+        (await seedContext.InstrumentCollectionCycleStates.SingleAsync(
+            item => item.BrokerEnvironmentId == environmentId
+                && item.TradingDay == tradingDay
+                && item.ScheduledSlot == 0,
+            fixture.CancellationToken)).ScheduleRevision = 2;
+        await seedContext.SaveChangesAsync(fixture.CancellationToken);
+
+        await using var firstContext = fixture.CreateDbContext();
+        await using var secondContext = fixture.CreateDbContext();
+        var firstReader = new EfMarketDetailListingSourceReader(firstContext);
+        var changedSnapshot = await firstReader.ReadAsync(
+            key,
+            scheduleRevision: 2,
+            "IgDemo",
+            fixture.CancellationToken);
+        var requestTime = now.AddMinutes(1);
+        var firstAttempt = CreateStore(firstContext, environmentId, clock).TryAcquireAsync(
+            key,
+            changedSnapshot.Revisions,
+            "IgDemo",
+            Guid.NewGuid(),
+            requestTime,
+            TimeSpan.FromMinutes(5),
+            now.AddMinutes(10),
+            fixture.CancellationToken);
+        var secondAttempt = CreateStore(secondContext, environmentId, clock).TryAcquireAsync(
+            key,
+            changedSnapshot.Revisions,
+            "IgDemo",
+            Guid.NewGuid(),
+            requestTime,
+            TimeSpan.FromMinutes(5),
+            now.AddMinutes(10),
+            fixture.CancellationToken);
+        var results = await Task.WhenAll(firstAttempt, secondAttempt);
+
+        var acquired = Assert.Single(results, item => item is not null);
+        Assert.NotNull(acquired);
+        Assert.Equal(2, acquired!.UpdateGeneration);
+        await using var verificationContext = fixture.CreateDbContext();
+        var runs = await verificationContext.MarketDetailCollectionRuns
+            .OrderBy(item => item.UpdateGeneration)
+            .ToArrayAsync(fixture.CancellationToken);
+        Assert.Equal([1, 2], runs.Select(item => item.UpdateGeneration));
+        Assert.Equal("Superseded", runs[0].Status);
+        Assert.Equal("Collecting", runs[1].Status);
+        Assert.Equal(firstLease!.RunId, runs[0].RunId);
+        Assert.Equal(acquired.RunId, runs[1].RunId);
+        await using var staleContext = fixture.CreateDbContext();
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            CreateStore(staleContext, environmentId, clock).StageUniverseAsync(
+                firstLease,
+                new MarketDetailUniversePolicy().Freeze(
+                    initialSnapshot.Sources,
+                    prerequisitesValidated: true,
+                    hasSelectedCurrentCategories: true),
+                fixture.CancellationToken));
+    }
+
+    /// <summary>
     /// Trace: Market Details Work Item 3, step 2. Verifies a live fenced detail lease consumes the existing environment/day allowance even after the listing cycle lease has ended.
     /// Expected: detail requests increment the same listing-cycle counter, a request with a stale detail fence is rejected, and the configured daily ceiling is never exceeded.
     /// Why: details must not bypass the operator-approved shared allowance or depend on reusing an expired listing lease.
@@ -433,6 +751,7 @@ public sealed class MarketDetailSqlIntegrationTests(SqlServerDatabaseFixture fix
             fixture.CancellationToken));
         var requestContext = new MarketDetailRequestBudgetContext(
             lease.RunId,
+            lease.UpdateGeneration,
             BrokerEnvironmentKind.Demo,
             day,
             0,
@@ -448,6 +767,13 @@ public sealed class MarketDetailSqlIntegrationTests(SqlServerDatabaseFixture fix
             cycleStore, new FakeScheduleGuard(isActive: true), clock);
 
         Assert.True(await requestBudget.IsExecutionContextStillActiveAsync(requestContext, fixture.CancellationToken));
+        Assert.False(await requestBudget.IsExecutionContextStillActiveAsync(
+            requestContext with { UpdateGeneration = requestContext.UpdateGeneration + 1 },
+            fixture.CancellationToken));
+        Assert.False(await cycleStore.TryConsumeDetailRequestBudgetAsync(
+            requestContext with { UpdateGeneration = requestContext.UpdateGeneration + 1 },
+            now,
+            fixture.CancellationToken));
         Assert.True(await requestBudget.TryReserveAsync(requestContext, fixture.CancellationToken));
         var closedScheduleBudget = new EfMarketDetailRequestBudget(
             cycleStore, new FakeScheduleGuard(isActive: false), clock);
@@ -517,6 +843,7 @@ public sealed class MarketDetailSqlIntegrationTests(SqlServerDatabaseFixture fix
 
         var requestContext = new MarketDetailRequestBudgetContext(
             lease!.RunId,
+            lease.UpdateGeneration,
             BrokerEnvironmentKind.Demo,
             day,
             0,
@@ -643,7 +970,13 @@ public sealed class MarketDetailSqlIntegrationTests(SqlServerDatabaseFixture fix
             fixture.CancellationToken);
         var failure = MarketDetailGatewayResult.Failed(
             epic,
-            new(MarketDetailTargetFailureKind.TransientProviderFailure, true, false));
+            new(
+                MarketDetailTargetFailureKind.TransientProviderFailure,
+                true,
+                false,
+                null,
+                503,
+                "Markets"));
 
         for (var attempt = 1; attempt <= 3; attempt++)
         {
@@ -664,6 +997,84 @@ public sealed class MarketDetailSqlIntegrationTests(SqlServerDatabaseFixture fix
             fixture.CancellationToken);
         Assert.Equal(3, persistedTarget.Attempts);
         Assert.Equal("TransientProviderFailure", persistedTarget.SafeFailureCode);
+        Assert.Equal("TransientProviderFailure", persistedTarget.FailureKind);
+        Assert.Null(persistedTarget.ProviderErrorCode);
+
+        await store.RecordFailureAsync(
+            lease!,
+            MarketDetailGatewayResult.Failed(
+                epic,
+                new(
+                    MarketDetailTargetFailureKind.AllowanceUnavailable,
+                    false,
+                    false,
+                    "error.public-api.exceeded-application-allowance",
+                    403,
+                    "Session")),
+            now.AddSeconds(4),
+            fixture.CancellationToken);
+        persistedTarget = await context.MarketDetailRunTargets.SingleAsync(
+            item => item.RunId == lease!.RunId && item.Epic == epic,
+            fixture.CancellationToken);
+        Assert.Equal(4, persistedTarget.Attempts);
+        Assert.Equal("AllowanceUnavailable", persistedTarget.SafeFailureCode);
+        Assert.Equal("AllowanceUnavailable", persistedTarget.FailureKind);
+        Assert.Equal("error.public-api.exceeded-application-allowance", persistedTarget.ProviderErrorCode);
+        Assert.Equal(403, persistedTarget.HttpStatus);
+        Assert.Equal("Session", persistedTarget.Operation);
+
+        await using var reloadContext = fixture.CreateDbContext();
+        var reader = new EfMarketDetailReadStore(reloadContext, new FakeAppliedEnvironmentResolver(environmentId));
+        var savedStatus = await reader.ReadAsync(
+            new(BrokerEnvironmentKind.Demo, "CAT-A", epic, 1),
+            fixture.CancellationToken);
+        Assert.Equal(MarketDetailTargetFailureKind.AllowanceUnavailable, savedStatus.LatestFailure?.Kind);
+        Assert.Equal("error.public-api.exceeded-application-allowance", savedStatus.LatestFailure?.ProviderErrorCode);
+        Assert.Equal(403, savedStatus.LatestFailure?.HttpStatus);
+        Assert.Equal("Session", savedStatus.LatestFailure?.Operation);
+
+        await store.RecordFailureAsync(
+            lease!,
+            MarketDetailGatewayResult.Failed(
+                epic,
+                new(
+                    MarketDetailTargetFailureKind.Unauthorized,
+                    false,
+                    false,
+                    "password-secret",
+                    403,
+                    "Session")),
+            now.AddSeconds(5),
+            fixture.CancellationToken);
+        reloadContext.ChangeTracker.Clear();
+        var redactedTarget = await reloadContext.MarketDetailRunTargets.SingleAsync(
+            item => item.RunId == lease!.RunId && item.Epic == epic,
+            fixture.CancellationToken);
+        Assert.Equal("Unauthorized", redactedTarget.FailureKind);
+        Assert.Null(redactedTarget.ProviderErrorCode);
+        Assert.Equal(403, redactedTarget.HttpStatus);
+        Assert.Equal("Session", redactedTarget.Operation);
+        Assert.DoesNotContain(
+            "password-secret",
+            string.Join(
+                "|",
+                redactedTarget.SafeFailureCode,
+                redactedTarget.FailureKind,
+                redactedTarget.ProviderErrorCode,
+                redactedTarget.Operation),
+            StringComparison.Ordinal);
+
+        redactedTarget.FailureKind = null;
+        redactedTarget.ProviderErrorCode = null;
+        redactedTarget.HttpStatus = null;
+        redactedTarget.Operation = null;
+        await reloadContext.SaveChangesAsync(fixture.CancellationToken);
+        reloadContext.ChangeTracker.Clear();
+        var legacyStatus = await reader.ReadAsync(
+            new(BrokerEnvironmentKind.Demo, "CAT-A", epic, 1),
+            fixture.CancellationToken);
+        Assert.Equal("Unauthorized", legacyStatus.TargetFailureCode);
+        Assert.Null(legacyStatus.LatestFailure);
     }
 
     /// <summary>
@@ -884,12 +1295,12 @@ public sealed class MarketDetailSqlIntegrationTests(SqlServerDatabaseFixture fix
     }
 
     /// <summary>
-    /// Trace: Market Details Work Item 2. Verifies partial success retains one observation and remains incomplete, then lease expiry fences off the old owner and a changed revision supersedes the resumed run.
-    /// Expected: only the current fence may publish; the partial observation remains immutable and counted after supersession.
+    /// Trace: Market Details Work Item 2 and IG market-data recovery Phase 4. Verifies partial success remains immutable, lease expiry fences the old owner, and changed provenance starts a new generation.
+    /// Expected: generation two is acquired while generation one's partial observation and pending target remain attached to its superseded history.
     /// Why: restarts and revision drift must not discard valid history or allow a late worker to publish.
     /// </summary>
     [Fact]
-    public async Task RunStore_ShouldPreservePartialHistoryAndFenceStaleOwner_WhenLeaseExpires()
+    public async Task RunStore_ShouldPreservePartialHistoryAndAdvanceGeneration_WhenLeaseExpiresAndRevisionChanges()
     {
         await fixture.ResetDatabaseAsync();
         await using var context = fixture.CreateDbContext();
@@ -915,6 +1326,7 @@ public sealed class MarketDetailSqlIntegrationTests(SqlServerDatabaseFixture fix
         clock.Advance(TimeSpan.FromMinutes(1));
         var resumedLease = await AcquireAsync(store, clock.GetUtcNow(), day, TimeSpan.FromSeconds(30), windowEnd);
         Assert.NotNull(resumedLease);
+        Assert.Equal(firstLease!.UpdateGeneration, resumedLease!.UpdateGeneration);
         Assert.True(resumedLease!.Fence > firstLease!.Fence);
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             store.SaveValidatedAsync(firstLease, CreateObservation("EPIC-B", clock.GetUtcNow()), fixture.CancellationToken));
@@ -931,13 +1343,20 @@ public sealed class MarketDetailSqlIntegrationTests(SqlServerDatabaseFixture fix
             TimeSpan.FromMinutes(1),
             windowEnd,
             fixture.CancellationToken);
-        Assert.Null(changedRevisionsLease);
+        Assert.NotNull(changedRevisionsLease);
+        Assert.Equal(2, changedRevisionsLease!.UpdateGeneration);
 
         await using var verificationContext = fixture.CreateDbContext();
-        var run = await verificationContext.MarketDetailCollectionRuns.SingleAsync(fixture.CancellationToken);
-        Assert.Equal("Superseded", run.Status);
+        var runs = await verificationContext.MarketDetailCollectionRuns
+            .OrderBy(item => item.UpdateGeneration)
+            .ToArrayAsync(fixture.CancellationToken);
+        Assert.Equal([1, 2], runs.Select(item => item.UpdateGeneration));
+        Assert.Equal("Superseded", runs[0].Status);
+        Assert.Equal("Collecting", runs[1].Status);
         Assert.Equal(1, await verificationContext.MarketDetailObservations.CountAsync(fixture.CancellationToken));
-        Assert.Equal("Pending", (await verificationContext.MarketDetailRunTargets.SingleAsync(item => item.Epic == "EPIC-B", fixture.CancellationToken)).Status);
+        Assert.Equal("Pending", (await verificationContext.MarketDetailRunTargets.SingleAsync(
+            item => item.RunId == firstLease.RunId && item.Epic == "EPIC-B",
+            fixture.CancellationToken)).Status);
     }
 
     /// <summary>
@@ -1160,7 +1579,8 @@ public sealed class MarketDetailSqlIntegrationTests(SqlServerDatabaseFixture fix
         DateOnly tradingDay,
         int slot,
         string categoryCode,
-        string epic)
+        string epic,
+        long catalogueRevision = 1)
     {
         var collectionId = Guid.NewGuid();
         var collection = new MarketCategoryInstrumentCollectionRunEntity
@@ -1169,7 +1589,7 @@ public sealed class MarketDetailSqlIntegrationTests(SqlServerDatabaseFixture fix
             BrokerEnvironmentId = environmentId,
             EndpointProfile = "IgDemo",
             CategoryCode = categoryCode,
-            CategorySnapshotRevision = 1,
+            CategorySnapshotRevision = catalogueRevision,
             SnapshotVersion = 2,
             TradingDay = tradingDay,
             ScheduledSlot = slot,

@@ -9,6 +9,10 @@ internal sealed class MarketDetailRunTargetEntity
     public int Attempts { get; set; }
     public bool CanRetry { get; set; } = true;
     public string? SafeFailureCode { get; set; }
+    public string? FailureKind { get; set; }
+    public string? ProviderErrorCode { get; set; }
+    public int? HttpStatus { get; set; }
+    public string? Operation { get; set; }
     public string? ExclusionEvidenceCode { get; set; }
     public DateTimeOffset? ExcludedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }

@@ -13,4 +13,9 @@ internal interface IMarketDetailRequestBudget
     Task<bool> TryReserveAsync(
         MarketDetailRequestBudgetContext context,
         CancellationToken cancellationToken);
+
+    Task<bool> RenewAsync(
+        MarketDetailRequestBudgetContext context,
+        CancellationToken cancellationToken) =>
+        IsExecutionContextStillActiveAsync(context, cancellationToken);
 }

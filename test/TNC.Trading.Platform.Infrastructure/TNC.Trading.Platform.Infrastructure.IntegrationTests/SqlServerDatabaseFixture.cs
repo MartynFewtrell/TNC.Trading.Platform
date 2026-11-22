@@ -101,6 +101,7 @@ public sealed class SqlServerDatabaseFixture : IAsyncLifetime
             DROP TABLE IF EXISTS [MarketDataFullRunCategories];
             DROP TABLE IF EXISTS [MarketDataFullRunIntents];
             DROP TABLE IF EXISTS [MarketDataFullRuns];
+            DROP TABLE IF EXISTS [IgProviderCooldowns];
             DROP TABLE IF EXISTS [IgProviderRateReservations];
             DROP TABLE IF EXISTS [MarketCategoryInstrumentObservations];
             DROP TABLE IF EXISTS [MarketCategoryInstruments];

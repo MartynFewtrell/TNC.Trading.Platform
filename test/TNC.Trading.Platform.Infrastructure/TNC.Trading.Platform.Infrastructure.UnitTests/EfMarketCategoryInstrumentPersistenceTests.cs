@@ -89,7 +89,14 @@ public sealed class EfMarketCategoryInstrumentPersistenceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => store.ReadAsync(BrokerEnvironmentKind.Demo, CancellationToken.None));
         await store.InitializeDefaultAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
 
-        var frequency = new MarketCategoryInstrumentFrequency(1, 3, new DateOnly(2026, 9, 25), 20);
+        var frequency = new MarketCategoryInstrumentFrequency(
+            1,
+            3,
+            new DateOnly(2026, 9, 25),
+            20,
+            CategoryPageSize: 42,
+            RequestSpacingSeconds: 7,
+            CategoryPauseSeconds: 90);
         await store.SaveAsync(BrokerEnvironmentKind.Demo, frequency, CancellationToken.None);
 
         Assert.Equal(frequency with { ConfigurationVersion = 2 }, await store.ReadAsync(BrokerEnvironmentKind.Demo, CancellationToken.None));

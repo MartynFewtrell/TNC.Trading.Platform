@@ -145,12 +145,30 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         {
             client.BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/");
         });
-        services.AddHttpClient<IMarketCategoriesGateway, IgMarketCategoriesGateway>();
-        services.AddHttpClient<IMarketCategoryInstrumentsGateway, IgMarketCategoryInstrumentsGateway>();
+#pragma warning disable EXTEXP0001
+        services.AddScoped<TNC.Trading.Platform.Application.Features.MarketNavigation.ProbeMarketNavigationHandler>();
+        services.AddHttpClient<TNC.Trading.Platform.Application.Features.MarketNavigation.IMarketNavigationGateway, IgMarketNavigationGateway>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(15);
+        })
+            .RemoveAllLoggers()
+            .RemoveAllResilienceHandlers();
+        services.AddHttpClient<IMarketCategoriesGateway, IgMarketCategoriesGateway>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(15);
+        })
+            .RemoveAllResilienceHandlers();
+        services.AddHttpClient<IMarketCategoryInstrumentsGateway, IgMarketCategoryInstrumentsGateway>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(15);
+        })
+            .RemoveAllResilienceHandlers();
         services.AddHttpClient<IMarketDetailsGateway, IgMarketDetailsGateway>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(15);
-        });
+        })
+            .RemoveAllResilienceHandlers();
+#pragma warning restore EXTEXP0001
         var accountPreferencesBaseUrl = configuration["Ig:AccountPreferencesBaseUrl"];
         if (!Uri.TryCreate(accountPreferencesBaseUrl, UriKind.Absolute, out var parsedAccountPreferencesBaseUrl)
             || parsedAccountPreferencesBaseUrl.Scheme is not ("http" or "https")

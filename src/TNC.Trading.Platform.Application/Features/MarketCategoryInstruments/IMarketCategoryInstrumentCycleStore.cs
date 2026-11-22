@@ -46,7 +46,8 @@ internal interface IMarketCategoryInstrumentCycleStore
         DateTimeOffset nowUtc,
         bool succeeded,
         string? safeError,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        MarketCategoryInstrumentFailure? failure = null);
 
     Task<bool> HasRequestBudgetAsync(
         MarketCategoryInstrumentCycleLease lease,

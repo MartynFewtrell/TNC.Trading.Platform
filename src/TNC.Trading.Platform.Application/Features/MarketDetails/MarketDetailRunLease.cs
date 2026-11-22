@@ -8,6 +8,7 @@ internal sealed record MarketDetailRunLease(
     MarketDetailRunKey Key,
     Guid Owner,
     long Fence,
+    int UpdateGeneration,
     DateTimeOffset ExpiresAtUtc,
     DateTimeOffset WindowEndUtc,
     string AppliedEndpointProfile,

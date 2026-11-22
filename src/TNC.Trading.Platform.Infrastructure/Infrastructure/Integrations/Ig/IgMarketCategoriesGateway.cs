@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDetails;
 
 namespace TNC.Trading.Platform.Infrastructure.Integrations.Ig;
 
@@ -88,9 +89,7 @@ internal sealed class IgMarketCategoriesGateway(
         {
             return new MarketCategoriesGatewayResult.Failed(
                 exception.Category,
-                exception.Category == MarketCategoriesFailureCategory.AllowanceExceeded
-                    ? "IG request allowance is unavailable."
-                    : "IG market categories request was rejected.");
+                exception.SafeReason);
         }
         catch (InvalidOperationException)
         {
@@ -110,8 +109,15 @@ internal sealed class IgMarketCategoriesGateway(
         if (!await throttle.WaitAsync(
                 credentials.ApiKey,
                 credentials.Identifier,
-                requestBudgetContext?.ScheduleWindowEndUtc ?? DateTimeOffset.MaxValue,
-                cancellationToken).ConfigureAwait(false))
+                requestBudgetContext is { FullRunLease: null }
+                    ? requestBudgetContext.ScheduleWindowEndUtc ?? DateTimeOffset.MaxValue
+                    : DateTimeOffset.MaxValue,
+                cancellationToken,
+                TimeSpan.FromSeconds(requestBudgetContext?.RequestSpacingSeconds ?? 5),
+                requestBudgetContext is null
+                    ? null
+                    : ct => requestBudget.RenewAsync(environment, requestBudgetContext, ct),
+                honorProviderCooldown: true).ConfigureAwait(false))
         {
             throw new MarketCategoriesProviderException(
                 MarketCategoriesFailureCategory.ScheduleClosed,
@@ -132,7 +138,19 @@ internal sealed class IgMarketCategoriesGateway(
         using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            throw new MarketCategoriesProviderException(MarketCategoriesFailureCategory.Rejected, "IG session was rejected.");
+            var parseResult = await IgProviderErrorCodeParser.ParseAsync(response.Content, cancellationToken)
+                .ConfigureAwait(false);
+            await throttle.ApplyProviderDenialCooldownAsync(
+                credentials.ApiKey,
+                credentials.Identifier,
+                parseResult.SafeCode,
+                cancellationToken).ConfigureAwait(false);
+            var category = MarketDetailProviderErrorCodes.IsAllowanceCode(parseResult.SafeCode)
+                ? MarketCategoriesFailureCategory.AllowanceExceeded
+                : MarketCategoriesFailureCategory.Rejected;
+            throw new MarketCategoriesProviderException(
+                category,
+                SafeProviderDenialReason(response.StatusCode, parseResult.SafeCode));
         }
 
         var body = await response.Content.ReadFromJsonAsync<IgSessionResponseBody>(JsonOptions, cancellationToken).ConfigureAwait(false);
@@ -160,8 +178,15 @@ internal sealed class IgMarketCategoriesGateway(
         if (!await throttle.WaitAsync(
                 apiKey,
                 accountIdentifier,
-                requestBudgetContext?.ScheduleWindowEndUtc ?? DateTimeOffset.MaxValue,
-                cancellationToken).ConfigureAwait(false))
+                requestBudgetContext is { FullRunLease: null }
+                    ? requestBudgetContext.ScheduleWindowEndUtc ?? DateTimeOffset.MaxValue
+                    : DateTimeOffset.MaxValue,
+                cancellationToken,
+                TimeSpan.FromSeconds(requestBudgetContext?.RequestSpacingSeconds ?? 5),
+                requestBudgetContext is null
+                    ? null
+                    : ct => requestBudget.RenewAsync(environment, requestBudgetContext, ct),
+                honorProviderCooldown: true).ConfigureAwait(false))
         {
             throw new MarketCategoriesProviderException(
                 MarketCategoriesFailureCategory.ScheduleClosed,
@@ -183,6 +208,25 @@ internal sealed class IgMarketCategoriesGateway(
 
         if (!response.IsSuccessStatusCode)
         {
+            var parseResult = response.StatusCode == HttpStatusCode.Forbidden
+                ? await IgProviderErrorCodeParser.ParseAsync(response.Content, cancellationToken).ConfigureAwait(false)
+                : null;
+            if (parseResult is not null)
+            {
+                await throttle.ApplyProviderDenialCooldownAsync(
+                    apiKey,
+                    accountIdentifier,
+                    parseResult.SafeCode,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            if (MarketDetailProviderErrorCodes.IsAllowanceCode(parseResult?.SafeCode))
+            {
+                return (new MarketCategoriesGatewayResult.Failed(
+                    MarketCategoriesFailureCategory.AllowanceExceeded,
+                    SafeProviderDenialReason(response.StatusCode, parseResult!.SafeCode)), false);
+            }
+
             var category = response.StatusCode switch
             {
                 HttpStatusCode.RequestTimeout => MarketCategoriesFailureCategory.Timeout,
@@ -190,13 +234,16 @@ internal sealed class IgMarketCategoriesGateway(
                 >= HttpStatusCode.InternalServerError => MarketCategoriesFailureCategory.Unavailable,
                 _ => MarketCategoriesFailureCategory.Rejected
             };
-            return (new MarketCategoriesGatewayResult.Failed(category, category switch
-            {
-                MarketCategoriesFailureCategory.Timeout => "IG market categories request timed out.",
-                MarketCategoriesFailureCategory.RateLimited => "IG market categories request was rate limited.",
-                MarketCategoriesFailureCategory.Unavailable => "IG market categories service is unavailable.",
-                _ => "IG market categories request was rejected."
-            }), false);
+            var safeReason = parseResult is null
+                ? category switch
+                {
+                    MarketCategoriesFailureCategory.Timeout => "IG market categories request timed out.",
+                    MarketCategoriesFailureCategory.RateLimited => "IG market categories request was rate limited.",
+                    MarketCategoriesFailureCategory.Unavailable => "IG market categories service is unavailable.",
+                    _ => "IG market categories request was rejected."
+                }
+                : SafeProviderDenialReason(response.StatusCode, parseResult.SafeCode);
+            return (new MarketCategoriesGatewayResult.Failed(category, safeReason), false);
         }
 
         var body = await response.Content.ReadFromJsonAsync<IgCategoriesResponseBody>(JsonOptions, cancellationToken).ConfigureAwait(false);
@@ -253,6 +300,10 @@ internal sealed class IgMarketCategoriesGateway(
         }
     }
 
+    private static string SafeProviderDenialReason(HttpStatusCode statusCode, string? providerErrorCode) =>
+        MarketDetailProviderErrorCodes.GetSafeDenialReason(providerErrorCode)
+        ?? (statusCode == HttpStatusCode.Forbidden ? "ProviderAccessDenied" : "ProviderRejected");
+
     private static bool HasCredentials(IgCredentials credentials) =>
         !string.IsNullOrWhiteSpace(credentials.ApiKey)
         && !string.IsNullOrWhiteSpace(credentials.Identifier)
@@ -268,8 +319,11 @@ internal sealed class IgMarketCategoriesGateway(
         [property: JsonPropertyName("code")] string? Code,
         [property: JsonPropertyName("nonTradeable")] bool? NonTradeable);
 
-    private sealed class MarketCategoriesProviderException(MarketCategoriesFailureCategory category, string message) : Exception(message)
+    private sealed class MarketCategoriesProviderException(
+        MarketCategoriesFailureCategory category,
+        string safeReason) : Exception(safeReason)
     {
         public MarketCategoriesFailureCategory Category { get; } = category;
+        public string SafeReason { get; } = safeReason;
     }
 }

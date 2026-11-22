@@ -24,7 +24,10 @@ internal sealed class UpdatePlatformConfigurationHandler(
         var result = await committer.CommitAsync(request.Update, cancellationToken).ConfigureAwait(false);
         if (request.Update.InstrumentUpdatesPerDay is not null
             || request.Update.ApprovedNonTradingDailyRequestAllowance is not null
-            || request.Update.MarketDataLeadInMinutes is not null)
+            || request.Update.MarketDataLeadInMinutes is not null
+            || request.Update.MarketCategoryPageSize is not null
+            || request.Update.MarketDataRequestSpacingSeconds is not null
+            || request.Update.MarketCategoryPauseSeconds is not null)
         {
             await SaveInstrumentCollectionSettingsAsync(request.Update, cancellationToken).ConfigureAwait(false);
         }
@@ -61,7 +64,10 @@ internal sealed class UpdatePlatformConfigurationHandler(
                 PendingEffectiveTradingDay = update.InstrumentUpdatesPerDay is null ? current.PendingEffectiveTradingDay : null,
                 ApprovedNonTradingDailyRequestAllowance =
                     update.ApprovedNonTradingDailyRequestAllowance ?? current.ApprovedNonTradingDailyRequestAllowance,
-                LeadInMinutes = update.MarketDataLeadInMinutes ?? current.LeadInMinutes
+                LeadInMinutes = update.MarketDataLeadInMinutes ?? current.LeadInMinutes,
+                CategoryPageSize = update.MarketCategoryPageSize ?? current.CategoryPageSize,
+                RequestSpacingSeconds = update.MarketDataRequestSpacingSeconds ?? current.RequestSpacingSeconds,
+                CategoryPauseSeconds = update.MarketCategoryPauseSeconds ?? current.CategoryPauseSeconds
             },
             cancellationToken).ConfigureAwait(false);
     }

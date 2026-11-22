@@ -7,4 +7,5 @@ internal sealed record RefreshMarketCategoriesRequest(
     MarketCategoryInstrumentCycleLease? ScheduledLease = null,
     CancellationToken ScheduleCancellationToken = default,
     MarketCategoryInstrumentRequestBudgetContext? ManualBudgetContext = null,
-    BrokerEnvironmentKind? ManualBrokerEnvironment = null);
+    BrokerEnvironmentKind? ManualBrokerEnvironment = null,
+    MarketCategoryInstrumentFrequency? CollectionProfile = null);

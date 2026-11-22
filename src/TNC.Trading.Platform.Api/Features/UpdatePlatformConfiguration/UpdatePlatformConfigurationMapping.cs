@@ -32,7 +32,10 @@ internal static class UpdatePlatformConfigurationMapping
                 request.ChangedBy,
                 request.InstrumentUpdatesPerDay,
                 request.ApprovedNonTradingDailyRequestAllowance,
-                request.MarketDataLeadInMinutes));
+                request.MarketDataLeadInMinutes,
+                request.MarketCategoryPageSize,
+                request.MarketDataRequestSpacingSeconds,
+                request.MarketCategoryPauseSeconds));
 
     public static UpdatePlatformConfigurationResponse ToResponse(this AppUpdatePlatformConfiguration.UpdatePlatformConfigurationResponse response)
         => new(
@@ -79,5 +82,8 @@ internal static class UpdatePlatformConfigurationMapping
                     ?? response.InstrumentCollectionStatus?.CategoryPrerequisiteOutcome,
                 response.InstrumentCollectionStatus?.SafeCategoryFailure,
                 response.InstrumentCollectionFrequency?.LeadInMinutes,
-                GetPlatformConfigurationMapping.GetCapacityWarning(response.InstrumentCollectionFrequency?.CurrentUpdatesPerDay)));
+                GetPlatformConfigurationMapping.GetCapacityWarning(response.InstrumentCollectionFrequency?.CurrentUpdatesPerDay),
+                response.InstrumentCollectionFrequency?.CategoryPageSize,
+                response.InstrumentCollectionFrequency?.RequestSpacingSeconds,
+                response.InstrumentCollectionFrequency?.CategoryPauseSeconds));
 }

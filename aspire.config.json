@@ -1,5 +1,9 @@
 {
   "appHost": {
     "path": "src/TNC.Trading.Platform.AppHost/TNC.Trading.Platform.AppHost.csproj"
-  }
+  },
+  "sdk": {
+    "version": "17.1.0-preview.1.26563.10"
+  },
+  "channel": "daily"
 }

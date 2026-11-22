@@ -1,12 +1,14 @@
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 
 namespace TNC.Trading.Platform.Infrastructure.Persistence.EntityFramework;
 
 internal sealed class EfMarketCategoryInstrumentRequestBudget(
     EfMarketCategoryInstrumentCycleStore cycleStore,
     TimeProvider timeProvider,
-    IMarketCategoryInstrumentScheduleGuard? scheduleGuard = null) : IMarketCategoryInstrumentRequestBudget
+    IMarketCategoryInstrumentScheduleGuard? scheduleGuard = null,
+    IMarketDataFullRunStore? fullRunStore = null) : IMarketCategoryInstrumentRequestBudget
 {
     public async Task<bool> IsExecutionContextStillActiveAsync(
         BrokerEnvironmentKind environment,
@@ -63,7 +65,7 @@ internal sealed class EfMarketCategoryInstrumentRequestBudget(
             return false;
         }
 
-        if (!await IsExecutionContextStillActiveAsync(environment, context, cancellationToken).ConfigureAwait(false))
+        if (!await RenewAsync(environment, context, cancellationToken).ConfigureAwait(false))
         {
             return false;
         }
@@ -82,21 +84,6 @@ internal sealed class EfMarketCategoryInstrumentRequestBudget(
                 context.FullRunLease).ConfigureAwait(false);
         }
 
-        if (!await cycleStore.TryRenewLeaseAsync(
-                environment,
-                context.TradingDay,
-                context.ScheduledSlot,
-                context.LeaseOwner,
-                context.LeaseFence,
-                nowUtc,
-                TimeSpan.FromMinutes(2),
-                cancellationToken,
-                context.FullRunLease is null ? context.ScheduleWindowEndUtc : null,
-                context.FullRunLease).ConfigureAwait(false))
-        {
-            return false;
-        }
-
         return await cycleStore.TryConsumeRequestBudgetAsync(
             environment,
             context.TradingDay,
@@ -105,6 +92,56 @@ internal sealed class EfMarketCategoryInstrumentRequestBudget(
             context.LeaseFence,
             nowUtc,
             1,
+            cancellationToken,
+            context.FullRunLease is null ? context.ScheduleWindowEndUtc : null,
+            context.FullRunLease).ConfigureAwait(false);
+    }
+
+    public Task<int?> GetRemainingManualRequestBudgetAsync(
+        BrokerEnvironmentKind environment,
+        MarketCategoryInstrumentRequestBudgetContext context,
+        CancellationToken cancellationToken) =>
+        cycleStore.GetRemainingManualRequestBudgetAsync(
+            environment,
+            context,
+            timeProvider.GetUtcNow().ToUniversalTime(),
+            cancellationToken);
+
+    public async Task<bool> RenewAsync(
+        BrokerEnvironmentKind environment,
+        MarketCategoryInstrumentRequestBudgetContext context,
+        CancellationToken cancellationToken)
+    {
+        if (!await IsExecutionContextStillActiveAsync(environment, context, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        if (context.IsManualOperation)
+        {
+            return true;
+        }
+
+        var nowUtc = timeProvider.GetUtcNow().ToUniversalTime();
+        if (context.FullRunLease is { } fullRunLease
+            && (fullRunStore is null
+                || !await fullRunStore.TryRenewLeaseAsync(
+                    fullRunLease,
+                    nowUtc,
+                    TimeSpan.FromMinutes(5),
+                    cancellationToken).ConfigureAwait(false)))
+        {
+            return false;
+        }
+
+        return await cycleStore.TryRenewLeaseAsync(
+            environment,
+            context.TradingDay,
+            context.ScheduledSlot,
+            context.LeaseOwner,
+            context.LeaseFence,
+            nowUtc,
+            TimeSpan.FromMinutes(2),
             cancellationToken,
             context.FullRunLease is null ? context.ScheduleWindowEndUtc : null,
             context.FullRunLease).ConfigureAwait(false);

@@ -11,4 +11,7 @@ internal sealed record PlatformConfigurationUpdate(
     string ChangedBy,
     int? InstrumentUpdatesPerDay = null,
     int? ApprovedNonTradingDailyRequestAllowance = null,
-    int? MarketDataLeadInMinutes = null);
+    int? MarketDataLeadInMinutes = null,
+    int? MarketCategoryPageSize = null,
+    int? MarketDataRequestSpacingSeconds = null,
+    int? MarketCategoryPauseSeconds = null);

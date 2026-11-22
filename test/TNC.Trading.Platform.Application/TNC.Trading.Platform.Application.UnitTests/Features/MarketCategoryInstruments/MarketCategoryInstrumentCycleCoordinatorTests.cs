@@ -2,12 +2,74 @@ using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 using TNC.Trading.Platform.Application.Features.MarketDataRuns;
+using TNC.Trading.Platform.Application.Features.TradingState;
 using TNC.Trading.Platform.Application.Services;
 
 namespace TNC.Trading.Platform.Application.UnitTests.Features.MarketCategoryInstruments;
 
 public sealed class MarketCategoryInstrumentCycleCoordinatorTests
 {
+    /// <summary>
+    /// Trace: IG category-collection completeness plan P3. Verifies full-run conflicts deny diagnostics before gateway execution.
+    /// Expected: an already-running full run returns Conflict and the diagnostic gateway is not invoked.
+    /// Why: operator diagnosis must share normal collection admission rather than overlap scheduled/manual work.
+    /// </summary>
+    [Fact]
+    public async Task DiagnoseMarketCategoryCollectionAsync_ShouldNotCallGateway_WhenSharedAdmissionConflicts()
+    {
+        var harness = new CycleHarness();
+        harness.ConfigureDiagnosticAdmission(MarketDataFullRunAdmissionStatus.AlreadyRunning);
+
+        var result = await harness.DiagnoseAsync(maximumHttpRequests: 10);
+
+        Assert.Equal(DiagnoseMarketCategoryCollectionStatus.Conflict, result.Status);
+        Assert.Equal(0, harness.DiagnosticGatewayCalls);
+        Assert.Equal(0, harness.DiagnosticBudgetReadCount);
+        Assert.Equal(0, harness.PublishedCategories);
+    }
+
+    /// <summary>
+    /// Trace: IG category-collection completeness plan P3. Verifies the diagnostic request ceiling must fit the shared allowance.
+    /// Expected: insufficient manual budget refuses before any diagnostic gateway call and completes the admission lease as idle.
+    /// Why: the operator-selected bound cannot authorize traffic beyond the approved shared request budget.
+    /// </summary>
+    [Fact]
+    public async Task DiagnoseMarketCategoryCollectionAsync_ShouldNotCallGateway_WhenSharedBudgetIsInsufficient()
+    {
+        var harness = new CycleHarness();
+        harness.ConfigureDiagnosticBudget(availableRequests: 9);
+
+        var result = await harness.DiagnoseAsync(maximumHttpRequests: 10);
+
+        Assert.Equal(DiagnoseMarketCategoryCollectionStatus.Refused, result.Status);
+        Assert.Equal("RequestAllowanceInsufficient", result.SafeReasonCode);
+        Assert.Equal(0, harness.DiagnosticGatewayCalls);
+        Assert.Equal(1, harness.DiagnosticBudgetReadCount);
+        Assert.Empty(harness.FullRunCoveredSlots);
+        Assert.Equal("Idle", harness.LastFullRunOutcome);
+        Assert.Equal(0, harness.PublishedCategories);
+    }
+
+    /// <summary>
+    /// Trace: IG category-collection completeness plan P3. Verifies a diagnostic result is returned without a snapshot writer.
+    /// Expected: one bounded gateway diagnostic is returned while production publication remains untouched.
+    /// Why: investigation evidence must never turn into an accepted or saved instrument collection.
+    /// </summary>
+    [Fact]
+    public async Task DiagnoseMarketCategoryCollectionAsync_ShouldNotPublish_WhenGatewayReturnsDiagnosticEvidence()
+    {
+        var harness = new CycleHarness();
+
+        var result = await harness.DiagnoseAsync(maximumHttpRequests: 10);
+
+        Assert.Equal(DiagnoseMarketCategoryCollectionStatus.Completed, result.Status);
+        Assert.NotNull(result.Diagnostic);
+        Assert.Equal(MarketCategoryInstrumentDiagnosticOutcome.ProviderRequestFailed, result.Diagnostic.Outcome);
+        Assert.Equal(1, harness.DiagnosticGatewayCalls);
+        Assert.Empty(harness.FullRunCoveredSlots);
+        Assert.Equal(0, harness.PublishedCategories);
+    }
+
     /// <summary>
     /// Trace: Market Category Instruments Work Item 1, step 4 and Work Item 4, step 2.
     /// Verifies: an exhausted category failure does not prevent a later selected category from collecting, and failed data never replaces its last-good snapshot.
@@ -69,6 +131,7 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         string category, string reason, int httpStatus, string safeCode)
     {
         var harness = new CycleHarness();
+        harness.SeedSnapshot("A", "OLD-A");
         harness.ConfigureProviderFailure(Enum.Parse<MarketCategoryInstrumentFailureCategory>(category), reason, httpStatus);
 
         await harness.ExecuteAsync(CancellationToken.None);
@@ -80,7 +143,14 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         Assert.Equal(reason, entry.Arguments[10]);
         Assert.Equal(httpStatus, entry.Arguments[15]);
         Assert.Equal(safeCode, harness.LastCategoryError);
+        Assert.Equal(Enum.Parse<MarketCategoryInstrumentFailureCategory>(category), harness.LastCategoryFailure?.Category);
+        Assert.Equal(httpStatus, harness.LastCategoryFailure?.HttpStatusCode);
         Assert.Equal(1, entry.Arguments[18]);
+        Assert.Equal(1, harness.CategoryAttemptCount("A"));
+        Assert.Equal(
+            [TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(20)],
+            harness.Delays);
+        Assert.Equal("OLD-A", harness.SnapshotEpic("A"));
         Assert.Empty(harness.Errors);
     }
 
@@ -173,6 +243,63 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         Assert.Equal(0, harness.FailedCategories);
         Assert.Equal("B-EPIC", harness.SnapshotEpic("B"));
         Assert.Equal(2, harness.PublishedCategories);
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery Phase 2, Steps 2.4-2.5.
+    /// Verifies: the configured 60-second cushion separates attempted categories and is not applied after the final category.
+    /// Expected: two categories complete with exactly three 20-second fake-time waits, totaling one 60-second inter-category pause.
+    /// Why: conservative pacing must protect successive category requests without wasting time after the cycle has no remaining work.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteDueCycleAsync_ShouldPauseBetweenCategoriesWithoutTrailingPause_WhenBothCategoriesAreAttempted()
+    {
+        var harness = new CycleHarness();
+
+        await harness.ExecuteAsync(CancellationToken.None);
+
+        Assert.Equal(2, harness.CompletedCategories);
+        Assert.Equal(
+            [TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(20)],
+            harness.Delays);
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery Phase 2, Steps 2.4-2.5.
+    /// Verifies: parent-lease loss during the inter-category pause prevents the next category from starting.
+    /// Expected: the first category is attempted, the second is not, and pacing stops when the renewed fence is rejected.
+    /// Why: a stale full-run owner must never resume provider work after losing ownership during a long wait.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteDueCycleAsync_ShouldStopBeforeNextCategory_WhenParentLeaseIsLostDuringPause()
+    {
+        var harness = new CycleHarness();
+        harness.ConfigureParentLeaseLossAfter(TimeSpan.FromSeconds(30));
+
+        await harness.ExecuteAsync(CancellationToken.None);
+
+        Assert.Equal(1, harness.CategoryAttemptCount("A"));
+        Assert.Equal(0, harness.CategoryAttemptCount("B"));
+        Assert.Equal([TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(20)], harness.Delays);
+    }
+
+    /// <summary>
+    /// Trace: IG market-data recovery Phase 2, Steps 2.4-2.5.
+    /// Verifies: cycle and parent leases are renewed repeatedly during the maximum configured category pause, beyond the five-minute parent lease duration.
+    /// Expected: both categories complete after a 300-second pause and each lease receives at least sixteen renewal checkpoints.
+    /// Why: long pacing waits must not let an otherwise valid collection lose ownership before the next category can run.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteDueCycleAsync_ShouldRenewCycleAndParentLeasesDuringLongPause_WhenPauseExceedsLeaseDuration()
+    {
+        var harness = new CycleHarness(categoryPauseSeconds: 300);
+
+        await harness.ExecuteAsync(CancellationToken.None);
+
+        Assert.Equal(2, harness.CompletedCategories);
+        Assert.Equal(TimeSpan.FromSeconds(300), TimeSpan.FromTicks(harness.Delays.Sum(delay => delay.Ticks)));
+        Assert.True(harness.CycleLeaseRenewals >= 16);
+        Assert.True(harness.ParentLeaseRenewals >= 16);
     }
 
     /// <summary>
@@ -370,11 +497,20 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         private FakeCategorySnapshotStore CategorySnapshotStore { get; } = new();
         private FakeInstrumentsGateway Gateway { get; } = new();
         private FakeInstrumentWriter Writer { get; } = new();
+        private FakeDiagnosticRequestBudget DiagnosticBudget { get; } = new();
         private RecordingApplicationLogger Logger { get; } = new();
         public string? Status { get; private set; }
         public int CompletedCategories { get; private set; }
         public int FailedCategories { get; private set; }
         public int PublishedCategories => Writer.WritesCount;
+        public int DiagnosticGatewayCalls => Gateway.DiagnosticCalls;
+        public int DiagnosticBudgetReadCount => DiagnosticBudget.ReadCount;
+        public IReadOnlyList<MarketDataFullRunSlotIdentity> FullRunCoveredSlots =>
+            FullRunStore.LastAdmissionRequest?.CoveredSlots ?? [];
+        public string? LastFullRunOutcome => FullRunStore.LastCompletedOutcome;
+        public IReadOnlyList<TimeSpan> Delays => Clock.Delays;
+        public int CycleLeaseRenewals => CycleStore.RenewalCount;
+        public int ParentLeaseRenewals => FullRunStore.RenewalCount;
         public string? CycleOutcome => CycleStore.LastCycleOutcome;
         public bool StartupLeaseRequested => CycleStore.StartupLeaseRequested;
         public MarketDataFullRunAdmissionRequest? AdmissionRequest => FullRunStore.LastAdmissionRequest;
@@ -390,15 +526,22 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         public CycleHarness(
             TradingScheduleConfiguration? schedule = null,
             DateTimeOffset? now = null,
-            int updatesPerDay = 1)
+            int updatesPerDay = 1,
+            int categoryPauseSeconds = 60)
         {
             configurationStore = new(schedule ?? Schedule);
             Clock = new(now ?? new DateTimeOffset(2026, 9, 28, 10, 0, 0, TimeSpan.Zero));
             UpdatesPerDay = updatesPerDay;
+            CategoryPauseSeconds = categoryPauseSeconds;
             scheduleGuard = new(Clock);
         }
 
         public void SetIntent(MarketDataFullRunTrigger trigger) => FullRunStore.SetIntent(trigger, Clock.Now);
+        public void ConfigureDiagnosticAdmission(MarketDataFullRunAdmissionStatus status) =>
+            FullRunStore.AdmissionStatusOverride = status;
+        public void ConfigureDiagnosticBudget(int? availableRequests) =>
+            DiagnosticBudget.AvailableRequests = availableRequests;
+        private int CategoryPauseSeconds { get; }
 
         public void SeedSnapshot(string categoryCode, string epic) =>
             Writer.SeedSnapshot(categoryCode, epic, Clock.Now);
@@ -409,11 +552,14 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
 
         public void ConfigureFailureForFirstSelectedCategory() => Gateway.ConfigureFailureForA();
         public string? LastCategoryError => CycleStore.LastCategoryError;
+        public MarketCategoryInstrumentFailure? LastCategoryFailure => CycleStore.LastCategoryFailure;
         public void ConfigureProviderFailure(MarketCategoryInstrumentFailureCategory category, string reason, int httpStatus) =>
             Gateway.ConfigureFailureForA(category, false, reason, httpStatus);
         public void ConfigurePublicationFailure() => Writer.FailForA = true;
 
         public void ConfigureCategoryRefreshUnavailable() => categoryGateway.ConfigureUnavailable();
+        public void ConfigureParentLeaseLossAfter(TimeSpan delay) =>
+            FullRunStore.ParentLeaseValidUntilUtc = Clock.Now.Add(delay);
 
         public void ConfigureDueFailedItemRetry()
         {
@@ -456,7 +602,7 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
             return new(
                 configurationService,
                 environmentResolver,
-                new FakeFrequencyReader(UpdatesPerDay),
+                new FakeFrequencyReader(UpdatesPerDay, CategoryPauseSeconds),
                 new(scheduleGate, schedulePolicy),
                 InterestReader,
                 CycleStore,
@@ -473,6 +619,26 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 Logger);
         }
 
+        public Task<DiagnoseMarketCategoryCollectionResponse> DiagnoseAsync(int maximumHttpRequests)
+        {
+            var scheduleGate = new TradingScheduleGate();
+            var schedulePolicy = new MarketCategoryInstrumentSchedulePolicy(scheduleGate, Clock);
+            return new DiagnoseMarketCategoryCollectionHandler(
+                environmentResolver,
+                new PlatformConfigurationService(configurationStore),
+                new FakeFrequencyReader(UpdatesPerDay, CategoryPauseSeconds),
+                new TradingStateEvaluator(scheduleGate, schedulePolicy),
+                schedulePolicy,
+                InterestReader,
+                CategorySnapshotStore,
+                FullRunStore,
+                DiagnosticBudget,
+                Gateway,
+                Clock).HandleAsync(
+                    new("A", maximumHttpRequests),
+                    CancellationToken.None);
+        }
+
         public async Task ExecuteAsync(CancellationToken cancellationToken, bool isStartupCheck = false)
         {
             var result = await CreateCoordinator().ExecuteDueCycleAsync(cancellationToken, isStartupCheck);
@@ -485,7 +651,7 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
             new GetMarketCategoryInstrumentStatusHandler(
                 environmentResolver,
                 new PlatformConfigurationService(configurationStore),
-                new FakeFrequencyReader(UpdatesPerDay),
+                new FakeFrequencyReader(UpdatesPerDay, CategoryPauseSeconds),
                 CycleStore,
                 new FakeStatusReader(),
                 new TradingScheduleGate(),
@@ -507,6 +673,10 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
 
             public MarketDataFullRunAdmissionRequest? LastAdmissionRequest { get; private set; }
             public MarketDataFullRunLease? LastLease { get; private set; }
+            public DateTimeOffset? ParentLeaseValidUntilUtc { get; set; }
+            public int RenewalCount { get; private set; }
+            public MarketDataFullRunAdmissionStatus? AdmissionStatusOverride { get; set; }
+            public string? LastCompletedOutcome { get; private set; }
 
             public List<(MarketDataFullRunStage Stage, string Status)> StageAttempts { get; } = [];
 
@@ -528,6 +698,12 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 }
 
                 LastAdmissionRequest = request;
+                if (AdmissionStatusOverride is { } admissionStatus
+                    && admissionStatus != MarketDataFullRunAdmissionStatus.Admitted)
+                {
+                    return Task.FromResult(new MarketDataFullRunAdmissionResult(admissionStatus, null));
+                }
+
                 var lease = new MarketDataFullRunLease(
                     Guid.NewGuid(),
                     request.Environment,
@@ -558,7 +734,11 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 MarketDataFullRunLease lease,
                 DateTimeOffset nowUtc,
                 TimeSpan leaseDuration,
-                CancellationToken cancellationToken) => Task.FromResult(true);
+                CancellationToken cancellationToken)
+            {
+                RenewalCount++;
+                return Task.FromResult(ParentLeaseValidUntilUtc is null || nowUtc < ParentLeaseValidUntilUtc);
+            }
 
             public Task<bool> RecordSlotCoverageAsync(
                 MarketDataFullRunLease lease,
@@ -616,7 +796,11 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 string outcome,
                 string? safeReasonCode,
                 DateTimeOffset completedAtUtc,
-                CancellationToken cancellationToken) => Task.FromResult(true);
+                CancellationToken cancellationToken)
+            {
+                LastCompletedOutcome = outcome;
+                return Task.FromResult(true);
+            }
 
             public Task<MarketDataFullRunIntent?> GetPendingIntentAsync(
                 BrokerEnvironmentKind environment,
@@ -691,12 +875,19 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 Task.FromResult<AppliedBrokerEnvironmentContext?>(Applied);
         }
 
-        private sealed class FakeFrequencyReader(int updatesPerDay = 1) : IMarketCategoryInstrumentFrequencyReader
+        private sealed class FakeFrequencyReader(
+            int updatesPerDay = 1,
+            int categoryPauseSeconds = 60) : IMarketCategoryInstrumentFrequencyReader
         {
             Task<MarketCategoryInstrumentFrequency> IMarketCategoryInstrumentFrequencyReader.ReadAsync(
                 BrokerEnvironmentKind appliedBrokerEnvironment,
                 CancellationToken cancellationToken) =>
-                Task.FromResult(new MarketCategoryInstrumentFrequency(updatesPerDay, null, null, 20));
+                Task.FromResult(new MarketCategoryInstrumentFrequency(
+                    updatesPerDay,
+                    null,
+                    null,
+                    20,
+                    CategoryPauseSeconds: categoryPauseSeconds));
         }
 
         private sealed class FakeInterestReader : IMarketCategoryInstrumentInterestReader
@@ -766,7 +957,9 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         private sealed class FakeCycleStore : IMarketCategoryInstrumentCycleStore
         {
             public Dictionary<string, int> CategoryAttempts { get; } = new(StringComparer.Ordinal);
+            public int RenewalCount { get; private set; }
             public string? LastCategoryError { get; private set; }
+            public MarketCategoryInstrumentFailure? LastCategoryFailure { get; private set; }
             public string? LastCycleOutcome { get; private set; }
             public bool StartupLeaseRequested { get; private set; }
             private MarketCategoryInstrumentSlotProgress? latestProgress;
@@ -791,8 +984,11 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 MarketCategoryInstrumentCycleLease lease,
                 DateTimeOffset nowUtc,
                 TimeSpan leaseDuration,
-                CancellationToken cancellationToken) =>
-                Task.FromResult(lease.FullRunLease is not null || nowUtc < lease.WindowEndUtc);
+                CancellationToken cancellationToken)
+            {
+                RenewalCount++;
+                return Task.FromResult(lease.FullRunLease is not null || nowUtc < lease.WindowEndUtc);
+            }
 
             Task<bool> IMarketCategoryInstrumentCycleStore.TryBeginCategoryPrerequisiteAsync(
                 MarketCategoryInstrumentCycleLease lease,
@@ -824,9 +1020,11 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 DateTimeOffset nowUtc,
                 bool succeeded,
                 string? safeError,
-                CancellationToken cancellationToken)
+                CancellationToken cancellationToken,
+                MarketCategoryInstrumentFailure? failure)
             {
                 LastCategoryError = safeError;
+                LastCategoryFailure = failure;
                 return Task.FromResult(true);
             }
 
@@ -892,6 +1090,7 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         {
             public Guid? FullRunId { get; private set; }
             public int Calls { get; private set; }
+            public int DiagnosticCalls { get; private set; }
 
             private Func<BrokerEnvironmentKind, string, MarketCategoryInstrumentRequestBudgetContext, CancellationToken, Task<MarketCategoryInstrumentCollectionResult>> OnCollect { get; set; } =
                 (_, categoryCode, _, _) => Task.FromResult(
@@ -941,6 +1140,61 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
                 FullRunId = requestBudgetContext.FullRunLease?.RunId;
                 return OnCollect(appliedBrokerEnvironment, categoryCode, requestBudgetContext, cancellationToken);
             }
+
+            Task<MarketCategoryInstrumentDiagnosticResult> IMarketCategoryInstrumentsGateway.CollectDiagnosticAsync(
+                BrokerEnvironmentKind appliedBrokerEnvironment,
+                string categoryCode,
+                MarketCategoryInstrumentRequestBudgetContext requestBudgetContext,
+                int maximumHttpRequests,
+                CancellationToken cancellationToken)
+            {
+                DiagnosticCalls++;
+                return Task.FromResult(new MarketCategoryInstrumentDiagnosticResult(
+                    Outcome: MarketCategoryInstrumentDiagnosticOutcome.ProviderRequestFailed,
+                    PageSize: 25,
+                    MaximumPages: 100,
+                    MaximumResults: 2_500,
+                    MaximumRows: 2_500,
+                    MaximumHttpRequests: maximumHttpRequests,
+                    AdvertisedPageCount: null,
+                    AdvertisedResultCount: null,
+                    HttpRequestCount: 0,
+                    PageRequestCount: 0,
+                    PageResultCount: 0,
+                    PagesVisited: 0,
+                    TotalRawRowCount: 0,
+                    TotalDeserializedRowCount: 0,
+                    NullRowCount: 0,
+                    ValidRowCount: 0,
+                    InvalidRowCount: 0,
+                    UniqueValidRowCount: 0,
+                    DuplicateEpicCount: 0,
+                    DuplicateNameCount: 0,
+                    CrossPageEpicOverlapCount: 0,
+                    ReasonCode: "TestGatewayDoesNotSupportDiagnostics",
+                    Pages: []));
+            }
+        }
+
+        private sealed class FakeDiagnosticRequestBudget : IMarketCategoryInstrumentRequestBudget
+        {
+            public int? AvailableRequests { get; set; } = 20;
+            public int ReadCount { get; private set; }
+
+            public Task<bool> TryReserveAsync(
+                BrokerEnvironmentKind environment,
+                MarketCategoryInstrumentRequestBudgetContext context,
+                CancellationToken cancellationToken) =>
+                Task.FromResult(true);
+
+            public Task<int?> GetRemainingManualRequestBudgetAsync(
+                BrokerEnvironmentKind environment,
+                MarketCategoryInstrumentRequestBudgetContext context,
+                CancellationToken cancellationToken)
+            {
+                ReadCount++;
+                return Task.FromResult(AvailableRequests);
+            }
         }
 
         private sealed class FakeInstrumentWriter : IMarketCategoryInstrumentSnapshotWriter
@@ -987,12 +1241,14 @@ public sealed class MarketCategoryInstrumentCycleCoordinatorTests
         private readonly List<(DateTimeOffset Deadline, CancellationTokenSource Source)> deadlines = [];
 
         public DateTimeOffset Now { get; private set; } = initialUtc;
+        public List<TimeSpan> Delays { get; } = [];
 
         DateTimeOffset IMarketCategoryInstrumentClock.GetUtcNow() => Now;
 
         Task IMarketCategoryInstrumentClock.DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Delays.Add(delay);
             AdvanceTo(Now.Add(delay));
             return Task.CompletedTask;
         }

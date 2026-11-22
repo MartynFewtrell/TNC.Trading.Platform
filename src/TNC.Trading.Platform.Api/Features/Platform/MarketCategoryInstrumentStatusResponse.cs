@@ -26,4 +26,16 @@ internal sealed record MarketCategoryCollectionStatusResponse(
     string? Outcome,
     string? SafeFailure,
     MarketDetailCoverageResponse? DetailCoverage,
-    DateTimeOffset? LastAttemptAtUtc = null);
+    DateTimeOffset? LastAttemptAtUtc = null,
+    string? FailureKind = null,
+    string? ProviderErrorCode = null,
+    int? HttpStatus = null,
+    string? Operation = null,
+    int? PageNumber = null,
+    int? Expected = null,
+    int? Actual = null,
+    string? ProviderErrorCodeParseOutcome = null,
+    string? AuthenticationPhase = null,
+    MarketCategoryInstrumentPageEvidenceResponse? InitialPageEvidence = null,
+    MarketCategoryInstrumentPageEvidenceResponse? RestartedPageEvidence = null,
+    int? HttpRequestCount = null);

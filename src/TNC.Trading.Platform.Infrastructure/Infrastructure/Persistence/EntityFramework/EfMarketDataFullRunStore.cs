@@ -606,8 +606,9 @@ internal sealed class EfMarketDataFullRunStore(
                     && item.TradingDay == lease.TradingDay
                     && item.ScheduledSlot == scheduledSlot
                     && item.ScheduleRevision == lease.ScheduleRevision)
+                .OrderByDescending(item => item.UpdateGeneration)
                 .Select(item => (Guid?)item.RunId)
-                .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+                .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
             if (detailRunId is { } runId)
             {
                 var lastThirdFailureAtUtc = await dbContext.MarketDetailRunTargets.AsNoTracking()

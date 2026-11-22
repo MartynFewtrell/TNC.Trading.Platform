@@ -5,6 +5,7 @@ namespace TNC.Trading.Platform.Application.Features.MarketDetails;
 
 internal sealed record MarketDetailRequestBudgetContext(
     Guid RunId,
+    int UpdateGeneration,
     BrokerEnvironmentKind Environment,
     DateOnly TradingDay,
     int SlotIndex,
@@ -14,4 +15,5 @@ internal sealed record MarketDetailRequestBudgetContext(
     int EffectiveUpdatesPerDay,
     string AppliedEndpointProfile,
     DateTimeOffset WindowEndUtc,
-    MarketDataFullRunLease? FullRunLease = null);
+    MarketDataFullRunLease? FullRunLease = null,
+    int RequestSpacingSeconds = 5);

@@ -1,6 +1,6 @@
 namespace TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
 
-/// <summary>A redacted failure classification without provider diagnostics or response content.</summary>
+/// <summary>A failure classification with bounded provider diagnostics and no response content.</summary>
 internal sealed record MarketCategoryInstrumentFailure(
     MarketCategoryInstrumentFailureCategory Category,
     bool IsRetryable,
@@ -11,4 +11,10 @@ internal sealed record MarketCategoryInstrumentFailure(
     string? Operation = null,
     int? HttpStatusCode = null,
     int? Expected = null,
-    int? Actual = null);
+    int? Actual = null,
+    string? ProviderErrorCode = null,
+    MarketCategoryProviderErrorCodeParseOutcome? ProviderErrorCodeParseOutcome = null,
+    MarketCategoryInstrumentAuthenticationPhase? AuthenticationPhase = null,
+    MarketCategoryInstrumentPageEvidence? InitialPageEvidence = null,
+    MarketCategoryInstrumentPageEvidence? RestartedPageEvidence = null,
+    int? HttpRequestCount = null);

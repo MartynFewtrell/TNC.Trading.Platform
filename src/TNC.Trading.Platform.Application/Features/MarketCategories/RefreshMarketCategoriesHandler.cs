@@ -27,7 +27,10 @@ internal sealed class RefreshMarketCategoriesHandler(
                 request.ScheduledLease.ScheduleRevision,
                 request.ScheduledLease.EffectiveUpdatesPerDay,
                 AppliedEndpointProfile: request.ScheduledLease.EndpointProfile,
-                FullRunLease: request.ScheduledLease.FullRunLease);
+                FullRunLease: request.ScheduledLease.FullRunLease,
+                CategoryPageSize: request.CollectionProfile?.CategoryPageSize ?? 25,
+                RequestSpacingSeconds: request.CollectionProfile?.RequestSpacingSeconds ?? 5,
+                CategoryPauseSeconds: request.CollectionProfile?.CategoryPauseSeconds ?? 60);
         var token = scheduleCancellation?.Token
             ?? request.ManualBudgetContext?.ScheduleCancellationToken
             ?? cancellationToken;

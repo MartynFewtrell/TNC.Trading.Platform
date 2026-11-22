@@ -35,6 +35,9 @@ internal static class ConfigurationFormModelMapper
             ?? configuration.InstrumentCollection?.CurrentUpdatesPerDay,
         ApprovedNonTradingDailyRequestAllowance = configuration.InstrumentCollection?.ApprovedNonTradingDailyRequestAllowance,
         MarketDataLeadInMinutes = configuration.InstrumentCollection?.LeadInMinutes ?? 15,
+        MarketCategoryPageSize = configuration.InstrumentCollection?.CategoryPageSize ?? 25,
+        MarketDataRequestSpacingSeconds = configuration.InstrumentCollection?.RequestSpacingSeconds ?? 5,
+        MarketCategoryPauseSeconds = configuration.InstrumentCollection?.CategoryPauseSeconds ?? 60,
         InstrumentCollection = configuration.InstrumentCollection
             ?? new(false, "SettingsUnavailable", null, null, null, null, null, null, null, null, null, null)
     };
@@ -74,6 +77,9 @@ internal static class ConfigurationFormModelMapper
         ChangedBy = form.ChangedBy,
         InstrumentUpdatesPerDay = form.InstrumentUpdatesPerDay,
         ApprovedNonTradingDailyRequestAllowance = form.ApprovedNonTradingDailyRequestAllowance,
-        MarketDataLeadInMinutes = form.MarketDataLeadInMinutes
+        MarketDataLeadInMinutes = form.MarketDataLeadInMinutes,
+        MarketCategoryPageSize = form.MarketCategoryPageSize,
+        MarketDataRequestSpacingSeconds = form.MarketDataRequestSpacingSeconds,
+        MarketCategoryPauseSeconds = form.MarketCategoryPauseSeconds
     };
 }

@@ -94,6 +94,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapPlatformEndpoints();
+MarketNavigationProbeCommandEndpointMapping.Map(app);
 
 if (app.Environment.IsDevelopment())
 {

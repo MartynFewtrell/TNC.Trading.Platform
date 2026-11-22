@@ -85,7 +85,10 @@ internal sealed class RefreshMarketCategoriesManuallyHandler(
             MarketCategoryInstrumentSchedulePolicy.GetScheduleRevision(configuration.TradingSchedule, frequency),
             updatesPerDay,
             applied.EndpointProfile,
-            true);
+            true,
+            CategoryPageSize: frequency.CategoryPageSize,
+            RequestSpacingSeconds: frequency.RequestSpacingSeconds,
+            CategoryPauseSeconds: frequency.CategoryPauseSeconds);
         if (!await scheduleGuard.IsStillActiveAsync(environment, context, scheduleCancellation.Token).ConfigureAwait(false))
         {
             return Failure(MarketCategoriesFailureCategory.ScheduleClosed);

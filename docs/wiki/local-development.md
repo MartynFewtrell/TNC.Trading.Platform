@@ -56,6 +56,19 @@ deployment lifecycle.
 	conflicting schema objects are preserved, readiness remains unhealthy, and a
 	corrected database can be retried by restarting the host.
 
+The collection-diagnostics compatibility migration
+`20261004140000_ReconcileMarketCollectionFailureDiagnostics` runs before the
+provider-denial cooldown migration. It handles local databases that already
+recorded an earlier version of `PersistMarketCollectionFailureDiagnostics`
+but lack the category-attempt provider-code constraint and newer diagnostics.
+It adds only missing nullable columns and constraints, preserves existing failure
+records, and validates the request-count constraint against existing data.
+Do not delete migration-history rows or reset the SQL volume to bypass this
+startup error. Rebuild and restart the API to apply the repair. Unexpected
+schema differences or invalid stored values still fail startup and require
+operator investigation. Rolling back the repair retains these objects because
+they belong to the preceding diagnostics migration.
+
 The Infrastructure SQL integration suite creates and drops only a uniquely named
 temporary database inside the already-running Docker SQL Server container. It
 does not start the API, invoke startup reset behavior, or modify the persistent
@@ -237,6 +250,28 @@ dotnet user-secrets --project src/TNC.Trading.Platform.AppHost/TNC.Trading.Platf
 ```
 
 Removing those user-secrets entries is optional because AppHost no longer reads them for normal local startup.
+
+### Guarded IG Demo market-data recovery
+
+The market-data recovery script is separate from the disposable Docker
+infrastructure reset above. It targets only a reviewed failed slot in the
+local `platformdb`; it does not reset the database, restart workers, or contact
+IG. The script is
+[`reset-ig-demo-market-data-recovery.sql`](../../infra/scripts/reset-ig-demo-market-data-recovery.sql).
+Its header documents the required SQLCMD parameters and dry-run/apply
+invocations.
+
+Before an apply, confirm the exact local server, applied IG Demo environment
+ID/profile, trading day and slot; take and verify an access-controlled backup;
+stop collection writers; and confirm no active leases or provider calls. Run
+the saved script in its default `DryRun` mode and review every refusal,
+selected-row count, preserved count and existing daily usage. Apply requires
+pinning those exact counts and usage, plus an exact confirmation string. The
+script supports only `FailedSlotRearm`: it retains snapshots, collection and
+detail history, configuration, interests, provider exclusions, reservations
+and consumed request budget. It does not grant provider quota or confirm that
+a future request will succeed. Keep workers stopped after a successful reset;
+any subsequent live collection is a separately controlled operation.
 
 ## What AppHost exposes
 

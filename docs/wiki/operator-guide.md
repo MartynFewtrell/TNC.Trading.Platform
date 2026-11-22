@@ -123,6 +123,15 @@ reported instruments can be verified. The
 explains the safe reason fields and how to correlate them without exposing
 provider data.
 
+The saved attempt now includes nullable `FailureKind`, fixed `Operation`, HTTP
+status, and (for pagination failures) provider page index plus expected and
+received row counts. A category 403 remains an unclassified access denial:
+there is no saved provider error code unless the category gateway explicitly
+supports one. Historical attempts retain their original safe failure text and
+show structured diagnostics as unavailable when those nullable fields were not
+captured. Do not infer an allowance failure from `ProviderAccessDenied` or
+reuse a code observed for a market-detail session.
+
 Each instrument tab links to
 `/market-categories/{CategoryCode}/instruments/{Epic}/market-details`, which
 loads one saved observation for the selected EPIC. The detail page begins with
@@ -459,7 +468,11 @@ At runtime, reconciliation and manual retry use the same Application-owned sched
 
 The collection section shows the applied IG market-data environment, the
 configured updates per trading day, lead-in, approved daily allowance,
-current usage, and the latest safe outcome/failure state.
+current usage, and the latest safe outcome/failure state. The persisted
+conservative execution profile uses a page size of 25, at least five seconds
+between actual HTTP requests, and a 60-second pause between categories.
+These controls pace provider traffic; they do not change the definition of a
+complete listing or prove that IG has restored access.
 
 `InstrumentUpdatesPerDay` defaults to `1`, accepts zero or any higher
 nonnegative count, and applies immediately when saved. Values above four
@@ -473,6 +486,12 @@ refresh still requires timed-slot admission, so zero does not yet provide a
 manual full-update workflow. The lead-in setting is persisted but does not
 yet provide near-future slot coverage.
 
+The Market categories page reads saved category and collection status only.
+Its schedule-status refresh updates the status projection without calling IG.
+Detail coverage is taken from that refreshed per-category status; if the status
+read fails or does not include coverage, the page shows `Coverage unavailable`
+instead of reusing an older catalogue coverage timestamp.
+
 The worker starts only for a supported applied IG market-data environment and
 inside its configured active schedule. It refreshes categories first, then
 collects only selected categories still present in that catalogue. The status
@@ -483,17 +502,73 @@ reconciliation. The UI reports safe status for unsupported context, schedule
 closure, quota exhaustion, provider unavailability, or invalid/incomplete
 data without showing payloads or credentials.
 
+Retries for market-data HTTP requests are gateway-owned so each actual send
+passes through request pacing and shared daily-budget reservation. A request
+that waits for pacing or allowance capacity keeps its collection lease alive.
+The schedule controls new admissions; an admitted run can finish after the
+window closes only while its lease and other safety checks remain valid.
+
 When market details show `AllowanceUnavailable`, inspect the API service's
 `IgMarketDetailsGateway` warning for the trading day and slot. A warning saying
 the local request budget reservation failed means no request was sent to IG.
 An `IG market-detail Session` or `Markets` warning with HTTP `403` indicates
 that IG returned a failed response; known IG allowance codes are logged
 verbatim to distinguish account, application, API-key, and account-trading
-limits. Other HTTP failures retain their status and request kind. Provider
-bodies, unknown error codes, credentials, response headers, and EPIC-bearing
-request URLs are not logged. The per-instrument UI remains limited to the safe
-failure category; an operator-approved local daily allowance is not a measure
-of IG's remaining provider allowance.
+limits. The saved target also retains only an exact allow-listed code, HTTP
+status, fixed request operation, and typed failure kind. `AllowanceUnavailable`
+is shown only when the known allowance code was recognized; an unknown
+HTTP 403 is shown as an unclassified access denial, not as exhausted quota or
+invalid credentials. Other HTTP failures retain their status and request kind.
+Provider bodies, unknown error codes, credentials, response headers,
+account/EPIC identifiers, and EPIC-bearing request URLs are not saved as
+diagnostics. When sharing evidence with IG, include the environment, trading
+day, slot, operation, status, saved failure kind, and an exact known allowance
+code when present; remove credentials, keys, account and EPIC identifiers,
+headers, bodies, and request URLs first. An operator-approved local daily
+allowance is not a measure of IG's remaining provider allowance.
+
+Do not force an immediate retry after a confirmed allowance response or
+unclassified 403. Preserve the failed attempt and its timestamp, then check
+the next scheduled run after the relevant allowance window or access issue is
+expected to have changed. Compare that attempt with the separate last-good
+snapshot time and detail-coverage status; a later success is recovery evidence,
+not proof of the provider's exact quota reset.
+
+For `IncompleteCollection` with page counts, compare the saved expected and
+received row counts for the provider page index. The diagnostic-only traversal
+uses fixed 25-row pages, is capped at 100 pages (2,500 rows), rejects 2,501
+rows, and cannot publish a category snapshot. Production collection also
+remains fail-closed: mismatched pagination does not publish a partial
+snapshot, and its bounded replay policy is unchanged. Capture saved counts
+and the attempt's operation/status for escalation, while keeping provider
+payloads and identifiers out of the incident record. For dashboard
+logs and traces, use the [Aspire documentation](https://aspire.dev/) as the
+primary operational reference; historical saved diagnostics remain available
+after the earlier dashboard session has ended.
+
+When additional evidence is required, an explicitly authorized Operator may
+invoke `POST /api/platform/market-categories/{categoryCode}/collection-diagnostic`
+with `{"maximumHttpRequests":10}`, where the integer is between 2 and 103. The server
+requires a supported applied environment, an active collection schedule, the
+saved category, an exclusive shared market-data admission, and enough of the
+approved shared daily allowance to cover the requested ceiling. A conflict,
+closed schedule, or insufficient allowance refuses the request before
+diagnostic traversal. This route is a broker-calling operation; do not invoke
+it without explicit operational authorization. Its response contains bounded
+count and metadata-shape evidence plus safe discrepancy codes only; it does
+not expose instrument identities, provider payloads, headers, credentials, or
+session tokens, and it never publishes a snapshot. Reaching the advertised
+page sequence is not a provider completeness decision. Diagnostic admission
+does not mark a scheduled collection slot as covered.
+
+For a provider HTTP 403, only exact allow-listed codes are retained.
+Recognized allowance codes can impose a scope-appropriate cooldown; recognized
+key, account, or product restrictions remain nonretryable. Unknown or
+unparseable denials do not trigger blind retries and are not labeled as
+allowance exhaustion. Authentication records distinguish initial login from
+reauthentication, and pagination evidence keeps the first and restarted page
+observations separate. Raw provider bodies, headers, credentials, and
+unrecognized error codes are not persisted.
 
 ### Retry policy
 

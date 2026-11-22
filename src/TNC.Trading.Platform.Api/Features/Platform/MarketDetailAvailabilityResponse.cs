@@ -4,4 +4,8 @@ namespace TNC.Trading.Platform.Api.Features.Platform;
 internal sealed record MarketDetailAvailabilityResponse(
     string State,
     DateTimeOffset? DetailRetrievedAtUtc,
-    string? SafeFailureCode);
+    string? SafeFailureCode,
+    string? FailureKind = null,
+    string? ProviderErrorCode = null,
+    int? HttpStatus = null,
+    string? Operation = null);

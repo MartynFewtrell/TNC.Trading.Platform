@@ -10,4 +10,16 @@ internal sealed record MarketCategoryInstrumentCategoryStatus(
     string? Outcome,
     string? SafeFailure,
     MarketDetailCategoryCoverage? DetailCoverage = null,
-    DateTimeOffset? LastAttemptAtUtc = null);
+    DateTimeOffset? LastAttemptAtUtc = null,
+    MarketCategoryInstrumentFailureCategory? FailureKind = null,
+    int? HttpStatus = null,
+    string? Operation = null,
+    int? PageNumber = null,
+    int? Expected = null,
+    int? Actual = null,
+    string? ProviderErrorCode = null,
+    MarketCategoryProviderErrorCodeParseOutcome? ProviderErrorCodeParseOutcome = null,
+    MarketCategoryInstrumentAuthenticationPhase? AuthenticationPhase = null,
+    MarketCategoryInstrumentPageEvidence? InitialPageEvidence = null,
+    MarketCategoryInstrumentPageEvidence? RestartedPageEvidence = null,
+    int? HttpRequestCount = null);

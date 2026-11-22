@@ -10,4 +10,11 @@ internal interface IMarketCategoryInstrumentsGateway
         string categoryCode,
         MarketCategoryInstrumentRequestBudgetContext requestBudgetContext,
         CancellationToken cancellationToken);
+
+    Task<MarketCategoryInstrumentDiagnosticResult> CollectDiagnosticAsync(
+        BrokerEnvironmentKind appliedBrokerEnvironment,
+        string categoryCode,
+        MarketCategoryInstrumentRequestBudgetContext requestBudgetContext,
+        int maximumHttpRequests,
+        CancellationToken cancellationToken);
 }

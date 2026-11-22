@@ -67,6 +67,40 @@ else
                 <dt>Next scheduled check</dt>
                 <dd>@UtcTime(detail.Coverage.NextScheduledCheckUtc)</dd>
                 <dt>Coverage failure</dt><dd>@FormatText(detail.Coverage.SafeFailureCode)</dd>
+                @if (detail.FailureKind is { } failureKind)
+                {
+                    <dt>Saved target failure</dt>
+                    <dd data-testid="market-detail-failure-diagnostics">
+                        @if (failureKind == "AllowanceUnavailable")
+                        {
+                            <span>IG confirmed a known provider allowance limit.</span>
+                        }
+                        else if (failureKind == "Unauthorized" && detail.HttpStatus == 403)
+                        {
+                            <span>IG denied access (HTTP 403); the cause is not classified.</span>
+                        }
+                        else
+                        {
+                            <span>@failureKind</span>
+                        }
+                        @if (detail.HttpStatus is { } httpStatus)
+                        {
+                            <span> — HTTP @httpStatus</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(detail.Operation))
+                        {
+                            <span> — Operation: @detail.Operation</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(detail.ProviderErrorCode))
+                        {
+                            <span> — Provider code: @detail.ProviderErrorCode</span>
+                        }
+                    </dd>
+                }
+                else if (!string.IsNullOrWhiteSpace(detail.TargetFailureCode))
+                {
+                    <dt>Saved target diagnostics</dt><dd>Additional diagnostics are unavailable for this historical target failure.</dd>
+                }
                 <dt>Listing snapshot version</dt><dd>@FormatVersion(detail.ListingSnapshotVersion)</dd>
                 <dt>Listing retrieved</dt><dd>@UtcTime(detail.ListingRetrievedAtUtc)</dd>
             </dl>

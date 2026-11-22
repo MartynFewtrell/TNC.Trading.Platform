@@ -97,6 +97,51 @@ public sealed class MarketDetailsTests
     }
 
     /// <summary>
+    /// Trace: saved market-detail failure diagnostics.
+    /// Verifies: a known allowance is described as confirmed while an unknown 403 remains an unclassified access denial.
+    /// Expected: only the known target code is rendered, with its fixed operation and HTTP status; the unknown response never claims entitlement.
+    /// Why: a generic provider 403 must not be presented as proof that an allowance was exhausted.
+    /// </summary>
+    [Theory]
+    [InlineData("AllowanceUnavailable", "error.public-api.exceeded-application-allowance", "IG confirmed a known provider allowance limit.")]
+    [InlineData("Unauthorized", null, "IG denied access (HTTP 403); the cause is not classified.")]
+    public void Render_ShouldClassifySavedTargetFailureAccurately_WhenFailureIsKnownOrUnclassified(
+        string failureKind,
+        string? providerErrorCode,
+        string expectedText)
+    {
+        using var context = new PlatformComponentTestContext(
+            "local-viewer",
+            null,
+            _ => PlatformWebTestData.CreateJsonResponse(
+                HttpStatusCode.OK,
+                CreateDetail(
+                    "CS.D.ADAUSD.CFD.IP",
+                    includeObservation: false,
+                    failureKind: failureKind,
+                    providerErrorCode: providerErrorCode,
+                    httpStatus: 403,
+                    operation: "Session")));
+
+        var cut = context.Render<MarketDetails>(parameters => parameters
+            .Add(page => page.CategoryCode, "FX")
+            .Add(page => page.Epic, "CS.D.ADAUSD.CFD.IP"));
+
+        cut.WaitForAssertion(() =>
+        {
+            var diagnostics = cut.Find("[data-testid='market-detail-failure-diagnostics']");
+            Assert.Contains(expectedText, diagnostics.TextContent, StringComparison.Ordinal);
+            Assert.Contains("HTTP 403", diagnostics.TextContent, StringComparison.Ordinal);
+            Assert.Contains("Operation: Session", diagnostics.TextContent, StringComparison.Ordinal);
+            Assert.DoesNotContain("password-secret", diagnostics.TextContent, StringComparison.Ordinal);
+            if (providerErrorCode is not null)
+            {
+                Assert.Contains(providerErrorCode, diagnostics.TextContent, StringComparison.Ordinal);
+            }
+        });
+    }
+
+    /// <summary>
     /// Trace: Market Details Work Item 6, steps 5 and 6.
     /// Verifies: a stale listing-version conflict is accessible and Reload retries against current saved membership without the stale precondition.
     /// Expected: the initial 409 has an alert and a reload action; the second request succeeds and shows the refreshed saved state.
@@ -267,7 +312,13 @@ public sealed class MarketDetailsTests
         Assert.Equal(8, context.ApiHandler.Requests.Count);
     }
 
-    private static object CreateDetail(string epic, bool includeObservation = true) => new
+    private static object CreateDetail(
+        string epic,
+        bool includeObservation = true,
+        string? failureKind = null,
+        string? providerErrorCode = null,
+        int? httpStatus = null,
+        string? operation = null) => new
     {
         State = includeObservation ? "Complete" : "NotCollected",
         CategoryCode = "FX",
@@ -286,7 +337,12 @@ public sealed class MarketDetailsTests
             NextScheduledCheckUtc = (DateTimeOffset?)null,
             SafeFailureCode = (string?)null
         },
-        SavedObservation = includeObservation ? CreateObservation(epic) : null
+        SavedObservation = includeObservation ? CreateObservation(epic) : null,
+        FailureKind = failureKind,
+        ProviderErrorCode = providerErrorCode,
+        HttpStatus = httpStatus,
+        Operation = operation,
+        TargetFailureCode = failureKind
     };
 
     private static object CreateObservation(string epic) => new

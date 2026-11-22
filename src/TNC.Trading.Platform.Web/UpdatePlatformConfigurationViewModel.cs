@@ -21,4 +21,10 @@ internal sealed class UpdatePlatformConfigurationViewModel
     public int? ApprovedNonTradingDailyRequestAllowance { get; set; }
 
     public int? MarketDataLeadInMinutes { get; set; }
+
+    public int? MarketCategoryPageSize { get; set; }
+
+    public int? MarketDataRequestSpacingSeconds { get; set; }
+
+    public int? MarketCategoryPauseSeconds { get; set; }
 }

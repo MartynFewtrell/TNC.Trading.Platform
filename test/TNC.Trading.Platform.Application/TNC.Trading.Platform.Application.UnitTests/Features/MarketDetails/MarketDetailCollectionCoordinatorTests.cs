@@ -145,6 +145,52 @@ public sealed class MarketDetailCollectionCoordinatorTests
         Assert.Equal(0, harness.Gateway.Calls);
     }
 
+    /// <summary>
+    /// Trace: IG market-data recovery Phase 2, Steps 2.4-2.5.
+    /// Verifies: standalone detail capacity includes configured five-second request spacing for the bounded retry and reauthentication reserve.
+    /// Expected: a 384-target universe is blocked during the final minute of the schedule window before any detail request is sent.
+    /// Why: a sufficient daily allowance cannot authorize work whose paced worst-case request sequence cannot fit the standalone window.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteDueCollectionAsync_ShouldBlockWhenPacedCapacityExceedsWindow_WhenStandaloneWindowIsNearlyClosed()
+    {
+        var harness = new CoordinatorHarness(
+            remainingAllowance: 1_000,
+            now: new DateTimeOffset(2026, 9, 28, 16, 59, 59, TimeSpan.Zero),
+            targetCount: 384);
+
+        var response = await harness.ExecuteAsync();
+
+        Assert.False(harness.RunStore.LastCapacityAvailable);
+        Assert.Equal(MarketDetailRunStatus.Blocked, response.Status);
+        Assert.Equal("CapacityUnavailable", response.SafeReasonCode);
+        Assert.Equal(0, harness.Gateway.Calls);
+    }
+
+    /// <summary>
+    /// Trace: IG market collection failures plan, Phase 3, step 3.1.
+    /// Verifies an allowance denial ends the current scheduled attempt without suppressing the next trading day's due attempt.
+    /// Expected: each due trading day acquires a separate run and calls the gateway once, despite the first day's non-retryable failure.
+    /// Why: a provider denial applies to the active attempt; after the allowance window resets, scheduled collection must remain eligible.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteDueCollectionAsync_ShouldRemainEligibleOnNextTradingDay_WhenPriorAttemptWasAllowanceDenied()
+    {
+        var harness = new CoordinatorHarness(remainingAllowance: 100);
+        harness.Gateway.Failure = new(MarketDetailTargetFailureKind.AllowanceUnavailable, false, false);
+        harness.RunStore.StopAfterFirstFailure = true;
+
+        await harness.ExecuteAsync();
+        harness.Clock.AdvanceTo(Now.AddDays(1));
+
+        var laterResponse = await harness.ExecuteAsync();
+
+        Assert.Equal(MarketDetailRunStatus.Incomplete, laterResponse.Status);
+        Assert.Equal(2, harness.RunStore.Acquisitions);
+        Assert.Equal(2, harness.Gateway.Calls);
+        Assert.Equal(2, harness.RunStore.FailureWrites);
+    }
+
     private sealed class CoordinatorHarness(
         int? remainingAllowance,
         bool changeSourceAfterFirstRead = false,
@@ -351,12 +397,14 @@ public sealed class MarketDetailCollectionCoordinatorTests
     private sealed class FakeRunStore(int targetCount) : IMarketDetailRunStore
     {
         private MarketDetailRunLease? lease;
+        private readonly HashSet<MarketDetailRunKey> failedRuns = [];
 
         internal int FailureWrites { get; private set; }
         internal int Acquisitions { get; private set; }
         internal int LastMaximumTargetCount { get; private set; }
         internal bool? LastCapacityAvailable { get; private set; }
         internal bool? LastRevisionsCurrent { get; private set; }
+        internal bool StopAfterFirstFailure { get; set; }
 
         public Task<MarketDetailRunLease?> TryAcquireAsync(
             MarketDetailRunKey key,
@@ -370,7 +418,7 @@ public sealed class MarketDetailCollectionCoordinatorTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Acquisitions++;
-            lease = new(Guid.NewGuid(), key, owner, 1, nowUtc + leaseDuration, windowEndUtc, appliedEndpointProfile, revisions);
+            lease = new(Guid.NewGuid(), key, owner, 1, 1, nowUtc + leaseDuration, windowEndUtc, appliedEndpointProfile, revisions);
             return Task.FromResult<MarketDetailRunLease?>(lease);
         }
 
@@ -409,6 +457,11 @@ public sealed class MarketDetailCollectionCoordinatorTests
             CancellationToken cancellationToken)
         {
             LastMaximumTargetCount = maximumCount;
+            if (StopAfterFirstFailure && failedRuns.Contains(acquiredLease.Key))
+            {
+                return Task.FromResult<IReadOnlyList<MarketDetailTarget>>([]);
+            }
+
             return Task.FromResult<IReadOnlyList<MarketDetailTarget>>(
                 Enumerable.Range(0, targetCount)
                     .Select(index => new MarketDetailTarget(
@@ -434,6 +487,11 @@ public sealed class MarketDetailCollectionCoordinatorTests
             CancellationToken cancellationToken)
         {
             FailureWrites++;
+            if (StopAfterFirstFailure)
+            {
+                failedRuns.Add(acquiredLease.Key);
+            }
+
             return Task.FromResult(true);
         }
 
@@ -467,6 +525,8 @@ public sealed class MarketDetailCollectionCoordinatorTests
         internal Guid? FullRunId { get; private set; }
         internal List<int> BatchSizes { get; } = [];
         internal Action<MarketDetailGatewayRequest>? AfterCall { get; set; }
+        internal MarketDetailGatewayFailure Failure { get; set; } =
+            new(MarketDetailTargetFailureKind.TransientProviderFailure, true, false);
 
         public Task<IReadOnlyList<MarketDetailGatewayResult>> GetMarketsAsync(
             MarketDetailGatewayRequest request,
@@ -479,7 +539,7 @@ public sealed class MarketDetailCollectionCoordinatorTests
             return Task.FromResult<IReadOnlyList<MarketDetailGatewayResult>>(
                 request.Epics.Select(epic => MarketDetailGatewayResult.Failed(
                     epic,
-                    new(MarketDetailTargetFailureKind.TransientProviderFailure, true, false))).ToArray());
+                    Failure)).ToArray());
         }
     }
 

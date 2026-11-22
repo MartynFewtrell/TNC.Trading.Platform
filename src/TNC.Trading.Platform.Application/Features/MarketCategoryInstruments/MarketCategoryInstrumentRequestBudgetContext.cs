@@ -14,4 +14,7 @@ internal sealed record MarketCategoryInstrumentRequestBudgetContext(
     int EffectiveUpdatesPerDay = 1,
     string? AppliedEndpointProfile = null,
     bool IsManualOperation = false,
-    MarketDataFullRunLease? FullRunLease = null);
+    MarketDataFullRunLease? FullRunLease = null,
+    int CategoryPageSize = 25,
+    int RequestSpacingSeconds = 5,
+    int CategoryPauseSeconds = 60);

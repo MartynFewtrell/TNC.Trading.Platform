@@ -31,7 +31,10 @@ internal sealed class EfMarketCategoryInstrumentFrequencyStore(
             settings.PendingEffectiveTradingDay,
             settings.ApprovedNonTradingDailyRequestAllowance,
             settings.LeadInMinutes,
-            settings.ConfigurationVersion);
+            settings.ConfigurationVersion,
+            settings.CategoryPageSize,
+            settings.RequestSpacingSeconds,
+            settings.CategoryPauseSeconds);
     }
 
     public async Task SaveAsync(
@@ -58,6 +61,9 @@ internal sealed class EfMarketCategoryInstrumentFrequencyStore(
         settings.PendingEffectiveTradingDay = frequency.PendingEffectiveTradingDay;
         settings.ApprovedNonTradingDailyRequestAllowance = frequency.ApprovedNonTradingDailyRequestAllowance;
         settings.LeadInMinutes = frequency.LeadInMinutes;
+        settings.CategoryPageSize = frequency.CategoryPageSize;
+        settings.RequestSpacingSeconds = frequency.RequestSpacingSeconds;
+        settings.CategoryPauseSeconds = frequency.CategoryPauseSeconds;
         settings.ConfigurationVersion = checked(settings.ConfigurationVersion + 1);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         var interestRevision = await dbContext.MarketCategoryInterestStates.AsNoTracking()
@@ -109,9 +115,12 @@ internal sealed class EfMarketCategoryInstrumentFrequencyStore(
             || (frequency.PendingUpdatesPerDay is null) != (frequency.PendingEffectiveTradingDay is null)
             || frequency.ApprovedNonTradingDailyRequestAllowance is < 0
             || frequency.LeadInMinutes < 0
+            || frequency.CategoryPageSize is < 1 or > 1000
+            || frequency.RequestSpacingSeconds is < 1 or > 60
+            || frequency.CategoryPauseSeconds is < 1 or > 300
             || frequency.ConfigurationVersion < 1)
         {
-            throw new ArgumentException("Collection frequency and allowance values must be nonnegative, with pending frequency and date configured together.", nameof(frequency));
+            throw new ArgumentException("Collection frequency and allowance values must be valid, with pending frequency and date configured together.", nameof(frequency));
         }
     }
 
@@ -122,6 +131,9 @@ internal sealed class EfMarketCategoryInstrumentFrequencyStore(
             || (settings.PendingUpdatesPerDay is null) != (settings.PendingEffectiveTradingDay is null)
             || settings.ApprovedNonTradingDailyRequestAllowance is < 0
             || settings.LeadInMinutes < 0
+            || settings.CategoryPageSize is < 1 or > 1000
+            || settings.RequestSpacingSeconds is < 1 or > 60
+            || settings.CategoryPauseSeconds is < 1 or > 300
             || settings.ConfigurationVersion < 1)
         {
             throw new InvalidOperationException("Persisted collection settings are corrupt; collection is paused.");

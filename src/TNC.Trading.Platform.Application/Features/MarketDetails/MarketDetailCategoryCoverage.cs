@@ -7,4 +7,5 @@ internal sealed record MarketDetailCategoryCoverage(
     MarketDetailRunCounts? Counts,
     DateTimeOffset? LastCompleteAtUtc,
     DateTimeOffset? NextScheduledCheckUtc,
-    string? SafeFailureCode);
+    string? SafeFailureCode,
+    int? UpdateGeneration = null);

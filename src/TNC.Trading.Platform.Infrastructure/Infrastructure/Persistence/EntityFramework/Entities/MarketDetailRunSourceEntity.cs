@@ -4,6 +4,7 @@ internal sealed class MarketDetailRunSourceEntity
 {
     public Guid RunId { get; set; }
     public Guid BrokerEnvironmentId { get; set; }
+    public int UpdateGeneration { get; set; }
     public string CategoryCode { get; set; } = string.Empty;
     public Guid ListingCollectionId { get; set; }
     public long ListingVersion { get; set; }

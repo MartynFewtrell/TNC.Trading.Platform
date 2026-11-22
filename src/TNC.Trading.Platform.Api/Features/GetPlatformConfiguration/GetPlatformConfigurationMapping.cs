@@ -52,7 +52,10 @@ internal static class GetPlatformConfigurationMapping
                     ?? response.InstrumentCollectionStatus?.CategoryPrerequisiteOutcome,
                 response.InstrumentCollectionStatus?.SafeCategoryFailure,
                 response.InstrumentCollectionFrequency?.LeadInMinutes,
-                GetCapacityWarning(response.InstrumentCollectionFrequency?.CurrentUpdatesPerDay)));
+                GetCapacityWarning(response.InstrumentCollectionFrequency?.CurrentUpdatesPerDay),
+                response.InstrumentCollectionFrequency?.CategoryPageSize,
+                response.InstrumentCollectionFrequency?.RequestSpacingSeconds,
+                response.InstrumentCollectionFrequency?.CategoryPauseSeconds));
     }
 
     internal static string? GetCapacityWarning(int? updatesPerDay) => updatesPerDay is > 4

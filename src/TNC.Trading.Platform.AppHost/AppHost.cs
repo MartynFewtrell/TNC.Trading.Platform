@@ -1,10 +1,15 @@
-﻿using TNC.Trading.Platform.AppHost;
+﻿using System.Security.Cryptography;
+using TNC.Trading.Platform.AppHost;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
 var settings = AppHostSettings.FromConfiguration(builder.Configuration);
 var infrastructure = AppHostInfrastructureRegistration.Create(builder);
-var apiProject = AppHostProjectRegistration.AddApiProject(builder, infrastructure);
+var navigationProbeCommandKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+var apiProject = AppHostProjectRegistration.AddApiProject(
+    builder,
+    infrastructure,
+    navigationProbeCommandKey);
 var webProject = AppHostProjectRegistration.AddWebProject(builder, apiProject, infrastructure);
 
 apiProject = AppHostEnvironmentWiring.ConfigureApiProject(apiProject, infrastructure, settings);

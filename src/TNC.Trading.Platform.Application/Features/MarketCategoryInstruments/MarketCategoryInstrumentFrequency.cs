@@ -7,7 +7,10 @@ internal sealed record MarketCategoryInstrumentFrequency(
     DateOnly? PendingEffectiveTradingDay,
     int? ApprovedNonTradingDailyRequestAllowance = null,
     int LeadInMinutes = 15,
-    long ConfigurationVersion = 1)
+    long ConfigurationVersion = 1,
+    int CategoryPageSize = 25,
+    int RequestSpacingSeconds = 5,
+    int CategoryPauseSeconds = 60)
 {
     /// <summary>Returns the authoritative current count; persisted legacy pending values are not promoted by policy.</summary>
     public int ForTradingDay(DateOnly tradingDay) => CurrentUpdatesPerDay;

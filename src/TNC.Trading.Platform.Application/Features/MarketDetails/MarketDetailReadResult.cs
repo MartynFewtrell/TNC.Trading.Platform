@@ -13,4 +13,5 @@ internal sealed record MarketDetailReadResult(
     DateTimeOffset? LastCompleteAtUtc,
     DateTimeOffset? NextScheduledCheckUtc,
     string? SafeFailureCode,
-    MarketDetailGatewayFailure? LatestFailure);
+    MarketDetailGatewayFailure? LatestFailure,
+    string? TargetFailureCode = null);

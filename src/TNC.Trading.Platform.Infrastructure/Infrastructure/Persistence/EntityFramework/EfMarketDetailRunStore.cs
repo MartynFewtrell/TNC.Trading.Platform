@@ -118,58 +118,59 @@ internal sealed class EfMarketDetailRunStore(
             throw new InvalidOperationException("The applied endpoint profile changed before the market-detail lease was acquired.");
         }
 
-        var run = await dbContext.MarketDetailCollectionRuns.SingleOrDefaultAsync(
-            item => item.BrokerEnvironmentId == environmentId
+        var run = await dbContext.MarketDetailCollectionRuns
+            .Where(item => item.BrokerEnvironmentId == environmentId
                 && item.TradingDay == key.TradingDay
-                && item.ScheduledSlot == key.SlotIndex,
-            cancellationToken).ConfigureAwait(false);
+                && item.ScheduledSlot == key.SlotIndex)
+            .OrderByDescending(item => item.UpdateGeneration)
+            .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         if (run is not null
             && (!string.Equals(run.EndpointProfile, appliedEndpointProfile, StringComparison.Ordinal)
                 || run.CatalogueRevision != revisions.CatalogueRevision
                 || run.InterestRevision != revisions.InterestRevision
                 || run.ScheduleRevision != revisions.ScheduleRevision
-                || run.WindowEndUtc != windowEndUtc))
+                || run.WindowEndUtc != windowEndUtc
+                || run.Status == "Superseded"))
         {
-            run.Status = "Superseded";
-            run.SafeReasonCode = "RunProvenanceChanged";
-            ReleaseLease(run, nowUtc);
-            run.UpdatedAtUtc = nowUtc;
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return null;
-        }
-
-        var expiresAtUtc = Min(nowUtc + leaseDuration, windowEndUtc);
-        if (fullRunLease is not null)
-        {
-            expiresAtUtc = nowUtc + leaseDuration;
-        }
-
-        if (run is null)
-        {
-            run = new MarketDetailCollectionRunEntity
+            if (run.Status is not ("Complete" or "Superseded"))
             {
-                RunId = Guid.NewGuid(),
-                BrokerEnvironmentId = environmentId,
-                EndpointProfile = appliedEndpointProfile,
-                TradingDay = key.TradingDay,
-                ScheduledSlot = key.SlotIndex,
-                CatalogueRevision = revisions.CatalogueRevision,
-                InterestRevision = revisions.InterestRevision,
-                ScheduleRevision = revisions.ScheduleRevision,
-                Status = "Collecting",
-                WindowEndUtc = windowEndUtc,
-                LeaseOwner = owner,
-                LeaseFence = 1,
-                LeaseExpiresAtUtc = expiresAtUtc,
-                CreatedAtUtc = nowUtc,
-                UpdatedAtUtc = nowUtc
-            };
+                run.Status = "Superseded";
+                run.SafeReasonCode = "RunProvenanceChanged";
+                ReleaseLease(run, nowUtc);
+                run.UpdatedAtUtc = nowUtc;
+            }
+
+            run = CreateRun(
+                environmentId,
+                key,
+                appliedEndpointProfile,
+                revisions,
+                checked(run.UpdateGeneration + 1),
+                owner,
+                nowUtc,
+                leaseDuration,
+                windowEndUtc,
+                fullRunLease);
+            dbContext.MarketDetailCollectionRuns.Add(run);
+        }
+        else if (run is null)
+        {
+            run = CreateRun(
+                environmentId,
+                key,
+                appliedEndpointProfile,
+                revisions,
+                updateGeneration: 1,
+                owner,
+                nowUtc,
+                leaseDuration,
+                windowEndUtc,
+                fullRunLease);
             dbContext.MarketDetailCollectionRuns.Add(run);
         }
         else
         {
-            if (run.Status is "Complete" or "Superseded"
+            if (run.Status == "Complete"
                 || (fullRunLease is null && run.WindowEndUtc <= nowUtc)
                 || run.LeaseExpiresAtUtc > nowUtc)
             {
@@ -181,7 +182,9 @@ internal sealed class EfMarketDetailRunStore(
             run.SafeReasonCode = null;
             run.LeaseOwner = owner;
             run.LeaseFence = checked(run.LeaseFence + 1);
-            run.LeaseExpiresAtUtc = expiresAtUtc;
+            run.LeaseExpiresAtUtc = fullRunLease is null
+                ? Min(nowUtc + leaseDuration, windowEndUtc)
+                : nowUtc + leaseDuration;
             run.UpdatedAtUtc = nowUtc;
         }
 
@@ -195,6 +198,42 @@ internal sealed class EfMarketDetailRunStore(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return ToLease(run, key.Environment, fullRunLease);
+    }
+
+    private static MarketDetailCollectionRunEntity CreateRun(
+        Guid environmentId,
+        MarketDetailRunKey key,
+        string appliedEndpointProfile,
+        MarketDetailRevisions revisions,
+        int updateGeneration,
+        Guid owner,
+        DateTimeOffset nowUtc,
+        TimeSpan leaseDuration,
+        DateTimeOffset windowEndUtc,
+        MarketDataFullRunLease? fullRunLease)
+    {
+        var expiresAtUtc = fullRunLease is null
+            ? Min(nowUtc + leaseDuration, windowEndUtc)
+            : nowUtc + leaseDuration;
+        return new()
+        {
+            RunId = Guid.NewGuid(),
+            BrokerEnvironmentId = environmentId,
+            EndpointProfile = appliedEndpointProfile,
+            TradingDay = key.TradingDay,
+            ScheduledSlot = key.SlotIndex,
+            UpdateGeneration = updateGeneration,
+            CatalogueRevision = revisions.CatalogueRevision,
+            InterestRevision = revisions.InterestRevision,
+            ScheduleRevision = revisions.ScheduleRevision,
+            Status = "Collecting",
+            WindowEndUtc = windowEndUtc,
+            LeaseOwner = owner,
+            LeaseFence = 1,
+            LeaseExpiresAtUtc = expiresAtUtc,
+            CreatedAtUtc = nowUtc,
+            UpdatedAtUtc = nowUtc
+        };
     }
 
     public async Task<MarketDetailRunStatus> StageUniverseAsync(
@@ -254,6 +293,7 @@ internal sealed class EfMarketDetailRunStore(
         {
             RunId = run.RunId,
             BrokerEnvironmentId = environmentId,
+            UpdateGeneration = lease.UpdateGeneration,
             CategoryCode = source.CategoryCode,
             ListingCollectionId = source.CollectionId,
             ListingVersion = source.Version,
@@ -418,6 +458,12 @@ internal sealed class EfMarketDetailRunStore(
             && !excludesTarget
             && failure.IsRetryable;
         target.SafeFailureCode = failure.Kind.ToString();
+        target.FailureKind = failure.Kind.ToString();
+        target.ProviderErrorCode = MarketDetailProviderErrorCodes.IsAllowed(failure.ProviderErrorCode)
+            ? failure.ProviderErrorCode
+            : null;
+        target.HttpStatus = failure.HttpStatus is >= 100 and <= 599 ? failure.HttpStatus : null;
+        target.Operation = failure.Operation is "Session" or "Markets" ? failure.Operation : null;
         target.ExclusionEvidenceCode = excludesTarget ? failure.Kind.ToString() : null;
         target.ExcludedAtUtc = excludesTarget ? failedAtUtc : null;
         target.UpdatedAtUtc = failedAtUtc;
@@ -484,7 +530,9 @@ internal sealed class EfMarketDetailRunStore(
             cancellationToken).ConfigureAwait(false);
         var sourcesValidated = run.IsUniverseStaged
             && await dbContext.MarketDetailRunSources
-                .Where(item => item.RunId == lease.RunId && item.BrokerEnvironmentId == environmentId)
+                .Where(item => item.RunId == lease.RunId
+                    && item.BrokerEnvironmentId == environmentId
+                    && item.UpdateGeneration == lease.UpdateGeneration)
                 .AllAsync(item => item.IsValidatedComplete, cancellationToken)
                 .ConfigureAwait(false);
         var counts = new MarketDetailRunCounts(total - excluded, completed, excluded);
@@ -575,6 +623,10 @@ internal sealed class EfMarketDetailRunStore(
         target.Status = "Completed";
         target.Attempts = checked(target.Attempts + 1);
         target.SafeFailureCode = null;
+        target.FailureKind = null;
+        target.ProviderErrorCode = null;
+        target.HttpStatus = null;
+        target.Operation = null;
         target.ExclusionEvidenceCode = null;
         target.ExcludedAtUtc = null;
         target.UpdatedAtUtc = observation.RetrievedAtUtc;
@@ -782,7 +834,7 @@ internal sealed class EfMarketDetailRunStore(
         CancellationToken cancellationToken)
     {
         var persistedSources = await dbContext.MarketDetailRunSources.AsNoTracking()
-            .Where(item => item.RunId == run.RunId)
+            .Where(item => item.RunId == run.RunId && item.UpdateGeneration == run.UpdateGeneration)
             .OrderBy(item => item.CategoryCode)
             .Select(item => new { item.CategoryCode, item.ListingCollectionId, item.ListingVersion, item.IsFresh })
             .ToListAsync(cancellationToken).ConfigureAwait(false);
@@ -886,7 +938,7 @@ internal sealed class EfMarketDetailRunStore(
         MarketDetailRunLease lease,
         CancellationToken cancellationToken)
     {
-        if (lease.RunId == Guid.Empty || lease.Owner == Guid.Empty || lease.Fence < 1
+        if (lease.RunId == Guid.Empty || lease.Owner == Guid.Empty || lease.Fence < 1 || lease.UpdateGeneration < 1
             || lease.ExpiresAtUtc.Offset != TimeSpan.Zero || lease.WindowEndUtc.Offset != TimeSpan.Zero)
         {
             throw new ArgumentException("The market-detail lease is invalid.", nameof(lease));
@@ -928,6 +980,7 @@ internal sealed class EfMarketDetailRunStore(
         }
 
         if (run.LeaseOwner != lease.Owner || run.LeaseFence != lease.Fence
+            || run.UpdateGeneration != lease.UpdateGeneration
             || run.LeaseExpiresAtUtc is not { } leaseExpiresAtUtc || leaseExpiresAtUtc <= nowUtc
             || (lease.FullRunLease is null && run.WindowEndUtc <= nowUtc)
             || run.EndpointProfile != lease.AppliedEndpointProfile
@@ -976,6 +1029,7 @@ internal sealed class EfMarketDetailRunStore(
         }
 
         if (run is null || run.LeaseOwner != lease.Owner || run.LeaseFence != lease.Fence
+            || run.UpdateGeneration != lease.UpdateGeneration
             || run.LeaseExpiresAtUtc is not { } leaseExpiresAtUtc || leaseExpiresAtUtc <= nowUtc
             || (lease.FullRunLease is null && run.WindowEndUtc <= nowUtc)
             || run.Status != "Collecting" || run.EndpointProfile != lease.AppliedEndpointProfile
@@ -1013,6 +1067,7 @@ internal sealed class EfMarketDetailRunStore(
             new(environment, run.TradingDay, run.ScheduledSlot),
             run.LeaseOwner!.Value,
             run.LeaseFence,
+            run.UpdateGeneration,
             run.LeaseExpiresAtUtc!.Value,
             run.WindowEndUtc,
             run.EndpointProfile,

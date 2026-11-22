@@ -33,6 +33,29 @@ public sealed class AppHostProjectRegistrationTests
     }
 
     /// <summary>
+    /// Trace: IG navigation migration Phase 1, bounded investigation gate.
+    /// Verifies: the probe is exposed only as an explicitly invoked Aspire command when AppHost provides its ephemeral capability key.
+    /// Expected: the command requires an approval reference, asks for confirmation, and does not become a highlighted routine action.
+    /// Why: a local probe must not be callable by the scheduled collector or exposed as an unauthenticated API operation.
+    /// </summary>
+    [Fact]
+    public void AddApiProject_ShouldRegisterConfirmedProbeCommand_WhenEphemeralCommandKeyIsProvided()
+    {
+        var builder = CreateBuilder();
+        var infrastructure = AppHostInfrastructureRegistration.Create(builder);
+        var apiProject = AppHostProjectRegistration.AddApiProject(builder, infrastructure, "ephemeral-test-key");
+
+        var command = Assert.Single(
+            apiProject.Resource.Annotations.OfType<ResourceCommandAnnotation>(),
+            item => item.DisplayName == "Probe IG market navigation");
+
+        Assert.False(command.IsHighlighted);
+        Assert.Contains("up to 10", command.ConfirmationMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(command.Arguments, argument => argument.Name == "authorizationReference" && argument.Required);
+        Assert.Contains(command.Arguments, argument => argument.Name == "nodeId" && !argument.Required);
+    }
+
+    /// <summary>
     /// Trace: FR1, FR2, FR4, TR1.
     /// Verifies: Web project registration preserves the expected Web resource name, API wait dependency, and operator link in the application model.
     /// Expected: the Web resource is named `web`, waits for the API project, and exposes the `Operator UI` link.

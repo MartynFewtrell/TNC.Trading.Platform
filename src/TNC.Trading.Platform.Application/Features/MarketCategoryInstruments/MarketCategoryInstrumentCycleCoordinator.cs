@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
+using TNC.Trading.Platform.Application.Features.MarketDetails;
 using TNC.Trading.Platform.Application.Features.MarketDataRuns;
 using TNC.Trading.Platform.Application.Features.TradingState;
 using TNC.Trading.Platform.Application.Services;
@@ -321,6 +322,7 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
             var prerequisiteSucceeded = categoryStageSucceeded
                 || await RefreshCategoryPrerequisiteAsync(
                     lease,
+                    frequency,
                     configuration.TradingSchedule,
                     scheduleToken,
                     cancellationToken).ConfigureAwait(false);
@@ -432,8 +434,9 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                     MarketDataFullRunStage.Listings,
                     clock.GetUtcNow().ToUniversalTime(),
                     cancellationToken).ConfigureAwait(false) == "Skipped";
-            foreach (var categoryCode in plan.CategoriesToCollect)
+            for (var categoryIndex = 0; categoryIndex < plan.CategoriesToCollect.Count; categoryIndex++)
             {
+                var categoryCode = plan.CategoriesToCollect[categoryIndex];
                 if (listingStageSkipped)
                 {
                     break;
@@ -459,6 +462,7 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                         categorySnapshot!.Revision,
                         categoryCode,
                         effectiveUpdatesPerDay,
+                        frequency,
                         configuration.TradingSchedule,
                         scheduleToken,
                         cancellationToken).ConfigureAwait(false);
@@ -471,6 +475,19 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                 else
                 {
                     failed++;
+                }
+
+                if (outcome.Attempted
+                    && plan.CategoriesToCollect.Skip(categoryIndex + 1).Any(next => !succeededCategories.Contains(next))
+                    && !await DelayBetweenCategoriesAsync(
+                        lease,
+                        configuration.TradingSchedule,
+                        frequency.CategoryPauseSeconds,
+                        scheduleToken,
+                        cancellationToken).ConfigureAwait(false))
+                {
+                    cycleInterrupted = true;
+                    break;
                 }
 
                 if (lease.FullRunLease is { } itemParentLease
@@ -561,6 +578,7 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
 
     private async Task<bool> RefreshCategoryPrerequisiteAsync(
         MarketCategoryInstrumentCycleLease lease,
+        MarketCategoryInstrumentFrequency frequency,
         TradingScheduleConfiguration schedule,
         CancellationToken scheduleToken,
         CancellationToken cancellationToken)
@@ -574,7 +592,10 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                 return false;
             }
 
-            var request = new RefreshMarketCategoriesRequest(lease, scheduleToken);
+            var request = new RefreshMarketCategoriesRequest(
+                lease,
+                scheduleToken,
+                CollectionProfile: frequency);
             var response = await refreshCategoriesHandler.HandleAsync(request, cancellationToken).ConfigureAwait(false);
             if (response.Outcome is MarketCategoriesRefreshOutcome.Saved
                 && await CanContinueAsync(lease, schedule, scheduleToken, cancellationToken).ConfigureAwait(false))
@@ -618,6 +639,7 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
         long categorySnapshotRevision,
         string categoryCode,
         int updatesPerDay,
+        MarketCategoryInstrumentFrequency frequency,
         TradingScheduleConfiguration schedule,
         CancellationToken scheduleToken,
         CancellationToken cancellationToken)
@@ -641,7 +663,10 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                 lease.ScheduleRevision,
                 lease.EffectiveUpdatesPerDay,
                 lease.EndpointProfile,
-                FullRunLease: lease.FullRunLease);
+                FullRunLease: lease.FullRunLease,
+                CategoryPageSize: frequency.CategoryPageSize,
+                RequestSpacingSeconds: frequency.RequestSpacingSeconds,
+                CategoryPauseSeconds: frequency.CategoryPauseSeconds);
             var collectionResult = await instrumentsGateway.CollectCompleteAsync(
                 lease.BrokerEnvironment,
                 categoryCode,
@@ -681,7 +706,7 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                             lease.FullRunLease,
                             lease.ScheduleRevision),
                         scheduleToken).ConfigureAwait(false);
-                    return new(true, complete.Collection.Metadata.PageNumbersFetched.Count, collectionId);
+                    return new(true, complete.Collection.Metadata.PageNumbersFetched.Count, collectionId, true);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -706,7 +731,7 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                         false,
                         "UnexpectedFailure",
                         cancellationToken).ConfigureAwait(false);
-                    return new(false, 0, null);
+                    return new(false, 0, null, true);
                 }
             }
 
@@ -719,7 +744,15 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                 clock.GetUtcNow().ToUniversalTime(),
                 false,
                 ToSafeError(failure),
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                failure).ConfigureAwait(false);
+            if (completed)
+            {
+                MarketCollectionFailureMetrics.Record(
+                    lease.BrokerEnvironment,
+                    categoryCode,
+                    failure.Category.ToString());
+            }
             var canRetry = completed && retryPolicy.CanRetry(
                     failure,
                     retry,
@@ -744,13 +777,36 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                         failure.HttpStatusCode, failure.Expected, failure.Actual, retry + 1,
                         Activity.Current?.TraceId.ToString());
                 }
-                return new(false, 0, null);
+                return new(false, 0, null, true);
             }
 
             await clock.DelayAsync(retryPolicy.GetBackoff(retry), scheduleToken).ConfigureAwait(false);
         }
 
-        return new(false, 0, null);
+        return new(false, 0, null, true);
+    }
+
+    private async Task<bool> DelayBetweenCategoriesAsync(
+        MarketCategoryInstrumentCycleLease lease,
+        TradingScheduleConfiguration schedule,
+        int pauseSeconds,
+        CancellationToken scheduleToken,
+        CancellationToken cancellationToken)
+    {
+        var remaining = TimeSpan.FromSeconds(pauseSeconds);
+        while (remaining > TimeSpan.Zero)
+        {
+            if (!await CanContinueAsync(lease, schedule, scheduleToken, cancellationToken).ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            var delay = remaining > TimeSpan.FromSeconds(20) ? TimeSpan.FromSeconds(20) : remaining;
+            await clock.DelayAsync(delay, scheduleToken).ConfigureAwait(false);
+            remaining -= delay;
+        }
+
+        return await CanContinueAsync(lease, schedule, scheduleToken, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<bool> CanContinueAsync(
@@ -850,8 +906,18 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
                 new(MarketCategoryInstrumentFailureCategory.Unavailable, true),
             MarketCategoriesRefreshOutcome.Failed { Category: MarketCategoriesFailureCategory.RateLimited } =>
                 new(MarketCategoryInstrumentFailureCategory.RateLimited, false),
+            MarketCategoriesRefreshOutcome.Failed
+            {
+                Category: MarketCategoriesFailureCategory.AllowanceExceeded,
+                SafeReason: var safeReason
+            } when IsSafeProviderDenialReason(safeReason) =>
+                new(MarketCategoryInstrumentFailureCategory.AllowanceUnavailable, false, safeReason),
             MarketCategoriesRefreshOutcome.Failed { Category: MarketCategoriesFailureCategory.AllowanceExceeded } =>
                 new(MarketCategoryInstrumentFailureCategory.AllowanceExceeded, false),
+            MarketCategoriesRefreshOutcome.Failed { Category: MarketCategoriesFailureCategory.Unauthorized } failed =>
+                new(MarketCategoryInstrumentFailureCategory.Unauthorized, false, failed.SafeReason),
+            MarketCategoriesRefreshOutcome.Failed { Category: MarketCategoriesFailureCategory.Rejected } failed =>
+                new(MarketCategoryInstrumentFailureCategory.Rejected, false, failed.SafeReason),
             MarketCategoriesRefreshOutcome.Failed { Category: MarketCategoriesFailureCategory.ScheduleClosed } =>
                 new(MarketCategoryInstrumentFailureCategory.ScheduleClosed, false),
             MarketCategoriesRefreshOutcome.Failed { Category: MarketCategoriesFailureCategory.UnsupportedEnvironment } =>
@@ -865,6 +931,16 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
             "ProviderUnavailable",
         MarketCategoryInstrumentFailureCategory.InvalidCollection or MarketCategoryInstrumentFailureCategory.IncompleteCollection =>
             "InvalidResponse",
+        MarketCategoryInstrumentFailureCategory.AllowanceUnavailable when IsSafeProviderDenialReason(failure.Reason) =>
+            failure.Reason!,
+        MarketCategoryInstrumentFailureCategory.AllowanceUnavailable when MarketDetailProviderErrorCodes.GetSafeDenialReason(failure.ProviderErrorCode) is { } safeAllowanceReason =>
+            safeAllowanceReason,
+        MarketCategoryInstrumentFailureCategory.AllowanceUnavailable =>
+            "ProviderAllowanceExceeded",
+        MarketCategoryInstrumentFailureCategory.Rejected when IsSafeProviderDenialReason(failure.Reason) =>
+            failure.Reason!,
+        MarketCategoryInstrumentFailureCategory.Rejected when MarketDetailProviderErrorCodes.GetSafeDenialReason(failure.ProviderErrorCode) is { } safeDenialReason =>
+            safeDenialReason,
         MarketCategoryInstrumentFailureCategory.Rejected when failure.HttpStatusCode == 403 =>
             "ProviderAccessDenied",
         MarketCategoryInstrumentFailureCategory.Unauthorized =>
@@ -879,6 +955,21 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
             "Conflict",
         _ => "UnexpectedFailure"
     };
+
+    private static bool IsSafeProviderDenialReason(string? reason) =>
+        reason is "AccountAllowanceExceeded"
+            or "AccountTradingAllowanceExceeded"
+            or "ApplicationAllowanceExceeded"
+            or "ApiKeyAllowanceExceeded"
+            or "HistoricalDataAllowanceExceeded"
+            or "ApiKeyDisabled"
+            or "ApiKeyInvalid"
+            or "ApiKeyRestricted"
+            or "ApiKeyRevoked"
+            or "ProductCodeNotAllowed"
+            or "ProductNotSupported"
+            or "ProductNotFound"
+            or "ProviderAccessDenied";
 
     private static int CountMissingOptionalValues(IReadOnlyList<MarketCategoryInstrument> instruments) =>
         instruments.Sum(item =>
@@ -913,5 +1004,5 @@ internal sealed class MarketCategoryInstrumentCycleCoordinator(
     private MarketCategoryInstrumentCycleResult Poll(string status, DateTimeOffset nowUtc, int completed, int failed) =>
         new(status, nowUtc.Add(ConfigurationRecheckInterval), completed, failed);
 
-    private sealed record CategoryOutcome(bool Succeeded, int ProviderPages, Guid? CollectionId);
+    private sealed record CategoryOutcome(bool Succeeded, int ProviderPages, Guid? CollectionId, bool Attempted = false);
 }

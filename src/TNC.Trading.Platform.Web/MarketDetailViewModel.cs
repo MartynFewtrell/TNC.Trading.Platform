@@ -7,7 +7,12 @@ internal sealed record MarketDetailViewModel(
     long? ListingSnapshotVersion,
     DateTimeOffset? ListingRetrievedAtUtc,
     MarketDetailViewModel.CoverageViewModel Coverage,
-    MarketDetailViewModel.ObservationViewModel? SavedObservation)
+    MarketDetailViewModel.ObservationViewModel? SavedObservation,
+    string? FailureKind = null,
+    string? ProviderErrorCode = null,
+    int? HttpStatus = null,
+    string? Operation = null,
+    string? TargetFailureCode = null)
 {
     internal sealed record CoverageViewModel(
         bool IsFollowed,

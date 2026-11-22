@@ -8,6 +8,7 @@ namespace TNC.Trading.Platform.Web.Components.Pages;
 internal sealed class MarketCategoriesPagePresenter(PlatformApiClient platformApiClient)
 {
     private readonly SemaphoreSlim statusRefreshLock = new(1, 1);
+    private long statusRefreshGeneration;
 
     /// <summary>Gets the most recently saved market-category snapshot.</summary>
     public MarketCategoriesViewModel? State { get; private set; }
@@ -117,21 +118,34 @@ internal sealed class MarketCategoriesPagePresenter(PlatformApiClient platformAp
     /// <summary>Refreshes the schedule-derived status without reloading the saved category catalogue.</summary>
     public async Task RefreshCollectionStatusAsync(CancellationToken cancellationToken)
     {
+        var refreshGeneration = Interlocked.Increment(ref statusRefreshGeneration);
         await statusRefreshLock.WaitAsync(cancellationToken);
         try
         {
-            CollectionStatusError = null;
+            if (refreshGeneration == Volatile.Read(ref statusRefreshGeneration))
+            {
+                CollectionStatusError = null;
+            }
+
             try
             {
-                CollectionStatus = await platformApiClient.GetInstrumentCollectionStatusAsync(cancellationToken);
+                var refreshedStatus = await platformApiClient.GetInstrumentCollectionStatusAsync(cancellationToken);
+                if (refreshGeneration == Volatile.Read(ref statusRefreshGeneration))
+                {
+                    CollectionStatus = refreshedStatus;
+                    CollectionStatusError = null;
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
             }
             catch (Exception exception) when (exception is HttpRequestException or PlatformApiException or PlatformScopeChallengeRequiredException or InvalidOperationException)
             {
-                CollectionStatus = null;
-                CollectionStatusError = CreateErrorMessage("Unable to load collector status", exception);
+                if (refreshGeneration == Volatile.Read(ref statusRefreshGeneration))
+                {
+                    CollectionStatus = null;
+                    CollectionStatusError = CreateErrorMessage("Unable to load collector status", exception);
+                }
             }
         }
         finally

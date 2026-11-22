@@ -31,6 +31,7 @@ The Blazor UI talks to the API over service discovery using the internal `https+
 | `PUT` | `/api/platform/configuration` | Update schedule, retry, notification, and instrument-collection settings; platform identity is not mutable here. |
 | `GET` | `/api/platform/market-categories` | Read the saved applied-environment category catalogue, shared interest, and latest collection status (Viewer). |
 | `POST` | `/api/platform/market-categories/refresh` | Refresh the saved category catalogue inside the active schedule and allowance (Operator). |
+| `POST` | `/api/platform/market-categories/{categoryCode}/collection-diagnostic` | Explicitly run a bounded, nonpublishing category diagnostic under shared admission and allowance controls (Operator). |
 | `GET` | `/api/platform/market-categories/{categoryCode}/instruments?pageSize=50&cursor={opaque}` | Read one page from the versioned saved instrument snapshot (Viewer). |
 | `GET` | `/api/platform/market-categories/{categoryCode}/instruments/{epic}/market-details?listingVersion={version}` | Read one saved market-detail observation and independent coverage (Viewer). |
 | `PUT` | `/api/platform/market-categories/{categoryCode}/interest` | Update shared category interest using the expected interest revision (Operator). |
@@ -48,6 +49,7 @@ The Blazor UI talks to the API over service discovery using the internal `https+
 - Secret values are never returned by configuration or status endpoints.
 - Validation failures on configuration updates return a validation-problem payload with the existing field keys and `400` status.
 - Manual retry conflicts return `409 Conflict` when the current runtime state does not allow the action.
+- The category collection diagnostic accepts JSON `{ "maximumHttpRequests": 10 }`, where the integer must be from 2 through 103. It is denied when the applied environment or schedule is unavailable, another market-data run is active, or the shared allowance cannot cover the requested ceiling. It returns only sanitized counts and allow-listed discrepancy codes and never publishes an instrument snapshot.
 - Broker selection requires operator scope, acknowledgement, and the expected
   revision; stale revisions, unavailable/retired records, or a missing
   acknowledgement return a conflict or validation problem without changing

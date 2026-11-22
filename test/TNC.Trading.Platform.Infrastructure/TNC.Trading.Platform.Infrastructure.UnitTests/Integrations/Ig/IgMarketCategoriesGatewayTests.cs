@@ -30,6 +30,42 @@ public sealed class IgMarketCategoriesGatewayTests
         Assert.DoesNotContain("password-secret", result.ToString(), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Trace: IG market-data recovery Phase 2, Steps 2.2-2.5.
+    /// Verifies: real session, category, relogin, and retry HTTP starts share the configured request-spacing gate and budget.
+    /// Expected: four starts occur exactly five fake-time seconds apart and each request consumes one reservation.
+    /// Why: hidden or unpaced replays would bypass both provider pacing and daily allowance accounting.
+    /// </summary>
+    [Fact]
+    public async Task GetAsync_ShouldPaceAndReserveEverySessionAndRetry_WhenCategoryCallRequiresRelogin()
+    {
+        var start = new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero);
+        var timeProvider = new ManualTimeProvider(start);
+        var handler = new SequencedHandler(
+            timeProvider,
+            SessionResponse("first-cst", "first-token"),
+            Response(HttpStatusCode.Unauthorized, "{}"),
+            SessionResponse("second-cst", "second-token"),
+            Response(HttpStatusCode.OK, "{\"categories\":[{\"code\":\"A\",\"nonTradeable\":false}]}"));
+        var budget = new FakeRequestBudget();
+        var gateway = CreateGateway(handler, budget, timeProvider);
+
+        var collection = gateway.GetAsync(BudgetContext(), CancellationToken.None);
+
+        Assert.Equal([start], handler.StartTimes);
+        await AdvanceUntilRequestCountAsync(handler, timeProvider, 2);
+        await AdvanceUntilRequestCountAsync(handler, timeProvider, 3);
+        await AdvanceUntilRequestCountAsync(handler, timeProvider, 4);
+        var result = await collection;
+
+        Assert.IsType<MarketCategoriesGatewayResult.Succeeded>(result);
+        Assert.Equal(
+            [start, start.AddSeconds(5), start.AddSeconds(10), start.AddSeconds(15)],
+            handler.StartTimes);
+        Assert.Equal(4, budget.Reservations);
+        Assert.Equal(7, budget.Renewals);
+    }
+
     /// <summary>Trace: Market Categories Work Item 2. Verifies one fresh session is created and categories are replayed exactly once after a 401.</summary>
     [Fact]
     public async Task GetAsync_ShouldReplayCategoriesOnce_WhenFirstCategoriesCallIsUnauthorized()
@@ -201,13 +237,31 @@ public sealed class IgMarketCategoriesGatewayTests
     private static IgMarketCategoriesGateway CreateGateway(HttpMessageHandler handler) =>
         CreateGateway(handler, new FakeRequestBudget());
 
-    private static IgMarketCategoriesGateway CreateGateway(HttpMessageHandler handler, FakeRequestBudget budget) =>
+    private static IgMarketCategoriesGateway CreateGateway(
+        HttpMessageHandler handler,
+        FakeRequestBudget budget,
+        TimeProvider? timeProvider = null) =>
         new(
             new HttpClient(handler),
             new FakeProtectedCredentialService(),
             new FakeContextResolver(new(Guid.NewGuid(), "IG", "Demo", "Active", "Available", "IgDemo", true, true)),
             budget,
-            new IgProviderRequestThrottle(TimeSpan.Zero));
+            new IgProviderRequestThrottle(TimeSpan.Zero, timeProvider ?? new ImmediateTimeProvider()));
+
+    private static async Task AdvanceUntilRequestCountAsync(
+        SequencedHandler handler,
+        ManualTimeProvider timeProvider,
+        int expectedRequestCount)
+    {
+        await timeProvider.WaitForScheduledDelayAsync();
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        for (var attempt = 0; handler.Requests.Count < expectedRequestCount && attempt < 100; attempt++)
+        {
+            await Task.Delay(1);
+        }
+
+        Assert.Equal(expectedRequestCount, handler.Requests.Count);
+    }
 
     private static MarketCategoryInstrumentRequestBudgetContext BudgetContext() =>
         new(new DateOnly(2026, 9, 24), 0, Guid.NewGuid(), 1);
@@ -246,9 +300,19 @@ public sealed class IgMarketCategoriesGatewayTests
     {
         private readonly Func<int, bool> reserve = allowReservation ?? (_ => true);
         public int Reservations { get; private set; }
+        public int Renewals { get; private set; }
 
         public Task<bool> TryReserveAsync(BrokerEnvironmentKind environment, MarketCategoryInstrumentRequestBudgetContext context, CancellationToken cancellationToken) =>
             Task.FromResult(reserve(++Reservations));
+
+        public Task<bool> RenewAsync(
+            BrokerEnvironmentKind environment,
+            MarketCategoryInstrumentRequestBudgetContext context,
+            CancellationToken cancellationToken)
+        {
+            Renewals++;
+            return Task.FromResult(true);
+        }
     }
 
     private sealed class FakeContextResolver(AppliedBrokerEnvironmentContext? context) : IAppliedBrokerEnvironmentContextResolver
@@ -257,14 +321,32 @@ public sealed class IgMarketCategoriesGatewayTests
         public Task<AppliedBrokerEnvironmentContext?> ResolveAsync(Guid brokerEnvironmentId, CancellationToken cancellationToken) => Task.FromResult(context?.BrokerEnvironmentId == brokerEnvironmentId ? context : null);
     }
 
-    private sealed class SequencedHandler(params HttpResponseMessage[] responses) : HttpMessageHandler
+    private sealed class SequencedHandler : HttpMessageHandler
     {
-        private readonly Queue<HttpResponseMessage> responses = new(responses);
+        private readonly Queue<HttpResponseMessage> responses;
+        private readonly TimeProvider? timeProvider;
+
+        public SequencedHandler(params HttpResponseMessage[] responses)
+            : this(null, responses)
+        {
+        }
+
+        public SequencedHandler(TimeProvider? timeProvider, params HttpResponseMessage[] responses)
+        {
+            this.timeProvider = timeProvider;
+            this.responses = new(responses);
+        }
+
         public List<HttpRequestMessage> Requests { get; } = [];
+        public List<DateTimeOffset> StartTimes { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Requests.Add(request);
+            if (timeProvider is not null)
+            {
+                StartTimes.Add(timeProvider.GetUtcNow());
+            }
             return Task.FromResult(responses.Dequeue());
         }
     }
@@ -273,5 +355,96 @@ public sealed class IgMarketCategoriesGatewayTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromException<HttpResponseMessage>(exception);
+    }
+
+    private sealed class ManualTimeProvider(DateTimeOffset initialUtcNow) : TimeProvider
+    {
+        private readonly List<ManualTimer> timers = [];
+        private readonly SemaphoreSlim scheduledDelays = new(0);
+        private long timestamp;
+
+        public override DateTimeOffset GetUtcNow() => initialUtcNow.AddTicks(timestamp);
+
+        public override long GetTimestamp() => timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            var timer = new ManualTimer(this, callback, state);
+            timer.Change(dueTime, period);
+            if (dueTime > TimeSpan.Zero)
+            {
+                scheduledDelays.Release();
+            }
+
+            timers.Add(timer);
+            return timer;
+        }
+
+        public Task WaitForScheduledDelayAsync() => scheduledDelays.WaitAsync();
+
+        public void Advance(TimeSpan amount)
+        {
+            timestamp = checked(timestamp + amount.Ticks);
+            while (true)
+            {
+                var next = timers.FirstOrDefault(timer => timer.IsDue(timestamp));
+                if (next is null)
+                {
+                    return;
+                }
+
+                next.Fire(timestamp);
+            }
+        }
+
+        private sealed class ManualTimer(
+            ManualTimeProvider owner,
+            TimerCallback callback,
+            object? state) : ITimer
+        {
+            private long dueAt = long.MaxValue;
+            private long periodTicks = -1;
+            private bool disposed;
+
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                if (disposed)
+                {
+                    return false;
+                }
+
+                dueAt = dueTime == Timeout.InfiniteTimeSpan
+                    ? long.MaxValue
+                    : checked(owner.timestamp + Math.Max(0, dueTime.Ticks));
+                periodTicks = period == Timeout.InfiniteTimeSpan ? -1 : period.Ticks;
+                return true;
+            }
+
+            public bool IsDue(long now) => !disposed && dueAt <= now;
+
+            public void Fire(long now)
+            {
+                dueAt = periodTicks > 0 ? checked(now + periodTicks) : long.MaxValue;
+                callback(state);
+            }
+
+            public void Dispose()
+            {
+                disposed = true;
+                dueAt = long.MaxValue;
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 }
