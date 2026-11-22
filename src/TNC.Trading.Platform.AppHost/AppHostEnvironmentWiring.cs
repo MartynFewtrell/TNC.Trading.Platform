@@ -1,4 +1,5 @@
 ﻿using Aspire.Hosting.ApplicationModel;
+using Aspire.Hosting.Dotnet;
 
 namespace TNC.Trading.Platform.AppHost;
 
@@ -103,8 +104,8 @@ internal static class AppHostEnvironmentWiring
         return environmentValues;
     }
 
-    internal static IResourceBuilder<ProjectResource> ConfigureApiProject(
-        IResourceBuilder<ProjectResource> apiProject,
+    internal static IResourceBuilder<DotnetProjectResource> ConfigureApiProject(
+        IResourceBuilder<DotnetProjectResource> apiProject,
         AppHostInfrastructure infrastructure,
         AppHostSettings settings)
     {
@@ -147,7 +148,7 @@ internal static class AppHostEnvironmentWiring
         return configuredApi;
     }
 
-    internal static IResourceBuilder<ProjectResource> ConfigureWebProject(IResourceBuilder<ProjectResource> webProject)
+    internal static IResourceBuilder<DotnetProjectResource> ConfigureWebProject(IResourceBuilder<DotnetProjectResource> webProject)
     {
         ArgumentNullException.ThrowIfNull(webProject);
 
@@ -162,9 +163,9 @@ internal static class AppHostEnvironmentWiring
         return configuredWeb;
     }
 
-    internal static (IResourceBuilder<ProjectResource> ApiProject, IResourceBuilder<ProjectResource> WebProject) ConfigureAuthenticationProvider(
-        IResourceBuilder<ProjectResource> apiProject,
-        IResourceBuilder<ProjectResource> webProject,
+    internal static (IResourceBuilder<DotnetProjectResource> ApiProject, IResourceBuilder<DotnetProjectResource> WebProject) ConfigureAuthenticationProvider(
+        IResourceBuilder<DotnetProjectResource> apiProject,
+        IResourceBuilder<DotnetProjectResource> webProject,
         IResourceBuilder<IResourceWithEndpoints> keycloak,
         AppHostSettings settings)
     {

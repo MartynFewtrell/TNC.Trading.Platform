@@ -26,7 +26,11 @@ public sealed class AppHostCompositionTests
     [Fact]
     public void Compose_ShouldPreserveExpectedTopology_WhenAppHostSupportUnitsAreAssembled()
     {
-        var builder = DistributedApplication.CreateBuilder([]);
+        var builder = DistributedApplication.CreateBuilder(new DistributedApplicationOptions
+        {
+            Args = [],
+            ProjectDirectory = Projects.TNC_Trading_Platform_AppHost.ProjectPath
+        });
         var settings = new AppHostSettings(
             ApiAuthenticationProvider: null,
             EnableInteractiveTestSignIn: false,

@@ -1,10 +1,12 @@
-﻿<Project Sdk="Aspire.AppHost.Sdk/13.5.4">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Hosting.Keycloak" Version="13.5.4-preview.1.26464.4" />
-    <PackageReference Include="Aspire.Hosting.SqlServer" Version="13.5.4" />
-    <ProjectReference Include="..\TNC.Trading.Platform.Api\TNC.Trading.Platform.Api.csproj" />
-    <ProjectReference Include="..\TNC.Trading.Platform.Web\TNC.Trading.Platform.Web.csproj" />
+    <PackageReference Include="Aspire.Hosting.AppHost" Version="17.0.0" />
+    <PackageReference Include="Aspire.Hosting.Dotnet" Version="17.0.0" />
+    <PackageReference Include="Aspire.Hosting.Keycloak" Version="17.0.0-preview.1.26567.5" />
+    <PackageReference Include="Aspire.Hosting.SqlServer" Version="17.0.0" />
+    <ProjectReference Include="..\TNC.Trading.Platform.Api\TNC.Trading.Platform.Api.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\TNC.Trading.Platform.Web\TNC.Trading.Platform.Web.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <PropertyGroup>

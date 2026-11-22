@@ -1,5 +1,6 @@
 ﻿using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
+using Aspire.Hosting.Dotnet;
 
 namespace TNC.Trading.Platform.AppHost;
 
@@ -205,7 +206,7 @@ public sealed class AppHostEnvironmentWiringTests
     }
 
     /// <summary>
-    /// Verifies that <see cref="AppHostEnvironmentWiring.ConfigureApiProject(Aspire.Hosting.ApplicationModel.IResourceBuilder{ProjectResource}, AppHostInfrastructure, AppHostSettings)"/>
+    /// Verifies that <see cref="AppHostEnvironmentWiring.ConfigureApiProject(Aspire.Hosting.ApplicationModel.IResourceBuilder{DotnetProjectResource}, AppHostInfrastructure, AppHostSettings)"/>
     /// applies the required API authentication, Mailpit SMTP, and ACS transport values.
     /// </summary>
     /// <remarks>
@@ -247,7 +248,7 @@ public sealed class AppHostEnvironmentWiringTests
     }
 
     /// <summary>
-    /// Verifies that <see cref="AppHostEnvironmentWiring.ConfigureWebProject(Aspire.Hosting.ApplicationModel.IResourceBuilder{ProjectResource})"/>
+    /// Verifies that <see cref="AppHostEnvironmentWiring.ConfigureWebProject(Aspire.Hosting.ApplicationModel.IResourceBuilder{DotnetProjectResource})"/>
     /// applies the required Web authentication configuration.
     /// </summary>
     /// <remarks>
@@ -281,7 +282,7 @@ public sealed class AppHostEnvironmentWiringTests
     }
 
     /// <summary>
-    /// Verifies that <see cref="AppHostEnvironmentWiring.ConfigureAuthenticationProvider(Aspire.Hosting.ApplicationModel.IResourceBuilder{ProjectResource}, Aspire.Hosting.ApplicationModel.IResourceBuilder{ProjectResource}, Aspire.Hosting.ApplicationModel.IResourceBuilder{IResourceWithEndpoints}, AppHostSettings)"/>
+    /// Verifies that <see cref="AppHostEnvironmentWiring.ConfigureAuthenticationProvider(Aspire.Hosting.ApplicationModel.IResourceBuilder{DotnetProjectResource}, Aspire.Hosting.ApplicationModel.IResourceBuilder{DotnetProjectResource}, Aspire.Hosting.ApplicationModel.IResourceBuilder{IResourceWithEndpoints}, AppHostSettings)"/>
     /// keeps the default runtime Keycloak-backed while scoping the synthetic override to the API project.
     /// </summary>
     /// <remarks>
@@ -307,8 +308,10 @@ public sealed class AppHostEnvironmentWiringTests
                 AcsSenderAddress: null,
                 AcsConnectionString: null));
 
-        var syntheticApiProject = builder.AddProject<Projects.TNC_Trading_Platform_Api>("api-test-override");
-        var syntheticWebProject = builder.AddProject<Projects.TNC_Trading_Platform_Web>("web-test-override");
+#pragma warning disable ASPIREDOTNETPROJECT001
+        var syntheticApiProject = builder.AddDotnetProject("api-test-override", AppHostProjectRegistration.ApiProjectPath);
+        var syntheticWebProject = builder.AddDotnetProject("web-test-override", AppHostProjectRegistration.WebProjectPath);
+#pragma warning restore ASPIREDOTNETPROJECT001
 
         AppHostEnvironmentWiring.ConfigureAuthenticationProvider(
             syntheticApiProject,
@@ -376,7 +379,8 @@ public sealed class AppHostEnvironmentWiringTests
         return DistributedApplication.CreateBuilder(new DistributedApplicationOptions
         {
             DisableDashboard = true,
-            AllowUnsecuredTransport = true
+            AllowUnsecuredTransport = true,
+            ProjectDirectory = Projects.TNC_Trading_Platform_AppHost.ProjectPath
         });
     }
 }
