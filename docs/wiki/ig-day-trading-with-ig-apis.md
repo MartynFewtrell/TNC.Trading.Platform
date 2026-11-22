@@ -48,20 +48,24 @@ The platform migration uses the following environment and credential decisions.
 They are provisional deployment decisions where no product authorization has
 been recorded.
 
-* IG Demo is the only environment supported by the current implementation and
-   automated proof-data coverage. IG Live requests must be rejected before any
-   network call until Live operation is explicitly authorized, tested, and
-   separately configured. A Live request must never be routed to the Demo URL.
+* IG Demo is the only environment supported for account/trading operations
+  and automated proof-data coverage. Market-data requests may use an explicitly
+  configured Demo or Live profile; a Live market-data profile never enables
+  account/trading operations or routes to the Demo URL. IG Live trading must be
+  rejected before any network call until separately authorized, tested, and
+  configured.
 * IG session proof data is non-secret and may be retained according to the
    platform's operational retention policy. Provider credentials, `CST`,
    `X-SECURITY-TOKEN`, and equivalent tokens remain inside Infrastructure and
    are never persisted in runtime state, API responses, UI state, or logs.
-* Provider tokens are operation-scoped. The current implementation consumes
-   them inside `IgBrokerAuthenticationGateway` while creating the session and
-   collecting account and position proof data. It discards them before returning
-   provider-neutral evidence to Application rather than treating them as durable
-   application sessions. Token lifetime and any future streaming-session scope
-   require explicit provider validation before trading features are enabled.
+* Provider tokens are operation-scoped. The authentication proof flow and the
+   IG REST gateways create sessions inside Infrastructure and discard tokens
+   after each operation; tokens are never returned to Application or treated as
+   durable application sessions. Read requests may be replayed once after an
+   unauthorized response. State-changing requests are not retried, and a
+   possibly completed mutation with no reliable acknowledgement is reported as
+   indeterminate. Token lifetime and any future streaming-session scope require
+   explicit provider validation before streaming or production trading.
 * Application owns the narrow `IBrokerAuthenticationGateway` capability.
    Its request contains only the selected broker environment. Infrastructure
    owns protected credential retrieval, Demo routing, IG JSON records, HTTP
@@ -147,6 +151,29 @@ platform retrieval timestamp is UTC; IG's `updateTime` is retained and shown
 as provider-supplied text. The API, UI, Application outcomes, and logs never
 expose credentials, session headers, raw provider payloads, or raw diagnostic
 response content.
+
+### Additional IG REST gateway capabilities
+
+Application ports and Infrastructure gateways now cover market search,
+single/batch market details, and historical prices; positions and working
+orders (read, create, amend, and close/cancel); deal confirmations; account
+activity and transaction history; and watchlist read/write operations. These
+are platform gateway capabilities, not new public HTTP endpoints or strategy
+orchestration.
+
+Market-data calls use the applied market-data endpoint profile. Trading,
+account-history, and watchlist calls require an executable IG Demo profile and
+verify that the authenticated account matches the account requested by the
+caller. IG Live trading remains unsupported. REST market details and history
+are useful context but do not provide continuous prices or satisfy the
+platform's streaming freshness requirement.
+
+The demo client remains a reference rather than a contract authority. Direct
+`/marketnavigation`, sentiment, sprint-market, session encryption-key/logout
+and account-switch operations, and client-application administration are not
+implemented by these gateways. Validate IG routes, versions, headers, and
+payloads against current authoritative IG documentation and IG Demo before
+production use.
 
 Before you can trade or subscribe to prices you need to identify instruments.
 

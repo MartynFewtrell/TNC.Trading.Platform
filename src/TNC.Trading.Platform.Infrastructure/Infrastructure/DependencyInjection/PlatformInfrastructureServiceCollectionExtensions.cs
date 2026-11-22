@@ -8,12 +8,16 @@ using TNC.Trading.Platform.Application.Features.GetIgLoginHistory.Ports;
 using TNC.Trading.Platform.Application.Features.PlatformAuthentication.Ports;
 using TNC.Trading.Platform.Application.Features.TriggerManualAuthRetry.Ports;
 using TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration;
+using TNC.Trading.Platform.Application.Features.Watchlists;
 using TNC.Trading.Platform.Application.Features.GetPlatformEvents.Ports;
 using TNC.Trading.Platform.Application.Features.GetPlatformStatus.Ports;
 using TNC.Trading.Platform.Application.Features.AccountDetails;
+using TNC.Trading.Platform.Application.Features.AccountHistory;
 using TNC.Trading.Platform.Application.Features.AccountPreferences;
+using TNC.Trading.Platform.Application.Features.MarketData;
 using TNC.Trading.Platform.Application.Features.MarketCategories;
 using TNC.Trading.Platform.Application.Features.MarketCategoryInstruments;
+using TNC.Trading.Platform.Application.Features.Trading;
 using TNC.Trading.Platform.Application.Features.BrokerEnvironments;
 using TNC.Trading.Platform.Application.Features.RecordAuthAuditEvent.Ports;
 using TNC.Trading.Platform.Application.Services;
@@ -126,6 +130,11 @@ internal static class PlatformInfrastructureServiceCollectionExtensions
         services.AddScoped<IMarketCategoryInstrumentRequestBudget, EfMarketCategoryInstrumentRequestBudget>();
         services.AddScoped<IMarketCategoryInstrumentStatusReader, EfMarketCategoryInstrumentStatusReader>();
         services.AddSingleton<IgProviderRequestThrottle>();
+        services.AddHttpClient<IgRestGatewayClient>();
+        services.AddScoped<IMarketDataGateway, IgMarketDataGateway>();
+        services.AddScoped<ITradingGateway, IgTradingGateway>();
+        services.AddScoped<IAccountHistoryGateway, IgAccountHistoryGateway>();
+        services.AddScoped<IWatchlistsGateway, IgWatchlistsGateway>();
         services.AddHttpClient<IAccountDetailsGateway, IgAccountDetailsGateway>(client =>
         {
             client.BaseAddress = new Uri("https://demo-api.ig.com/gateway/deal/");
