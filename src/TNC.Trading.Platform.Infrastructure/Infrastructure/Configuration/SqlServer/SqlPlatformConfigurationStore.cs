@@ -53,6 +53,26 @@ internal sealed class SqlPlatformConfigurationStore(
 
     public async Task<UpdatePlatformConfigurationResult> CommitAsync(PlatformConfigurationUpdate update, CancellationToken cancellationToken)
     {
+        var hasCredentialReplacement =
+            !string.IsNullOrWhiteSpace(update.ApiKey) ||
+            !string.IsNullOrWhiteSpace(update.Identifier) ||
+            !string.IsNullOrWhiteSpace(update.Password);
+        var appliedBrokerEnvironment = hasCredentialReplacement
+            ? await GetAppliedBrokerEnvironmentAsync(cancellationToken).ConfigureAwait(false)
+            : null;
+
+        if (hasCredentialReplacement &&
+            (appliedBrokerEnvironment is null || !BrokerEnvironmentCredentialPolicy.CanStoreIgCredentials(appliedBrokerEnvironment)))
+        {
+            throw new ConfigurationValidationException(new Dictionary<string, string[]>
+            {
+                ["Credentials"] =
+                [
+                    "The applied broker environment cannot store IG credentials. Ask an Administrator to correct the catalog eligibility or apply a supported IG environment, then retry on the Configuration page. The Broker Environments page is Administrator-only and also rejects credential saves for ineligible environments."
+                ]
+            });
+        }
+
         var entity = await EnsureConfigurationAsync(cancellationToken).ConfigureAwait(false);
         var currentStartupFixedConfiguration = new PlatformStartupFixedConfiguration(
             platformEnvironmentContext.Environment,
@@ -77,7 +97,16 @@ internal sealed class SqlPlatformConfigurationStore(
         entity.UpdatedAtUtc = timeProvider.GetUtcNow();
         entity.UpdatedBy = update.ChangedBy;
 
-        await protectedCredentialService.UpdateAsync(update.BrokerEnvironment, update.ApiKey, update.Identifier, update.Password, update.ChangedBy, cancellationToken).ConfigureAwait(false);
+        if (hasCredentialReplacement)
+        {
+            await protectedCredentialService.UpdateAsync(
+                appliedBrokerEnvironment!.BrokerEnvironmentId,
+                update.ApiKey,
+                update.Identifier,
+                update.Password,
+                update.ChangedBy,
+                cancellationToken).ConfigureAwait(false);
+        }
 
         var correlationId = Guid.NewGuid().ToString("N");
 
@@ -164,6 +193,23 @@ internal sealed class SqlPlatformConfigurationStore(
         return MapAsync(entity, platformEnvironmentContext.Environment, brokerEnvironment, cancellationToken);
     }
 
+    private async Task<BrokerEnvironmentEntity?> GetAppliedBrokerEnvironmentAsync(CancellationToken cancellationToken)
+    {
+        var selection = await dbContext.BrokerEnvironmentSelections
+            .AsNoTracking()
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (selection?.AppliedBrokerEnvironmentId is not { } brokerEnvironmentId)
+        {
+            return null;
+        }
+
+        return await dbContext.BrokerEnvironments
+            .AsNoTracking()
+            .SingleOrDefaultAsync(item => item.BrokerEnvironmentId == brokerEnvironmentId, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private async Task<PlatformConfigurationSnapshot> MapAsync(
         PlatformConfigurationEntity entity,
         PlatformEnvironmentKind platformEnvironment,
@@ -176,7 +222,12 @@ internal sealed class SqlPlatformConfigurationStore(
             .ToArray();
 
         var bankHolidays = JsonSerializer.Deserialize<DateOnly[]>(entity.BankHolidayExclusionsJson) ?? [];
-        var credentials = await protectedCredentialService.GetPresenceAsync(brokerEnvironment, cancellationToken).ConfigureAwait(false);
+        var appliedBrokerEnvironment = await GetAppliedBrokerEnvironmentAsync(cancellationToken).ConfigureAwait(false);
+        var credentials = appliedBrokerEnvironment is null
+            ? new CredentialPresence(false, false, false)
+            : await protectedCredentialService
+                .GetPresenceAsync(appliedBrokerEnvironment.BrokerEnvironmentId, cancellationToken)
+                .ConfigureAwait(false);
 
         return new PlatformConfigurationSnapshot(
             platformEnvironment,

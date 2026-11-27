@@ -86,7 +86,6 @@ public sealed class IgAccountDetailsGatewayTests
 
         public Task<IgCredentials> GetCredentialsAsync(BrokerEnvironmentKind brokerEnvironment, CancellationToken cancellationToken) => Task.FromResult(new IgCredentials("api-key", "identifier", "password-secret"));
 
-        public Task UpdateAsync(BrokerEnvironmentKind brokerEnvironment, string? apiKey, string? identifier, string? password, string changedBy, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class SequencedHandler(params HttpResponseMessage[] responses) : HttpMessageHandler

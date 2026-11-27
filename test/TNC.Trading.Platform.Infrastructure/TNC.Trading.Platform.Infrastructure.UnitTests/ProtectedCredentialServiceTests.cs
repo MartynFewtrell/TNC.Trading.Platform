@@ -16,9 +16,11 @@ public class ProtectedCredentialServiceTests
     public async Task GetCredentialsAsync_ShouldReturnEmptyValues_WhenStoredKeyIsUnavailable()
     {
         using var dbContext = InfrastructureReflection.CreateDbContext();
+        var brokerEnvironmentId = await CatalogTestSeed.SeedAsync(dbContext, BrokerEnvironmentKind.Demo, "IgDemo");
         dbContext.ProtectedCredentials.Add(new ProtectedCredentialEntity
         {
-            BrokerEnvironment = BrokerEnvironmentKind.Demo.ToString(),
+            BrokerEnvironmentId = brokerEnvironmentId,
+            BrokerEnvironment = brokerEnvironmentId.ToString("D"),
             CredentialType = "ApiKey",
             ProtectedValue = "invalid-key-payload",
             ProtectionKind = "DataProtection"
@@ -30,7 +32,7 @@ public class ProtectedCredentialServiceTests
             InfrastructureReflection.CreateDataProtectionProvider(),
             TimeProvider.System);
 
-        var credentials = await service.GetCredentialsAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
+        var credentials = await service.GetCredentialsAsync(brokerEnvironmentId, CancellationToken.None);
 
         Assert.Equal(string.Empty, credentials.ApiKey);
         Assert.Equal(string.Empty, credentials.Identifier);
@@ -47,15 +49,16 @@ public class ProtectedCredentialServiceTests
     public async Task GetPresenceAsync_ShouldReportUnreadableFieldAsUnusable_WhenAllRowsArePresent()
     {
         using var dbContext = InfrastructureReflection.CreateDbContext();
+        var brokerEnvironmentId = await CatalogTestSeed.SeedAsync(dbContext, BrokerEnvironmentKind.Demo, "IgDemo");
         var provider = InfrastructureReflection.CreateDataProtectionProvider();
         var service = new ProtectedCredentialService(dbContext, provider, TimeProvider.System);
 
-        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
+        await service.UpdateAsync(brokerEnvironmentId, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
         await dbContext.SaveChangesAsync();
         dbContext.ProtectedCredentials.Single(item => item.CredentialType == "Identifier").ProtectedValue = "unreadable-ciphertext";
         await dbContext.SaveChangesAsync();
 
-        var presence = await service.GetPresenceAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
+        var presence = await service.GetPresenceAsync(brokerEnvironmentId, CancellationToken.None);
 
         Assert.True(presence.HasApiKey);
         Assert.True(presence.HasIdentifier);
@@ -77,18 +80,19 @@ public class ProtectedCredentialServiceTests
     public async Task UpdateAsync_ShouldRetainUnreadableField_WhenPartialSaveOmitsIt()
     {
         using var dbContext = InfrastructureReflection.CreateDbContext();
+        var brokerEnvironmentId = await CatalogTestSeed.SeedAsync(dbContext, BrokerEnvironmentKind.Demo, "IgDemo");
         var provider = InfrastructureReflection.CreateDataProtectionProvider();
         var service = new ProtectedCredentialService(dbContext, provider, TimeProvider.System);
 
-        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
+        await service.UpdateAsync(brokerEnvironmentId, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
         await dbContext.SaveChangesAsync();
         dbContext.ProtectedCredentials.Single(item => item.CredentialType == "Password").ProtectedValue = "unreadable-ciphertext";
         await dbContext.SaveChangesAsync();
 
-        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "rotated-api-key", null, null, "unit-test", CancellationToken.None);
+        await service.UpdateAsync(brokerEnvironmentId, "rotated-api-key", null, null, "unit-test", CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
-        var presence = await service.GetPresenceAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
+        var presence = await service.GetPresenceAsync(brokerEnvironmentId, CancellationToken.None);
 
         Assert.True(presence.HasPassword);
         Assert.False(presence.IsPasswordUsable);
@@ -105,19 +109,20 @@ public class ProtectedCredentialServiceTests
     public async Task UpdateAsync_ShouldRestoreReadiness_WhenAllSecretsAreResaved()
     {
         using var dbContext = InfrastructureReflection.CreateDbContext();
+        var brokerEnvironmentId = await CatalogTestSeed.SeedAsync(dbContext, BrokerEnvironmentKind.Demo, "IgDemo");
         var provider = InfrastructureReflection.CreateDataProtectionProvider();
         var service = new ProtectedCredentialService(dbContext, provider, TimeProvider.System);
 
-        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
+        await service.UpdateAsync(brokerEnvironmentId, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
         await dbContext.SaveChangesAsync();
         dbContext.ProtectedCredentials.Single(item => item.CredentialType == "ApiKey").ProtectedValue = "unreadable-ciphertext";
         await dbContext.SaveChangesAsync();
 
         var freshService = new ProtectedCredentialService(dbContext, provider, TimeProvider.System);
-        await freshService.UpdateAsync(BrokerEnvironmentKind.Demo, "replacement-api-key", "replacement-identifier", "replacement-password", "unit-test", CancellationToken.None);
+        await freshService.UpdateAsync(brokerEnvironmentId, "replacement-api-key", "replacement-identifier", "replacement-password", "unit-test", CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
-        var presence = await freshService.GetPresenceAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
+        var presence = await freshService.GetPresenceAsync(brokerEnvironmentId, CancellationToken.None);
 
         Assert.True(presence.IsApiKeyUsable);
         Assert.True(presence.IsIdentifierUsable);
@@ -136,16 +141,17 @@ public class ProtectedCredentialServiceTests
     public async Task UpdateAsync_ShouldStoreProtectedValuesPerBrokerEnvironment_WhenCredentialsAreSaved()
     {
         using var dbContext = InfrastructureReflection.CreateDbContext();
+        var brokerEnvironmentId = await CatalogTestSeed.SeedAsync(dbContext, BrokerEnvironmentKind.Demo, "IgDemo");
         var service = new ProtectedCredentialService(
             dbContext,
             InfrastructureReflection.CreateDataProtectionProvider(),
             TimeProvider.System);
 
-        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
+        await service.UpdateAsync(brokerEnvironmentId, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
-        var demoPresence = await service.GetPresenceAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
-        var livePresence = await service.GetPresenceAsync(BrokerEnvironmentKind.Live, CancellationToken.None);
+        var demoPresence = await service.GetPresenceAsync(brokerEnvironmentId, CancellationToken.None);
+        var livePresence = await service.GetPresenceAsync(CatalogTestSeed.GetBrokerEnvironmentId(BrokerEnvironmentKind.Live), CancellationToken.None);
 
         Assert.True(demoPresence.HasApiKey);
         Assert.True(demoPresence.HasIdentifier);
@@ -155,7 +161,8 @@ public class ProtectedCredentialServiceTests
         var credentials = dbContext.ProtectedCredentials.ToArray();
 
         Assert.Equal(3, credentials.Length);
-        Assert.All(credentials, credential => Assert.Equal("Demo", credential.BrokerEnvironment));
+        Assert.All(credentials, credential => Assert.Equal(brokerEnvironmentId.ToString("D"), credential.BrokerEnvironment));
+        Assert.All(credentials, credential => Assert.Equal(brokerEnvironmentId, credential.BrokerEnvironmentId));
         Assert.DoesNotContain(credentials, credential => credential.ProtectedValue == "demo-api-key");
     }
 
@@ -169,18 +176,19 @@ public class ProtectedCredentialServiceTests
     public async Task UpdateAsync_ShouldReuseRowsAndReprotectStoredValues_WhenCredentialsRotate()
     {
         using var dbContext = InfrastructureReflection.CreateDbContext();
+        var brokerEnvironmentId = await CatalogTestSeed.SeedAsync(dbContext, BrokerEnvironmentKind.Demo, "IgDemo");
         var service = new ProtectedCredentialService(
             dbContext,
             InfrastructureReflection.CreateDataProtectionProvider(),
             TimeProvider.System);
 
-        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "initial-api-key", "initial-identifier", "initial-password", "initial-user", CancellationToken.None);
+        await service.UpdateAsync(brokerEnvironmentId, "initial-api-key", "initial-identifier", "initial-password", "initial-user", CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         var originalCredentials = dbContext.ProtectedCredentials.ToArray();
         var originalApiKeyProtectedValue = Assert.Single(originalCredentials, item => item.CredentialType == "ApiKey").ProtectedValue;
 
-        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "rotated-api-key", "rotated-identifier", "rotated-password", "rotation-user", CancellationToken.None);
+        await service.UpdateAsync(brokerEnvironmentId, "rotated-api-key", "rotated-identifier", "rotated-password", "rotation-user", CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         var rotatedCredentials = dbContext.ProtectedCredentials.ToArray();
@@ -204,15 +212,16 @@ public class ProtectedCredentialServiceTests
     public async Task GetCredentialsAsync_WhenAllCredentialsPresent_ShouldReturnDecryptedValues()
     {
         using var dbContext = InfrastructureReflection.CreateDbContext();
+        var brokerEnvironmentId = await CatalogTestSeed.SeedAsync(dbContext, BrokerEnvironmentKind.Demo, "IgDemo");
         var service = new ProtectedCredentialService(
             dbContext,
             InfrastructureReflection.CreateDataProtectionProvider(),
             TimeProvider.System);
 
-        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
+        await service.UpdateAsync(brokerEnvironmentId, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
-        var credentials = await service.GetCredentialsAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
+        var credentials = await service.GetCredentialsAsync(brokerEnvironmentId, CancellationToken.None);
 
         Assert.Equal("demo-api-key", credentials.ApiKey);
         Assert.Equal("demo-identifier", credentials.Identifier);
@@ -229,15 +238,16 @@ public class ProtectedCredentialServiceTests
     public async Task GetCredentialsAsync_WhenCredentialMissing_ShouldReturnEmptyStringForMissingValue()
     {
         using var dbContext = InfrastructureReflection.CreateDbContext();
+        var brokerEnvironmentId = await CatalogTestSeed.SeedAsync(dbContext, BrokerEnvironmentKind.Demo, "IgDemo");
         var service = new ProtectedCredentialService(
             dbContext,
             InfrastructureReflection.CreateDataProtectionProvider(),
             TimeProvider.System);
 
-        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "demo-api-key", null, "demo-password", "unit-test", CancellationToken.None);
+        await service.UpdateAsync(brokerEnvironmentId, "demo-api-key", null, "demo-password", "unit-test", CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
-        var credentials = await service.GetCredentialsAsync(BrokerEnvironmentKind.Demo, CancellationToken.None);
+        var credentials = await service.GetCredentialsAsync(brokerEnvironmentId, CancellationToken.None);
 
         Assert.Equal("demo-api-key", credentials.ApiKey);
         Assert.Equal(string.Empty, credentials.Identifier);

@@ -450,15 +450,6 @@ public sealed class IgBrokerAuthenticationGatewayTests
             CancellationToken cancellationToken) =>
             Task.FromResult(new CredentialPresence(true, true, true));
 
-        public Task UpdateAsync(
-            BrokerEnvironmentKind brokerEnvironment,
-            string? apiKey,
-            string? identifier,
-            string? password,
-            string changedBy,
-            CancellationToken cancellationToken) =>
-            Task.CompletedTask;
-
         public virtual Task<IgCredentials> GetCredentialsAsync(
             BrokerEnvironmentKind brokerEnvironment,
             CancellationToken cancellationToken) =>

@@ -444,6 +444,34 @@ public sealed class PlatformApiClientTests
     }
 
     /// <summary>
+    /// Trace: Phase 2 actionable configuration validation. Verifies the Web client carries the server's validation text across the HTTP boundary.
+    /// Expected: the thrown HTTP exception contains the validation message and retains HTTP 400. Why: operators need an actionable reason when a configuration save is rejected.
+    /// </summary>
+    [Fact]
+    public async Task UpdateConfigurationAsync_ShouldIncludeValidationMessage_WhenApiReturnsValidationProblem()
+    {
+        using var context = PlatformComponentTestContext.CreateServiceContext(
+            userName: "local-operator",
+            apiResponses:
+            _ => PlatformWebTestData.CreateProblemResponse(
+                HttpStatusCode.BadRequest,
+                new
+                {
+                    errors = new Dictionary<string, string[]>
+                    {
+                        ["Credentials"] = ["The applied broker environment cannot store IG credentials."]
+                    }
+                }));
+        var client = context.Services.GetRequiredService<PlatformApiClient>();
+
+        var exception = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            client.UpdateConfigurationAsync(new UpdatePlatformConfigurationViewModel(), CancellationToken.None));
+
+        Assert.Contains("The applied broker environment cannot store IG credentials.", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+    }
+
+    /// <summary>
     /// Trace: FR3, NF2, SR1, TR1.
     /// Verifies: the Web-to-API client preserves manual-retry conflict responses when the platform state currently blocks the operator action.
     /// Expected: the manual-retry call throws an HTTP request exception for HTTP 409 Conflict.

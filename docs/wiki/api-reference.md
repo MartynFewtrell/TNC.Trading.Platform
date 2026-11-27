@@ -441,7 +441,10 @@ history is retained under ordinary retention.
 `GET /api/platform/configuration` remains the redacted schedule, retry, and
 notification profile surface. `PUT /api/platform/configuration` cannot mutate
 platform identity or broker selection. It validates profile invariants before
-persistence and returns presence flags only for credentials.
+persistence and returns presence flags only for credentials. Credential
+replacements target the applied catalog broker environment. If that
+environment cannot store IG credentials, the PUT returns a `400 ValidationProblem`
+with the validation error under `Credentials`.
 
 The platform environment is one of `Desktop`, `Development`, `Test`, or `Live`
 and is deployment-owned. Missing or unknown values fail startup closed.

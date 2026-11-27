@@ -90,25 +90,7 @@ internal sealed class ProtectedCredentialService(
             IsUsable("Password"));
     }
 
-    public async Task UpdateAsync(BrokerEnvironmentKind brokerEnvironment, string? apiKey, string? identifier, string? password, string changedBy, CancellationToken cancellationToken)
-    {
-        if (!string.IsNullOrWhiteSpace(apiKey))
-        {
-            await UpsertCredentialAsync(brokerEnvironment, "ApiKey", apiKey, changedBy, cancellationToken).ConfigureAwait(false);
-        }
-
-        if (!string.IsNullOrWhiteSpace(identifier))
-        {
-            await UpsertCredentialAsync(brokerEnvironment, "Identifier", identifier, changedBy, cancellationToken).ConfigureAwait(false);
-        }
-
-        if (!string.IsNullOrWhiteSpace(password))
-        {
-            await UpsertCredentialAsync(brokerEnvironment, "Password", password, changedBy, cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    internal Task UpdateCatalogAsync(Guid brokerEnvironmentId, string? apiKey, string? identifier, string? password, string changedBy, CancellationToken cancellationToken)
+    public Task UpdateAsync(Guid brokerEnvironmentId, string? apiKey, string? identifier, string? password, string changedBy, CancellationToken cancellationToken)
         => UpdateCatalogCoreAsync(brokerEnvironmentId, apiKey, identifier, password, changedBy, cancellationToken);
 
     private async Task UpdateCatalogCoreAsync(Guid brokerEnvironmentId, string? apiKey, string? identifier, string? password, string changedBy, CancellationToken cancellationToken)
@@ -180,31 +162,6 @@ internal sealed class ProtectedCredentialService(
         }
 
         return new IgCredentials(Decrypt("ApiKey"), Decrypt("Identifier"), Decrypt("Password"));
-    }
-
-    private async Task UpsertCredentialAsync(BrokerEnvironmentKind brokerEnvironment, string credentialType, string secret, string changedBy, CancellationToken cancellationToken)
-    {
-        var entity = await dbContext.ProtectedCredentials
-            .SingleOrDefaultAsync(
-                item => item.BrokerEnvironment == brokerEnvironment.ToString() && item.CredentialType == credentialType,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        entity ??= new ProtectedCredentialEntity
-        {
-            BrokerEnvironment = brokerEnvironment.ToString(),
-            CredentialType = credentialType
-        };
-
-        entity.ProtectedValue = protector.Protect(secret);
-        entity.ProtectionKind = "DataProtection";
-        entity.UpdatedAtUtc = timeProvider.GetUtcNow();
-        entity.UpdatedBy = changedBy;
-
-        if (entity.CredentialId == 0)
-        {
-            dbContext.ProtectedCredentials.Add(entity);
-        }
     }
 
     private async Task UpsertCredentialAsync(Guid brokerEnvironmentId, string brokerEnvironment, string credentialType, string secret, string changedBy, CancellationToken cancellationToken)

@@ -15,7 +15,8 @@ internal sealed class UpdatePlatformConfigurationHandler(
     MarketCategoryInstrumentSchedulePolicy? schedulePolicy = null,
     IMarketCategoryInstrumentStatusReader? statusReader = null,
     TradingScheduleGate? scheduleGate = null,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null,
+    IPlatformApplicationLogger? logger = null)
 {
     public async Task<UpdatePlatformConfigurationResponse> HandleAsync(UpdatePlatformConfigurationRequest request, CancellationToken cancellationToken)
     {
@@ -29,7 +30,17 @@ internal sealed class UpdatePlatformConfigurationHandler(
             await SaveInstrumentCollectionSettingsAsync(request.Update, cancellationToken).ConfigureAwait(false);
         }
 
-        await reconcileHandler.HandleAsync(new ReconcilePlatformAuthenticationRequest(), cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await reconcileHandler.HandleAsync(new ReconcilePlatformAuthenticationRequest(), cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger?.LogWarning(
+                exception,
+                "Platform configuration was saved, but immediate authentication reconciliation failed. The background supervisor will retry.");
+        }
+
         var (environment, frequency, status, collectionStatus) = await ReadInstrumentCollectionSettingsAsync(
             request.Update.TradingSchedule,
             cancellationToken).ConfigureAwait(false);

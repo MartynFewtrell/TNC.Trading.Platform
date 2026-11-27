@@ -142,7 +142,14 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
         dbContext.BrokerEnvironments.Remove(await dbContext.BrokerEnvironments.SingleAsync(item => item.BrokerEnvironmentId == demoId));
         await dbContext.SaveChangesAsync();
 
-        var initializer = CreateStartupInitializer(dbContext, CreateConfigurationStore(dbContext, CreateConfiguration()), restoreCatalog: true);
+        using var dataProtectionProvider = PlatformConfigurationIntegrationTestHelpers.CreateDataProtectionProvider();
+        var initializer = CreateStartupInitializer(
+            dbContext,
+            PlatformConfigurationIntegrationTestHelpers.CreateConfigurationStore(
+                dbContext,
+                PlatformConfigurationIntegrationTestHelpers.CreateConfiguration(),
+                dataProtectionProvider.Provider),
+            restoreCatalog: true);
 
         await initializer.InitializeAsync(CancellationToken.None);
 
@@ -495,7 +502,11 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
         }
 
         await using var migratedContext = fixture.CreateDbContext();
-        var configurationStore = CreateConfigurationStore(migratedContext, CreateConfiguration());
+        using var dataProtectionProvider = PlatformConfigurationIntegrationTestHelpers.CreateDataProtectionProvider();
+        var configurationStore = PlatformConfigurationIntegrationTestHelpers.CreateConfigurationStore(
+            migratedContext,
+            PlatformConfigurationIntegrationTestHelpers.CreateConfiguration(),
+            dataProtectionProvider.Provider);
         var initializer = CreateStartupInitializer(migratedContext, configurationStore);
 
         await initializer.InitializeAsync(fixture.CancellationToken);
@@ -523,7 +534,11 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
         }
 
         await using var failedContext = fixture.CreateDbContext();
-        var configurationStore = CreateConfigurationStore(failedContext, CreateConfiguration());
+        using var dataProtectionProvider = PlatformConfigurationIntegrationTestHelpers.CreateDataProtectionProvider();
+        var configurationStore = PlatformConfigurationIntegrationTestHelpers.CreateConfigurationStore(
+            failedContext,
+            PlatformConfigurationIntegrationTestHelpers.CreateConfiguration(),
+            dataProtectionProvider.Provider);
         var initializer = CreateStartupInitializer(failedContext, configurationStore);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -548,7 +563,10 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
         }
 
         await using var recoveredContext = fixture.CreateDbContext();
-        var recoveredStore = CreateConfigurationStore(recoveredContext, CreateConfiguration());
+        var recoveredStore = PlatformConfigurationIntegrationTestHelpers.CreateConfigurationStore(
+            recoveredContext,
+            PlatformConfigurationIntegrationTestHelpers.CreateConfiguration(),
+            dataProtectionProvider.Provider);
         var recoveredInitializer = CreateStartupInitializer(recoveredContext, recoveredStore);
 
         await recoveredInitializer.InitializeAsync(CancellationToken.None);
@@ -570,6 +588,7 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
     public async Task InitializeAsync_ShouldRecoverAfterOperatorCorrection_WhenPartialSchemaHasNoMigrationHistory()
     {
         await fixture.ResetDatabaseAsync();
+        using var dataProtectionProvider = PlatformConfigurationIntegrationTestHelpers.CreateDataProtectionProvider();
         await using (var setupContext = fixture.CreateDbContext())
         {
             await setupContext.Database.ExecuteSqlRawAsync("CREATE TABLE [AuthRetryCycles] ([RetryCycleId] uniqueidentifier NOT NULL PRIMARY KEY);");
@@ -577,7 +596,10 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
 
         await using (var failedContext = fixture.CreateDbContext())
         {
-            var failedStore = CreateConfigurationStore(failedContext, CreateConfiguration());
+            var failedStore = PlatformConfigurationIntegrationTestHelpers.CreateConfigurationStore(
+                failedContext,
+                PlatformConfigurationIntegrationTestHelpers.CreateConfiguration(),
+                dataProtectionProvider.Provider);
             var failedInitializer = CreateStartupInitializer(failedContext, failedStore);
 
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -600,7 +622,10 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
         }
 
         await using var recoveredContext = fixture.CreateDbContext();
-        var recoveredStore = CreateConfigurationStore(recoveredContext, CreateConfiguration());
+        var recoveredStore = PlatformConfigurationIntegrationTestHelpers.CreateConfigurationStore(
+            recoveredContext,
+            PlatformConfigurationIntegrationTestHelpers.CreateConfiguration(),
+            dataProtectionProvider.Provider);
         var recoveredInitializer = CreateStartupInitializer(recoveredContext, recoveredStore);
 
         await recoveredInitializer.InitializeAsync(CancellationToken.None);
@@ -649,23 +674,40 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
     public async Task CommitAsync_ShouldRollbackConfigurationCredentialsAndAudit_WhenAuditWriteFails()
     {
         await fixture.ResetDatabaseAsync();
+        using var dataProtectionProvider = PlatformConfigurationIntegrationTestHelpers.CreateDataProtectionProvider();
+        var auditFailureInterceptor = new FailConfigurationAuditInsertInterceptor();
         await using (var seedContext = fixture.CreateDbContext())
         {
             await seedContext.Database.MigrateAsync();
-            var seedStore = CreateConfigurationStore(seedContext, CreateConfiguration());
+            var catalogIntegrityService = new BrokerEnvironmentCatalogIntegrityService(
+                seedContext,
+                TimeProvider.System,
+                NullLogger<BrokerEnvironmentCatalogIntegrityService>.Instance);
+            await catalogIntegrityService.EnsureRequiredCatalogAsync(fixture.CancellationToken);
+            var seedStore = PlatformConfigurationIntegrationTestHelpers.CreateConfigurationStore(
+                seedContext,
+                PlatformConfigurationIntegrationTestHelpers.CreateConfiguration(),
+                dataProtectionProvider.Provider);
             _ = await seedStore.GetCurrentAsync(CancellationToken.None);
         }
 
         await using (var failingContext = new PlatformDbContext(
             new DbContextOptionsBuilder<PlatformDbContext>()
-                .UseSqlServer(fixture.ConnectionString)
-                .AddInterceptors(new FailConfigurationAuditInsertInterceptor())
+                .UseSqlServer(fixture.ConnectionString, sqlServerOptions => sqlServerOptions.MaxBatchSize(1))
+                .AddInterceptors(auditFailureInterceptor)
                 .Options))
         {
-            var failingStore = CreateConfigurationStore(failingContext, CreateConfiguration());
+            await using var transaction = await failingContext.Database.BeginTransactionAsync(fixture.CancellationToken);
+            await failingContext.Database.ExecuteSqlRawAsync(
+                "UPDATE [PlatformConfigurations] SET [UpdatedBy] = N'pre-audit-write' WHERE [PlatformEnvironment] = N'Test';",
+                fixture.CancellationToken);
+            var failingStore = PlatformConfigurationIntegrationTestHelpers.CreateConfigurationStore(
+                failingContext,
+                PlatformConfigurationIntegrationTestHelpers.CreateConfiguration(),
+                dataProtectionProvider.Provider);
 
-            await Assert.ThrowsAsync<DbUpdateException>(() => failingStore.CommitAsync(
-                CreateConfigurationUpdate(
+            var exception = await Assert.ThrowsAsync<DbUpdateException>(() => failingStore.CommitAsync(
+                PlatformConfigurationIntegrationTestHelpers.CreateConfigurationUpdate(
                     brokerEnvironment: "Demo",
                     provider: "RecordedOnly",
                     emailTo: "updated-owner@example.com",
@@ -674,6 +716,11 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
                     password: "new-password",
                     changedBy: "phase-10-4"),
                 CancellationToken.None));
+            Assert.Contains("Injected Phase 10.4 configuration audit write failure.", exception.ToString(), StringComparison.Ordinal);
+            Assert.True(
+                auditFailureInterceptor.AuditFailureObservedAfterEarlierWriteInSameTransaction,
+                auditFailureInterceptor.AuditFailureDetails);
+            await transaction.RollbackAsync(fixture.CancellationToken);
         }
 
         await using var verificationContext = fixture.CreateDbContext();
@@ -784,46 +831,6 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
             ?? throw new InvalidOperationException("The SQL Server test context has no connection string.");
     }
 
-    private static IConfiguration CreateConfiguration() => new ConfigurationBuilder()
-        .AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["Bootstrap:PlatformEnvironment"] = "Test",
-            ["Bootstrap:BrokerEnvironment"] = "Demo",
-            ["Bootstrap:TradingSchedule:StartOfDay"] = "09:00",
-            ["Bootstrap:TradingSchedule:EndOfDay"] = "17:00",
-            ["Bootstrap:TradingSchedule:TradingDays:0"] = "Monday",
-            ["Bootstrap:TradingSchedule:TradingDays:1"] = "Tuesday",
-            ["Bootstrap:TradingSchedule:TradingDays:2"] = "Wednesday",
-            ["Bootstrap:TradingSchedule:TradingDays:3"] = "Thursday",
-            ["Bootstrap:TradingSchedule:TradingDays:4"] = "Friday",
-            ["Bootstrap:TradingSchedule:WeekendBehavior"] = "ExcludeWeekends",
-            ["Bootstrap:TradingSchedule:TimeZone"] = "UTC",
-            ["Bootstrap:RetryPolicy:InitialDelaySeconds"] = "1",
-            ["Bootstrap:RetryPolicy:MaxAutomaticRetries"] = "5",
-            ["Bootstrap:RetryPolicy:Multiplier"] = "2",
-            ["Bootstrap:RetryPolicy:MaxDelaySeconds"] = "60",
-            ["Bootstrap:RetryPolicy:PeriodicDelayMinutes"] = "5",
-            ["Bootstrap:NotificationSettings:EmailTo"] = "operator@local.test",
-            ["Bootstrap:UpdatedBy"] = "bootstrap",
-            ["Bootstrap:NotificationSettings:Provider"] = "RecordedOnly"
-        })
-        .Build();
-
-    private static SqlPlatformConfigurationStore CreateConfigurationStore(PlatformDbContext dbContext, IConfiguration configuration)
-    {
-        var services = new ServiceCollection();
-        services.AddDataProtection().SetApplicationName("Phase10.4.IntegrationTests");
-        using var provider = services.BuildServiceProvider();
-        var dataProtectionProvider = provider.GetRequiredService<IDataProtectionProvider>();
-        var credentialService = new ProtectedCredentialService(dbContext, dataProtectionProvider, TimeProvider.System);
-        return new SqlPlatformConfigurationStore(
-            dbContext,
-            configuration,
-            credentialService,
-            TimeProvider.System,
-            new PlatformEnvironmentContext(PlatformEnvironmentKind.Test));
-    }
-
     private static PlatformStartupInitializer CreateStartupInitializer(
         PlatformDbContext dbContext,
         SqlPlatformConfigurationStore configurationStore,
@@ -857,37 +864,22 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
             catalogIntegrityService);
     }
 
-    private static PlatformConfigurationUpdate CreateConfigurationUpdate(
-        string brokerEnvironment,
-        string provider,
-        string emailTo,
-        string? apiKey,
-        string? identifier,
-        string? password,
-        string changedBy) => new(
-            Enum.Parse<BrokerEnvironmentKind>(brokerEnvironment, ignoreCase: true),
-            new TradingScheduleConfiguration(
-                new TimeOnly(8, 0),
-                new TimeOnly(16, 30),
-                [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday],
-                WeekendBehavior.ExcludeWeekends,
-                [],
-                "UTC"),
-            new RetryPolicyConfiguration(1, 5, 2, 60, 5),
-            new NotificationSettingsConfiguration(provider, emailTo),
-            apiKey,
-            identifier,
-            password,
-            changedBy);
-
     private sealed class FailConfigurationAuditInsertInterceptor : DbCommandInterceptor
     {
+        private Guid? earlierWriteTransactionId;
+
+        public bool AuditFailureObservedAfterEarlierWriteInSameTransaction { get; private set; }
+
+        public string AuditFailureDetails { get; private set; } = "Audit failure interceptor did not observe the injected error.";
+
+        public List<string> PriorWriteCommands { get; } = [];
+
         public override InterceptionResult<int> NonQueryExecuting(
             DbCommand command,
             CommandEventData eventData,
             InterceptionResult<int> result)
         {
-            ThrowWhenConfigurationAuditIsInserted(command);
+            ThrowWhenConfigurationAuditIsInserted(command, eventData);
             return base.NonQueryExecuting(command, eventData, result);
         }
 
@@ -897,8 +889,24 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
             InterceptionResult<int> result,
             CancellationToken cancellationToken = default)
         {
-            ThrowWhenConfigurationAuditIsInserted(command);
+            ThrowWhenConfigurationAuditIsInserted(command, eventData);
             return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override int NonQueryExecuted(DbCommand command, CommandExecutedEventData eventData, int result)
+        {
+            RecordSuccessfulPriorWrite(command, eventData);
+            return base.NonQueryExecuted(command, eventData, result);
+        }
+
+        public override ValueTask<int> NonQueryExecutedAsync(
+            DbCommand command,
+            CommandExecutedEventData eventData,
+            int result,
+            CancellationToken cancellationToken = default)
+        {
+            RecordSuccessfulPriorWrite(command, eventData);
+            return base.NonQueryExecutedAsync(command, eventData, result, cancellationToken);
         }
 
         public override InterceptionResult<DbDataReader> ReaderExecuting(
@@ -906,7 +914,7 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
             CommandEventData eventData,
             InterceptionResult<DbDataReader> result)
         {
-            ThrowWhenConfigurationAuditIsInserted(command);
+            ThrowWhenConfigurationAuditIsInserted(command, eventData);
             return base.ReaderExecuting(command, eventData, result);
         }
 
@@ -916,15 +924,57 @@ public sealed class PlatformSqlServerIntegrationTests(SqlServerDatabaseFixture f
             InterceptionResult<DbDataReader> result,
             CancellationToken cancellationToken = default)
         {
-            ThrowWhenConfigurationAuditIsInserted(command);
+            ThrowWhenConfigurationAuditIsInserted(command, eventData);
             return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
         }
 
-        private static void ThrowWhenConfigurationAuditIsInserted(DbCommand command)
+        public override DbDataReader ReaderExecuted(
+            DbCommand command,
+            CommandExecutedEventData eventData,
+            DbDataReader result)
+        {
+            RecordSuccessfulPriorWrite(command, eventData);
+            return base.ReaderExecuted(command, eventData, result);
+        }
+
+        public override ValueTask<DbDataReader> ReaderExecutedAsync(
+            DbCommand command,
+            CommandExecutedEventData eventData,
+            DbDataReader result,
+            CancellationToken cancellationToken = default)
+        {
+            RecordSuccessfulPriorWrite(command, eventData);
+            return base.ReaderExecutedAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void ThrowWhenConfigurationAuditIsInserted(DbCommand command, CommandEventData eventData)
         {
             if (command.CommandText.Contains("ConfigurationAudits", StringComparison.OrdinalIgnoreCase))
             {
+                var transactionId = eventData.Context?.Database.CurrentTransaction?.TransactionId;
+                AuditFailureObservedAfterEarlierWriteInSameTransaction =
+                    earlierWriteTransactionId is not null &&
+                    transactionId == earlierWriteTransactionId;
+                AuditFailureDetails = $"Prior transaction: {earlierWriteTransactionId}; audit transaction: {transactionId}; prior writes: {string.Join(" || ", PriorWriteCommands)}";
                 throw new InvalidOperationException("Injected Phase 10.4 configuration audit write failure.");
+            }
+        }
+
+        private void RecordSuccessfulPriorWrite(DbCommand command, CommandEndEventData eventData)
+        {
+            var containsPriorWrite =
+                command.CommandText.Contains("UPDATE [PlatformConfigurations]", StringComparison.OrdinalIgnoreCase)
+                || command.CommandText.Contains("INSERT INTO [PlatformConfigurations]", StringComparison.OrdinalIgnoreCase)
+                || command.CommandText.Contains("UPDATE [ProtectedCredentials]", StringComparison.OrdinalIgnoreCase)
+                || command.CommandText.Contains("INSERT INTO [ProtectedCredentials]", StringComparison.OrdinalIgnoreCase)
+                || command.CommandText.Contains("DELETE FROM [PlatformConfigurations]", StringComparison.OrdinalIgnoreCase)
+                || command.CommandText.Contains("DELETE FROM [ProtectedCredentials]", StringComparison.OrdinalIgnoreCase);
+            if (containsPriorWrite
+                && !command.CommandText.Contains("ConfigurationAudits", StringComparison.OrdinalIgnoreCase))
+            {
+                var transactionId = eventData.Context?.Database.CurrentTransaction?.TransactionId;
+                PriorWriteCommands.Add($"Transaction={transactionId}; SQL={command.CommandText}");
+                earlierWriteTransactionId = transactionId;
             }
         }
     }

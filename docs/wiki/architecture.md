@@ -138,9 +138,13 @@ retention/archive policy.
 * A configuration update is a narrower established consistency boundary: the
     SQL committer stages the configuration row, protected credential replacements,
     and configuration audit in one relational `SaveChangesAsync` transaction.
+    Credential replacements use the applied catalog broker-environment ID.
     The Application handler awaits that commit before dispatching the explicit
-    reconciliation command. A failed local write therefore leaves the previous
-    durable configuration available to the next reconciliation.
+    reconciliation command. A non-cancellation reconciliation failure after
+    commit is logged and left for the background supervisor to retry, so it
+    does not turn a durable save into a failed response. A failed local write
+    therefore leaves the previous durable configuration available to the next
+    reconciliation.
 * Latest IG Demo proof data is a durable Infrastructure concern. The
     `IPlatformIgProofDataStore` port remains Application-owned while
     `EfPlatformIgProofDataStore` maps one SQL row per broker environment and
@@ -599,7 +603,7 @@ The current `PlatformDbContext` stores these entities:
 | Entity | Purpose |
 | --- | --- |
 | `PlatformConfigurationEntity` | Current operator-managed configuration snapshot. |
-| `ProtectedCredentialEntity` | Protected IG credential values by broker environment and credential type. |
+| `ProtectedCredentialEntity` | Protected IG credential values keyed by catalog `BrokerEnvironmentId` and credential type; legacy `BrokerEnvironment` text remains for compatibility. |
 | `AuthRuntimeStateEntity` | Current runtime auth and retry projection. |
 | `AuthRetryCycleEntity` | Retry-cycle tracking and scheduling metadata. |
 | `IgLoginSnapshotEntity` | Secret-safe latest-success and retained daily IG login payload snapshots. |

@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.BrokerEnvironments;
@@ -49,11 +48,10 @@ public sealed class ProtectedCredentialSchemaIntegrationTests(SqlServerDatabaseF
         await using var dbContext = fixture.CreateDbContext();
         await dbContext.Database.MigrateAsync(fixture.CancellationToken);
         var environmentId = await SqlServerDatabaseFixture.GetIgDemoBrokerEnvironmentIdAsync(dbContext, fixture.CancellationToken);
-        var dataProtectionProvider = DataProtectionProvider.Create(
-            new DirectoryInfo(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))));
+        using var dataProtectionProvider = PlatformConfigurationIntegrationTestHelpers.CreateDataProtectionProvider();
         var service = new SqlBrokerEnvironmentCatalogService(
             dbContext,
-            new ProtectedCredentialService(dbContext, dataProtectionProvider, TimeProvider.System),
+            new ProtectedCredentialService(dbContext, dataProtectionProvider.Provider, TimeProvider.System),
             new TestPlatformEnvironmentContext(),
             TimeProvider.System);
 
