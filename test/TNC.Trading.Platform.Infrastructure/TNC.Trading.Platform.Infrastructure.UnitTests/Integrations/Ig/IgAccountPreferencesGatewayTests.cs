@@ -198,7 +198,6 @@ public sealed class IgAccountPreferencesGatewayTests
         public Task<CredentialPresence> GetPresenceAsync(BrokerEnvironmentKind environment, CancellationToken cancellationToken) => Task.FromResult(new CredentialPresence(true, true, true));
         public virtual Task<IgCredentials> GetCredentialsAsync(BrokerEnvironmentKind environment, CancellationToken cancellationToken) => Task.FromResult(new IgCredentials("api-key", "identifier", "password-secret"));
         public virtual Task<IgCredentials> GetCredentialsAsync(Guid brokerEnvironmentId, CancellationToken cancellationToken) => Task.FromResult(new IgCredentials("api-key", "identifier", "password-secret"));
-        public Task UpdateAsync(BrokerEnvironmentKind environment, string? apiKey, string? identifier, string? password, string changedBy, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class CountingProtectedCredentialService : FakeProtectedCredentialService

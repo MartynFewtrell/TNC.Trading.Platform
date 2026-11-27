@@ -73,10 +73,10 @@ internal sealed class SqlBrokerEnvironmentCatalogService(
     {
         var entity = await dbContext.BrokerEnvironments.SingleOrDefaultAsync(item => item.BrokerEnvironmentId == command.BrokerEnvironmentId, cancellationToken).ConfigureAwait(false);
         if (entity is null) return new(false, "Broker environment was not found.");
-        if (entity.Lifecycle is "Retired" or "Unavailable" || !IsSupportedIgCredentialProfile(entity.Provider, entity.Kind, entity.EndpointProfile)) return new(false, "This broker environment cannot authenticate.");
+        if (!BrokerEnvironmentCredentialPolicy.CanStoreIgCredentials(entity)) return new(false, "This broker environment cannot authenticate.");
         if (string.IsNullOrWhiteSpace(command.ApiKey) && string.IsNullOrWhiteSpace(command.Identifier) && string.IsNullOrWhiteSpace(command.Password)) return new(false, "At least one credential must be supplied.");
 
-        await credentialService.UpdateCatalogAsync(command.BrokerEnvironmentId, command.ApiKey, command.Identifier, command.Password, command.Actor, cancellationToken).ConfigureAwait(false);
+        await credentialService.UpdateAsync(command.BrokerEnvironmentId, command.ApiKey, command.Identifier, command.Password, command.Actor, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return new(true, null, ToItem(entity, true));
     }
@@ -215,13 +215,6 @@ internal sealed class SqlBrokerEnvironmentCatalogService(
     private static bool IsIgDemoEnvironment(string provider, string kind) =>
         string.Equals(provider, "IG", StringComparison.OrdinalIgnoreCase) &&
         string.Equals(kind, "Demo", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsSupportedIgCredentialProfile(string provider, string kind, string endpointProfile) =>
-        string.Equals(provider, "IG", StringComparison.OrdinalIgnoreCase) &&
-        ((string.Equals(kind, "Demo", StringComparison.OrdinalIgnoreCase)
-          && string.Equals(endpointProfile, "IgDemo", StringComparison.Ordinal))
-         || (string.Equals(kind, "Live", StringComparison.OrdinalIgnoreCase)
-             && string.Equals(endpointProfile, "IgLive", StringComparison.Ordinal)));
 
     private async Task<BrokerEnvironmentCatalogItem> ToItemAsync(BrokerEnvironmentEntity item, CancellationToken cancellationToken)
     {

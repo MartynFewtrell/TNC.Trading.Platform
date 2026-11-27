@@ -195,7 +195,8 @@ public class IgProofDataTests
         IDataProtectionProvider dataProtectionProvider)
     {
         var service = CreateProtectedCredentialService(dbContext, TimeProvider.System, dataProtectionProvider);
-        await service.UpdateAsync(BrokerEnvironmentKind.Demo, "api-key", "test@example.com", "password", "unit-test", CancellationToken.None);
+        var brokerEnvironmentId = await CatalogTestSeed.SeedAsync(dbContext, BrokerEnvironmentKind.Demo, "IgDemo");
+        await service.UpdateAsync(brokerEnvironmentId, "api-key", "test@example.com", "password", "unit-test", CancellationToken.None);
     }
 
     private static IConfiguration CreateConfiguration()

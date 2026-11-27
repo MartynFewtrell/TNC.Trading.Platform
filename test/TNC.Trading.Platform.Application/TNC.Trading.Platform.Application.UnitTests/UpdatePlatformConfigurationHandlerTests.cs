@@ -1,5 +1,6 @@
 using TNC.Trading.Platform.Application.Configuration;
 using TNC.Trading.Platform.Application.Features.ReconcilePlatformAuthentication;
+using TNC.Trading.Platform.Application.Services;
 using TNC.Trading.Platform.Application.Features.UpdatePlatformConfiguration;
 
 namespace TNC.Trading.Platform.Application.UnitTests;
@@ -45,6 +46,63 @@ public sealed class UpdatePlatformConfigurationHandlerTests
         Assert.Same(update, committer.Updates[0]);
         Assert.Equal(1, reconciler.CallCount);
         Assert.Equal(["commit", "reconcile"], workflow);
+    }
+
+    /// <summary>
+    /// Trace: Phase 2 post-commit outcome separation. Verifies a reconciliation exception does not undo or obscure a committed configuration result.
+    /// Expected: the committed result is returned after one commit and one reconciliation attempt. Why: a transient post-commit failure must not make a durable operator save appear unsuccessful.
+    /// </summary>
+    [Fact]
+    public async Task HandleAsync_ShouldReturnCommittedConfiguration_WhenReconciliationThrowsAfterCommit()
+    {
+        var expected = new UpdatePlatformConfigurationResult(CreateSnapshot(), RestartRequired: true);
+        var committer = new FakeCommitter(expected);
+        var workflow = new List<string>();
+        committer.Workflow = workflow;
+        var reconciler = new FakeReconciler(workflow)
+        {
+            Failure = new InvalidOperationException("reconciliation failed")
+        };
+        var logger = new RecordingApplicationLogger();
+        var handler = CreateHandler(committer, reconciler, logger);
+
+        var response = await handler.HandleAsync(
+            new UpdatePlatformConfigurationRequest(CreateUpdate(tradingDays: [DayOfWeek.Monday])),
+            CancellationToken.None);
+
+        Assert.Same(expected, response.Result);
+        Assert.Single(committer.Updates);
+        Assert.Equal(1, reconciler.CallCount);
+        Assert.Equal(["commit", "reconcile"], workflow);
+        var warning = Assert.Single(logger.Warnings);
+        Assert.Same(reconciler.Failure, warning.Exception);
+        Assert.Equal(
+            "Platform configuration was saved, but immediate authentication reconciliation failed. The background supervisor will retry.",
+            warning.Message);
+    }
+
+    /// <summary>
+    /// Trace: Phase 2 cancellation boundary. Verifies cancellation during post-commit reconciliation is not swallowed as a recoverable failure.
+    /// Expected: OperationCanceledException propagates after commit and the reconciler is invoked once. Why: caller cancellation must remain observable even though ordinary reconciliation errors do not reverse a durable save.
+    /// </summary>
+    [Fact]
+    public async Task HandleAsync_ShouldPropagateCancellation_WhenReconciliationIsCancelled()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        var committer = new FakeCommitter(new UpdatePlatformConfigurationResult(CreateSnapshot(), RestartRequired: false));
+        var reconciler = new FakeReconciler
+        {
+            CancellationSource = cancellationSource
+        };
+        var handler = CreateHandler(committer, reconciler);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            handler.HandleAsync(
+                new UpdatePlatformConfigurationRequest(CreateUpdate(tradingDays: [DayOfWeek.Monday])),
+                cancellationSource.Token));
+
+        Assert.Single(committer.Updates);
+        Assert.Equal(1, reconciler.CallCount);
     }
 
     /// <summary>
@@ -109,8 +167,11 @@ public sealed class UpdatePlatformConfigurationHandlerTests
         Assert.Equal(0, reconciler.CallCount);
     }
 
-    private static UpdatePlatformConfigurationHandler CreateHandler(FakeCommitter committer, FakeReconciler reconciler) =>
-        new(committer, new ReconcilePlatformAuthenticationHandler(reconciler), new UpdatePlatformConfigurationValidator());
+    private static UpdatePlatformConfigurationHandler CreateHandler(
+        FakeCommitter committer,
+        FakeReconciler reconciler,
+        IPlatformApplicationLogger? logger = null) =>
+        new(committer, new ReconcilePlatformAuthenticationHandler(reconciler), new UpdatePlatformConfigurationValidator(), logger: logger);
 
     private static PlatformConfigurationUpdate CreateUpdate(
         IReadOnlyList<DayOfWeek>? tradingDays = null,
@@ -174,11 +235,40 @@ public sealed class UpdatePlatformConfigurationHandlerTests
     {
         public int CallCount { get; private set; }
 
+        public Exception? Failure { get; init; }
+
+        public CancellationTokenSource? CancellationSource { get; init; }
+
         public Task<PlatformRuntimeState> ReconcileAsync(CancellationToken cancellationToken)
         {
             CallCount++;
             workflow?.Add("reconcile");
+            CancellationSource?.Cancel();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return Task.FromCanceled<PlatformRuntimeState>(cancellationToken);
+            }
+
+            if (Failure is not null)
+            {
+                return Task.FromException<PlatformRuntimeState>(Failure);
+            }
+
             return Task.FromResult(new PlatformRuntimeState { SessionStatus = PlatformSessionStatus.Active });
         }
+
+    }
+
+    private sealed class RecordingApplicationLogger : IPlatformApplicationLogger
+    {
+        public List<(Exception? Exception, string Message)> Warnings { get; } = [];
+
+        public void LogWarning(string message) => Warnings.Add((null, message));
+
+        public void LogWarning(Exception exception, string message) => Warnings.Add((exception, message));
+
+        public void LogError(Exception exception, string message) { }
+
+        public void LogInformation(string message, params object?[] arguments) { }
     }
 }

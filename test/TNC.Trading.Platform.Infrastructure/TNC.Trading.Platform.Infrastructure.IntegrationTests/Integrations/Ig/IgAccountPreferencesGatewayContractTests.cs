@@ -46,7 +46,5 @@ public sealed class IgAccountPreferencesGatewayContractTests
         public Task<IgCredentials> GetCredentialsAsync(BrokerEnvironmentKind environment, CancellationToken cancellationToken) =>
             Task.FromResult(new IgCredentials("api-key", "identifier", "password"));
 
-        public Task UpdateAsync(BrokerEnvironmentKind environment, string? apiKey, string? identifier, string? password, string changedBy, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
     }
 }

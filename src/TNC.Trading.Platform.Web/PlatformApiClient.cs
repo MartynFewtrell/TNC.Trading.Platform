@@ -1,7 +1,9 @@
-﻿using System.Net.Http.Json;
+﻿using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Http;
 using TNC.Trading.Platform.Application.Authentication;
 using TNC.Trading.Platform.Web.Authentication;
 using TNC.Trading.Platform.Web.Components.Pages;
@@ -112,6 +114,31 @@ internal sealed class PlatformApiClient(HttpClient httpClient, PlatformAccessTok
         authorizedRequest.Content = JsonContent.Create(request, options: JsonOptions);
 
         using var response = await httpClient.SendAsync(authorizedRequest, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+        {
+            try
+            {
+                var validationProblem = await response.Content.ReadFromJsonAsync<HttpValidationProblemDetails>(
+                    JsonOptions,
+                    cancellationToken);
+                var errorMessages = validationProblem?.Errors.Values
+                    .SelectMany(static errors => errors)
+                    .Where(static message => !string.IsNullOrWhiteSpace(message))
+                    .ToArray();
+                if (errorMessages is { Length: > 0 })
+                {
+                    throw new HttpRequestException(
+                        string.Join(Environment.NewLine, errorMessages),
+                        null,
+                        HttpStatusCode.BadRequest);
+                }
+            }
+            catch (JsonException)
+            {
+                // Fall back to the standard status-code exception for malformed validation responses.
+            }
+        }
+
         response.EnsureSuccessStatusCode();
 
         var content = await response.Content.ReadFromJsonAsync<PlatformConfigurationViewModel>(JsonOptions, cancellationToken);

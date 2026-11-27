@@ -121,14 +121,6 @@ public sealed class IgAccountHistoryGatewayTests
         public Task<IgCredentials> GetCredentialsAsync(Guid brokerEnvironmentId, CancellationToken cancellationToken) =>
             Task.FromResult(new IgCredentials("api-key", "identifier", "password-secret"));
 
-        public Task UpdateAsync(
-            BrokerEnvironmentKind brokerEnvironment,
-            string? apiKey,
-            string? identifier,
-            string? password,
-            string changedBy,
-            CancellationToken cancellationToken) =>
-            Task.CompletedTask;
     }
 
     private sealed class FakeContextResolver(AppliedBrokerEnvironmentContext? context) : IAppliedBrokerEnvironmentContextResolver

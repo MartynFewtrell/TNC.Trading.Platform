@@ -100,6 +100,7 @@ public class SqlPlatformConfigurationStoreTests
     public async Task UpdateAsync_ShouldPersistSecretSafeAuditAndRestartRequirement_WhenStartupFixedSettingsChange()
     {
         using var dbContext = InfrastructureReflection.CreateDbContext();
+        _ = await CatalogTestSeed.SeedAsync(dbContext, BrokerEnvironmentKind.Demo, "IgDemo");
         var store = CreateConfigurationStore(
             dbContext,
             CreateConfiguration(new Dictionary<string, string?>

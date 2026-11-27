@@ -117,7 +117,7 @@ public class AuthRetryCycleTests
         var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
         var configuration = CreateConfiguration();
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        await protectedCredentialService.UpdateAsync(BrokerEnvironmentKind.Demo, "api-key", "identifier", "password", "unit-test", CancellationToken.None);
+        await SeedCredentialsAsync(dbContext, protectedCredentialService, BrokerEnvironmentKind.Demo, "api-key", "identifier", "password");
         await dbContext.SaveChangesAsync();
         dbContext.ProtectedCredentials.Single(item => item.CredentialType == "Identifier").ProtectedValue = "ciphertext-sentinel";
         await dbContext.SaveChangesAsync();
@@ -424,13 +424,7 @@ public class AuthRetryCycleTests
         var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
         var configuration = CreateConfiguration();
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        await protectedCredentialService.UpdateAsync(
-            BrokerEnvironmentKind.Demo,
-            "demo-api-key",
-            "demo-identifier",
-            "demo-password",
-            "unit-test",
-            CancellationToken.None);
+        await SeedCredentialsAsync(dbContext, protectedCredentialService, BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password");
         await dbContext.SaveChangesAsync();
 
         var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
@@ -460,13 +454,7 @@ public class AuthRetryCycleTests
         var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
         var configuration = CreateConfiguration();
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        await protectedCredentialService.UpdateAsync(
-            BrokerEnvironmentKind.Demo,
-            "demo-api-key",
-            "demo-identifier",
-            "demo-password",
-            "unit-test",
-            CancellationToken.None);
+        await SeedCredentialsAsync(dbContext, protectedCredentialService, BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password");
         await dbContext.SaveChangesAsync();
 
         var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
@@ -497,13 +485,7 @@ public class AuthRetryCycleTests
         var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
         var configuration = CreateConfiguration();
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        await protectedCredentialService.UpdateAsync(
-            BrokerEnvironmentKind.Demo,
-            "demo-api-key",
-            "demo-identifier",
-            "demo-password",
-            "unit-test",
-            CancellationToken.None);
+        await SeedCredentialsAsync(dbContext, protectedCredentialService, BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password");
         await dbContext.SaveChangesAsync();
 
         var capture = new ObservingFailingAccountDetailsCapture(dbContext);
@@ -530,13 +512,7 @@ public class AuthRetryCycleTests
         var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
         var configuration = CreateConfiguration();
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        await protectedCredentialService.UpdateAsync(
-            BrokerEnvironmentKind.Demo,
-            "demo-api-key",
-            "demo-identifier",
-            "demo-password",
-            "unit-test",
-            CancellationToken.None);
+        await SeedCredentialsAsync(dbContext, protectedCredentialService, BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password");
         await dbContext.SaveChangesAsync();
 
         var sessionClient = CreateSuccessfulSessionClient();
@@ -566,13 +542,7 @@ public class AuthRetryCycleTests
         var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
         var configuration = CreateConfiguration();
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        await protectedCredentialService.UpdateAsync(
-            BrokerEnvironmentKind.Demo,
-            "demo-api-key",
-            "demo-identifier",
-            "demo-password",
-            "unit-test",
-            CancellationToken.None);
+        await SeedCredentialsAsync(dbContext, protectedCredentialService, BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password");
         await dbContext.SaveChangesAsync();
 
         var sessionClient = CreateFailedGateway(
@@ -604,13 +574,7 @@ public class AuthRetryCycleTests
         var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
         var configuration = CreateConfiguration();
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        await protectedCredentialService.UpdateAsync(
-            BrokerEnvironmentKind.Demo,
-            "demo-api-key",
-            "demo-identifier",
-            "demo-password",
-            "unit-test",
-            CancellationToken.None);
+        await SeedCredentialsAsync(dbContext, protectedCredentialService, BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password");
         await dbContext.SaveChangesAsync();
 
         var sessionClient = CreateFailedGateway(
@@ -641,13 +605,7 @@ public class AuthRetryCycleTests
         var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
         var configuration = CreateConfiguration();
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        await protectedCredentialService.UpdateAsync(
-            BrokerEnvironmentKind.Demo,
-            "demo-api-key",
-            "demo-identifier",
-            "demo-password",
-            "unit-test",
-            CancellationToken.None);
+        await SeedCredentialsAsync(dbContext, protectedCredentialService, BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password");
         await dbContext.SaveChangesAsync();
 
         var sessionClient = CreateSuccessfulSessionClient();
@@ -682,13 +640,7 @@ public class AuthRetryCycleTests
         var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
         var configuration = CreateConfiguration();
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        await protectedCredentialService.UpdateAsync(
-            BrokerEnvironmentKind.Demo,
-            "demo-api-key",
-            "demo-identifier",
-            "demo-password",
-            "unit-test",
-            CancellationToken.None);
+        await SeedCredentialsAsync(dbContext, protectedCredentialService, BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password");
         await dbContext.SaveChangesAsync();
 
         var sessionClient = CreateFailedGateway(
@@ -718,13 +670,7 @@ public class AuthRetryCycleTests
         var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
         var configuration = CreateConfiguration();
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        await protectedCredentialService.UpdateAsync(
-            BrokerEnvironmentKind.Demo,
-            "demo-api-key",
-            "demo-identifier",
-            "demo-password",
-            "unit-test",
-            CancellationToken.None);
+        await SeedCredentialsAsync(dbContext, protectedCredentialService, BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password");
         await dbContext.SaveChangesAsync();
 
         var sessionClient = CreateFailedGateway(
@@ -757,13 +703,7 @@ public class AuthRetryCycleTests
             ["Bootstrap:AuthSimulation:SessionLifetimeSeconds"] = "1"
         });
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        await protectedCredentialService.UpdateAsync(
-            BrokerEnvironmentKind.Demo,
-            "demo-api-key",
-            "demo-identifier",
-            "demo-password",
-            "unit-test",
-            CancellationToken.None);
+        await SeedCredentialsAsync(dbContext, protectedCredentialService, BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password");
         await dbContext.SaveChangesAsync();
 
         var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
@@ -807,13 +747,7 @@ public class AuthRetryCycleTests
             ["Bootstrap:TradingSchedule:EndOfDay"] = "16:30"
         });
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        await protectedCredentialService.UpdateAsync(
-            BrokerEnvironmentKind.Demo,
-            "demo-api-key",
-            "demo-identifier",
-            "demo-password",
-            "unit-test",
-            CancellationToken.None);
+        await SeedCredentialsAsync(dbContext, protectedCredentialService, BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password");
         await dbContext.SaveChangesAsync();
 
         var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
@@ -859,7 +793,7 @@ public class AuthRetryCycleTests
             ["Bootstrap:TradingSchedule:BankHolidayExclusions:0"] = "2026-04-04"
         });
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        await protectedCredentialService.UpdateAsync(BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
+        await SeedCredentialsAsync(dbContext, protectedCredentialService, BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password");
         await dbContext.SaveChangesAsync();
 
         var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
@@ -908,7 +842,7 @@ public class AuthRetryCycleTests
             ["Bootstrap:TradingSchedule:EndOfDay"] = "16:30"
         });
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        await protectedCredentialService.UpdateAsync(BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password", "unit-test", CancellationToken.None);
+        await SeedCredentialsAsync(dbContext, protectedCredentialService, BrokerEnvironmentKind.Demo, "demo-api-key", "demo-identifier", "demo-password");
         await dbContext.SaveChangesAsync();
 
         var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
@@ -957,13 +891,7 @@ public class AuthRetryCycleTests
             ["Bootstrap:BrokerEnvironment"] = "Live"
         });
         var protectedCredentialService = CreateProtectedCredentialService(dbContext, timeProvider);
-        await protectedCredentialService.UpdateAsync(
-            BrokerEnvironmentKind.Live,
-            "live-api-key",
-            "live-identifier",
-            "live-password",
-            "unit-test",
-            CancellationToken.None);
+        await SeedCredentialsAsync(dbContext, protectedCredentialService, BrokerEnvironmentKind.Live, "live-api-key", "live-identifier", "live-password");
         await dbContext.SaveChangesAsync();
 
         var coordinator = CreateCoordinator(dbContext, configuration, protectedCredentialService, timeProvider);
@@ -1054,6 +982,25 @@ public class AuthRetryCycleTests
             timeProvider);
     }
 
+    private static async Task SeedCredentialsAsync(
+        PlatformDbContext dbContext,
+        ProtectedCredentialService protectedCredentialService,
+        BrokerEnvironmentKind brokerEnvironment,
+        string? apiKey,
+        string? identifier,
+        string? password)
+    {
+        var endpointProfile = brokerEnvironment == BrokerEnvironmentKind.Live ? "IgLive" : "IgDemo";
+        var brokerEnvironmentId = await CatalogTestSeed.SeedAsync(dbContext, brokerEnvironment, endpointProfile);
+        await protectedCredentialService.UpdateAsync(
+            brokerEnvironmentId,
+            apiKey,
+            identifier,
+            password,
+            "unit-test",
+            CancellationToken.None);
+    }
+
     private static SqlPlatformConfigurationStore CreateConfigurationStore(
         PlatformDbContext dbContext,
         IConfiguration configuration,
@@ -1085,6 +1032,10 @@ public class AuthRetryCycleTests
     {
         var configurationStore = CreateConfigurationStore(dbContext, configuration, protectedCredentialService, timeProvider);
         var configurationService = new PlatformConfigurationService(configurationStore);
+        var brokerEnvironment = Enum.Parse<BrokerEnvironmentKind>(
+            configuration["Bootstrap:BrokerEnvironment"] ?? BrokerEnvironmentKind.Demo.ToString(),
+            ignoreCase: true);
+        var brokerEnvironmentId = CatalogTestSeed.GetBrokerEnvironmentId(brokerEnvironment);
 
         return new PlatformAuthenticationReconciler(
             CreateAuthSimulationSettings(configuration),
@@ -1092,10 +1043,10 @@ public class AuthRetryCycleTests
             new EfPlatformRuntimeStateStore(dbContext),
             new EfPlatformIgLoginSnapshotStore(
                 dbContext,
-                new StaticAppliedBrokerEnvironmentContextResolver(Guid.NewGuid())),
+                new StaticAppliedBrokerEnvironmentContextResolver(brokerEnvironmentId)),
             new EfPlatformRetryCycleStore(
                 dbContext,
-                new StaticAppliedBrokerEnvironmentContextResolver(Guid.NewGuid())),
+                new StaticAppliedBrokerEnvironmentContextResolver(brokerEnvironmentId)),
             new EfPlatformEventStore(dbContext),
             CreateNotificationDispatcher(dbContext, timeProvider),
             new TradingScheduleGate(),

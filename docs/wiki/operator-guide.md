@@ -488,6 +488,19 @@ When the operator saves configuration:
 6. the API returns a redacted updated configuration snapshot
 7. the page reloads from the returned model and shows a save result message
 
+Credential replacements on this page apply to the currently applied broker
+environment. To stage credentials for a pending environment selection, an
+Administrator can use the Broker Environments page when the target is eligible.
+If the applied environment cannot store IG credentials, the page reports a
+validation message and does not save the update. Ask an Administrator to correct
+the catalog eligibility or apply a supported IG environment, then retry the
+credential save on the Configuration page. Administrator assistance is required
+because the Broker Environments page is Administrator-only; it is not a
+workaround for an ineligible target because it also rejects credential saves
+for those targets.
+A reconciliation failure after a successful commit is logged for the
+background supervisor to retry; it does not undo the save.
+
 Invalid values return the normal validation error surface and leave the existing configuration unchanged. Invalid persisted or bootstrap configuration is an operator error and fails closed at startup; it is not silently replaced with defaults.
 
 A database failure during the local commit leaves the prior configuration and

@@ -8,8 +8,8 @@ internal sealed class SqlAppliedBrokerEnvironmentContextResolver(PlatformDbConte
 {
     public async Task<AppliedBrokerEnvironmentContext?> ResolveAppliedAsync(CancellationToken cancellationToken)
     {
-        var selection = await dbContext.BrokerEnvironmentSelections.AsNoTracking().SingleAsync(cancellationToken).ConfigureAwait(false);
-        return selection.AppliedBrokerEnvironmentId is { } id ? await ResolveAsync(id, cancellationToken).ConfigureAwait(false) : null;
+        var selection = await dbContext.BrokerEnvironmentSelections.AsNoTracking().SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        return selection?.AppliedBrokerEnvironmentId is { } id ? await ResolveAsync(id, cancellationToken).ConfigureAwait(false) : null;
     }
 
     public async Task<AppliedBrokerEnvironmentContext?> ResolveAsync(Guid brokerEnvironmentId, CancellationToken cancellationToken)
